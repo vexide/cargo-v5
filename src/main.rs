@@ -30,15 +30,15 @@ fn main() -> CargoResult<()> {
     );
 
     let manifest_path = if args.path.is_relative() {
-        std::env::current_dir().unwrap().join(args.path).join("Cargo.toml")
+        std::env::current_dir()
+            .unwrap()
+            .join(args.path)
+            .join("Cargo.toml")
     } else {
         args.path.join("Cargo.toml")
     };
 
-    let ws = Workspace::new(
-        &manifest_path,
-        &config,
-    )?;
+    let ws = Workspace::new(&manifest_path, &config)?;
 
     if ws.is_virtual() {
         panic!("Virtual workspaces are not supported")
@@ -66,7 +66,7 @@ fn main() -> CargoResult<()> {
                         "--strip-symbol=_PROS_COMPILE_TIMESTAMP",
                         "--strip-symbol=_PROS_COMPILE_TIMESTAMP_INT",
                         bin.path.to_str().expect("Invalid binary name"),
-                        &format!("{}.stripped", bin.path.to_string_lossy()),
+                        &format!("{}.stripped", bin.path.to_str().unwrap()), // We already panicked if file name contained invalid unicode, so we can unwrap.
                     ])
                     .spawn()
                     .unwrap();
@@ -77,8 +77,8 @@ fn main() -> CargoResult<()> {
                         "binary",
                         "-R",
                         ".hot_init",
-                        &format!("{}.stripped", bin.path.to_string_lossy()),
-                        &format!("{}.bin", bin.path.to_string_lossy()),
+                        &format!("{}.stripped", bin.path.to_str().unwrap()),
+                        &format!("{}.bin", bin.path.to_str().unwrap()),
                     ])
                     .spawn()
                     .unwrap();
