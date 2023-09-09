@@ -5,4 +5,4 @@ pkgs.mkShell {
         pkgconfig
         openssl
     ];
-};
+}
