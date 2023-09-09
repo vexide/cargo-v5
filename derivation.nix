@@ -12,5 +12,8 @@ rustPlatform.buildRustPackage {
     pkgconfig
     openssl
     gcc-arm-embedded-9
+    clang
+    libclang
+    glibc_multi
   ];
 }
