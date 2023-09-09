@@ -6,8 +6,11 @@ rustPlatform.buildRustPackage {
 
   src = ./.;
 
-  cargoHash = "sha256-c3zbb/0hCAgT0A/EjeFl5HfNZ4QNbMA/jyNInn7/N7A=";
+  cargoHash = "sha256-BsKkxFILlzPfSh9ko3msn4wQ0/4MSYydpgXNEIUnLUM=";
 
-  nativeBuildInputs = with pkgs; [ pkgconfig openssl ];
-  buildInputs = with pkgs; [ ];
+  buildInputs = with pkgs; [
+    pkgconfig
+    openssl
+    gcc-arm-embedded-9
+  ];
 }

@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 cargo = "0.73.1"
+clap = { version = "4.4.2", features = ["derive"] }
+home = "0.5.5"
