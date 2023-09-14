@@ -1,6 +1,6 @@
 [package]
 name = "cargo-pros"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 authors = [ "Gavin Niederman <gavinniederman@gmail.com>", "doinkythederp <doinkythederp@icloud.com>" ]
 license = "MIT"
