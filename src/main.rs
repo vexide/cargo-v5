@@ -1,11 +1,14 @@
 use cargo_metadata::{camino::Utf8PathBuf, Message};
 use clap::{Args, Parser, Subcommand};
-use std::{path::PathBuf, process::Command};
+use std::{
+    path::PathBuf,
+    process::{Command, Stdio},
+};
 
 #[derive(Parser, Debug)]
 #[clap(bin_name = "cargo")]
 enum Cli {
-    /// A cargo subcommand for generating flamegraphs, using inferno
+    /// Manage pros-rs projects
     #[clap(version)]
     Pros(Opt),
 }
@@ -17,15 +20,24 @@ struct Opt {
 
     #[arg(long, default_value = ".")]
     path: PathBuf,
+}
 
+#[derive(Args, Debug)]
+struct BuildOpts {
     #[arg(long, short)]
     release: bool,
 }
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    Build,
-    Simulate,
+    Build {
+        #[clap(flatten)]
+        build: BuildOpts,
+    },
+    Simulate {
+        #[clap(flatten)]
+        build: BuildOpts,
+    },
 }
 
 cargo_subcommand_metadata::description!("Builds a pros-rs project");
@@ -40,26 +52,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let Cli::Pros(args) = Cli::parse();
     let target_path = args.path.join(TARGET_PATH);
     let mut build_cmd = Command::new(cargo_bin());
-    build_cmd.stdout(std::process::Stdio::piped());
     build_cmd
         .arg("build")
-        .arg("--message-format")
-        .arg("json-render-diagnostics")
         .arg("--manifest-path")
         .arg(args.path.join("Cargo.toml"));
 
-    if args.release {
-        build_cmd.arg("--release");
-    }
-
     match args.command {
-        Commands::Build => {
+        Commands::Build { build } => {
+            if build.release {
+                build_cmd.arg("--release");
+            }
+
             let target = include_str!("armv7a-vexos-eabi.json");
             std::fs::write(&target_path, target).unwrap();
             build_cmd.arg("--target");
             build_cmd.arg(&target_path);
 
-            build_cmd.arg("-Zbuild-std=core,alloc,compiler_builtins");
+            build_cmd
+                .arg("-Zbuild-std=core,alloc,compiler_builtins")
+                .arg("--message-format")
+                .arg("json-render-diagnostics")
+                .stdout(Stdio::piped());
 
             // Add macOS headers to the include path.
             // This is required to build pros-sys because it uses headers
@@ -83,7 +96,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
-        Commands::Simulate => {
+        Commands::Simulate { build } => {
+            if build.release {
+                build_cmd.arg("--release");
+            }
+
             build_cmd.arg("--target").arg("wasm32-unknown-unknown");
 
             build_cmd.spawn().unwrap();
