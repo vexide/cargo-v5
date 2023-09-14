@@ -83,7 +83,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .output()
                     .expect("macOS sdk should be installed (try `xcode-select --install`)");
                 let sdk_path = String::from_utf8(sdk_commad.stdout).unwrap();
-                build_cmd.env("CPATH", sdk_path.trim());
+                let include_path = format!("{}/usr/include", sdk_path.trim());
+                build_cmd.env("CPATH", include_path);
             }
 
             let mut out = build_cmd.spawn().unwrap();
