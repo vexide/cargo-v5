@@ -2,11 +2,11 @@
 
 rustPlatform.buildRustPackage {
   pname = "cargo-pros";
-  version = "0.0.1";
+  version = "0.0.3";
 
   src = ./.;
 
-  cargoHash = "sha256-BsKkxFILlzPfSh9ko3msn4wQ0/4MSYydpgXNEIUnLUM=";
+  cargoHash = "sha256-BjU3GrCdKjjuTAk8OJUi+BEgB2VckmxnRg+HN2oL9WI=";
 
   buildInputs = with pkgs; [
     pkgconfig

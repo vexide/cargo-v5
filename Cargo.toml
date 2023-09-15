@@ -2,9 +2,10 @@
 name = "cargo-pros"
 version = "0.0.3"
 edition = "2021"
-authors = [ "Gavin Niederman <gavinniederman@gmail.com>", "doinkythederp <doinkythederp@icloud.com>" ]
+authors = [ "pros-rs", "Gavin Niederman <gavinniederman@gmail.com>", "doinkythederp <doinkythederp@icloud.com>" ]
 license = "MIT"
 description = "A cargo subcommand for managing PROS projects"
+repository = "https://github.com/pros-rs/cargo-pros"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
