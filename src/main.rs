@@ -74,19 +74,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arg("json-render-diagnostics")
                 .stdout(Stdio::piped());
 
-            // Add macOS headers to the include path.
-            // This is required to build pros-sys because it uses headers
-            // like <errno.h>.
-            if cfg!(target_os = "macos") {
-                let sdk_commad = std::process::Command::new("xcrun")
-                    .args(["--sdk", "macosx", "--show-sdk-path"])
-                    .output()
-                    .expect("macOS sdk should be installed (try `xcode-select --install`)");
-                let sdk_path = String::from_utf8(sdk_commad.stdout).unwrap();
-                let include_path = format!("{}/usr/include", sdk_path.trim());
-                build_cmd.env("CPATH", include_path);
-            }
-
             let mut out = build_cmd.spawn().unwrap();
             let reader = std::io::BufReader::new(out.stdout.take().unwrap());
             for message in Message::parse_stream(reader) {
