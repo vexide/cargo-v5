@@ -1,8 +1,12 @@
 [package]
 name = "cargo-pros"
-version = "0.0.3"
+version = "0.0.4"
 edition = "2021"
-authors = [ "pros-rs", "Gavin Niederman <gavinniederman@gmail.com>", "doinkythederp <doinkythederp@icloud.com>" ]
+authors = [
+    "pros-rs",
+    "Gavin Niederman <gavinniederman@gmail.com>",
+    "doinkythederp <doinkythederp@icloud.com>",
+]
 license = "MIT"
 description = "A cargo subcommand for managing PROS projects"
 repository = "https://github.com/pros-rs/cargo-pros"
