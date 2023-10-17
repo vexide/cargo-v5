@@ -101,7 +101,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Simulate { args } => {
             build_cmd.args(args);
 
-            build_cmd.arg("--target").arg("wasm32-unknown-unknown");
+            build_cmd
+            .arg("--target")
+            .arg("wasm32-unknown-unknown")
+            .stdout(Stdio::piped());
 
             let mut out = build_cmd.spawn_handling_not_found().unwrap();
             let reader = std::io::BufReader::new(out.stdout.take().unwrap());
