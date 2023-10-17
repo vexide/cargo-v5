@@ -76,22 +76,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if !is_nightly_toolchain() {
         eprintln!("warn: pros-rs currently requires Nightly Rust features.");
-        eprintln!("Switch project to nightly?");
-        eprint!("(rustup override set nightly) [Y/n]: ");
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input).unwrap();
-        let input = input.trim().to_lowercase();
-        if input == "y" || input.is_empty() {
-            Command::new("rustup")
-                .arg("override")
-                .arg("set")
-                .arg("nightly")
-                .spawn()
-                .unwrap()
-                .wait()
-                .unwrap();
-            assert!(is_nightly_toolchain());
-        }
+        eprintln!("hint: this can be fixed by running `rustup override set nightly`");
+        exit(1);
     }
 
     match args.command {
@@ -121,22 +107,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Simulate { args } => {
             if !has_wasm_target() {
                 eprintln!("warn: simulation requires the wasm32-unknown-unknown target to be installed");
-                eprintln!("Install using rustup?");
-                eprint!("(rustup target add wasm32-unknown-unknown) [Y/n]: ");
-                let mut input = String::new();
-                std::io::stdin().read_line(&mut input).unwrap();
-                let input = input.trim().to_lowercase();
-                if input == "y" || input.is_empty() {
-                    std::process::Command::new("rustup")
-                        .arg("override")
-                        .arg("set")
-                        .arg("nightly")
-                        .spawn()
-                        .unwrap()
-                        .wait()
-                        .unwrap();
-                    assert!(has_wasm_target());
-                }
+                eprintln!("hint: this can be fixed by running `rustup target add wasm32-unknown-unknown`");
+                exit(1);
             }
 
             build_cmd.args(args);
@@ -213,7 +185,7 @@ fn has_wasm_target() -> bool {
         .arg("list")
         .arg("--installed")
         .output() else {
-        return false;
+        return true;
     };
     let rustup = String::from_utf8(rustup.stdout).unwrap();
     rustup.contains("wasm32-unknown-unknown")
