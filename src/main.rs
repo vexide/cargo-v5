@@ -84,7 +84,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arg("override")
                 .arg("set")
                 .arg("nightly")
-                .output()
+                .spawn()
+                .unwrap()
+                .wait()
                 .unwrap();
             assert!(is_nightly_toolchain());
         }
@@ -129,7 +131,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .arg("override")
                         .arg("set")
                         .arg("nightly")
-                        .output()
+                        .spawn()
+                        .unwrap()
+                        .wait()
                         .unwrap();
                     assert!(has_wasm_target());
                 }
@@ -140,6 +144,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             build_cmd
             .arg("--target")
             .arg("wasm32-unknown-unknown")
+            .arg("-Zbuild-std=std,panic_abort")
             .stdout(Stdio::piped());
 
             let mut out = build_cmd.spawn_handling_not_found().unwrap();
