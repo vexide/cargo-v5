@@ -3,8 +3,10 @@ use clap::{Args, Parser, Subcommand};
 use fs_err as fs;
 use std::{
     path::PathBuf,
-    process::{Command, Stdio},
+    process::{Command, Stdio, Child, exit}, io::{self, ErrorKind},
 };
+
+cargo_subcommand_metadata::description!("Manage pros-rs projects");
 
 #[derive(Parser, Debug)]
 #[clap(bin_name = "cargo")]
@@ -23,28 +25,39 @@ struct Opt {
     path: PathBuf,
 }
 
-#[derive(Args, Debug)]
-struct BuildOpts {
-    #[arg(long, short)]
-    release: bool,
-}
-
 #[derive(Subcommand, Debug)]
 enum Commands {
     Build {
-        #[clap(flatten)]
-        build: BuildOpts,
+        #[clap(last = true)]
+        args: Vec<String>,
     },
     Simulate {
-        #[clap(flatten)]
-        build: BuildOpts,
+        #[clap(last = true)]
+        args: Vec<String>,
     },
 }
 
-cargo_subcommand_metadata::description!("Builds a pros-rs project");
-
 fn cargo_bin() -> std::ffi::OsString {
     std::env::var_os("CARGO").unwrap_or_else(|| "cargo".to_owned().into())
+}
+
+trait CommandExt {
+    fn spawn_handling_not_found(&mut self) -> io::Result<Child>;
+}
+
+impl CommandExt for Command {
+    fn spawn_handling_not_found(&mut self) -> io::Result<Child> {
+        let command_name = self.get_program().to_string_lossy().to_string();
+        self.spawn().map_err(|err| match err.kind() {
+            ErrorKind::NotFound => {
+                eprintln!("error: command `{}` not found", command_name);
+                eprintln!("Please refer to the documentation for installing pros-rs on your platform.");
+                eprintln!("> https://github.com/pros-rs/pros-rs#compiling");
+                exit(1);
+            }
+            _ => err,
+        })
+    }
 }
 
 const TARGET_PATH: &str = "target/armv7a-vexos-eabi.json";
@@ -60,10 +73,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .arg(args.path.join("Cargo.toml"));
 
     match args.command {
-        Commands::Build { build } => {
-            if build.release {
-                build_cmd.arg("--release");
-            }
+        Commands::Build { args } => {
+            build_cmd.args(args);
 
             let target = include_str!("armv7a-vexos-eabi.json");
             fs::create_dir_all(target_path.parent().unwrap()).unwrap();
@@ -77,7 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arg("json-render-diagnostics")
                 .stdout(Stdio::piped());
 
-            let mut out = build_cmd.spawn().unwrap();
+            let mut out = build_cmd.spawn_handling_not_found().unwrap();
             let reader = std::io::BufReader::new(out.stdout.take().unwrap());
             for message in Message::parse_stream(reader) {
                 if let Message::CompilerArtifact(artifact) = message.unwrap() {
@@ -87,14 +98,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
-        Commands::Simulate { build } => {
-            if build.release {
-                build_cmd.arg("--release");
-            }
+        Commands::Simulate { args } => {
+            build_cmd.args(args);
 
             build_cmd.arg("--target").arg("wasm32-unknown-unknown");
 
-            let mut out = build_cmd.spawn().unwrap();
+            let mut out = build_cmd.spawn_handling_not_found().unwrap();
             let reader = std::io::BufReader::new(out.stdout.take().unwrap());
             let mut wasm_path = None;
             for message in Message::parse_stream(reader) {
@@ -128,7 +137,7 @@ fn strip_binary(bin: Utf8PathBuf) {
             bin.as_str(),
             &format!("{}.stripped", bin),
         ])
-        .spawn()
+        .spawn_handling_not_found()
         .unwrap();
     strip.wait_with_output().unwrap();
     let elf_to_bin = std::process::Command::new("arm-none-eabi-objcopy")
@@ -140,7 +149,7 @@ fn strip_binary(bin: Utf8PathBuf) {
             &format!("{}.stripped", bin),
             &format!("{}.bin", bin),
         ])
-        .spawn()
+        .spawn_handling_not_found()
         .unwrap();
     elf_to_bin.wait_with_output().unwrap();
 }
