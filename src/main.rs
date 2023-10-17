@@ -72,6 +72,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .arg("--manifest-path")
         .arg(args.path.join("Cargo.toml"));
 
+    if !is_nightly_toolchain() {
+        eprintln!("warn: pros-rs currently requires Nightly Rust features.");
+        eprintln!("Switch project to nightly?");
+        eprint!("(rustup override set nightly) [Y/n]: ");
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input).unwrap();
+        let input = input.trim().to_lowercase();
+        if input == "y" || input.is_empty() {
+            std::process::Command::new("rustup")
+                .arg("override")
+                .arg("set")
+                .arg("nightly")
+                .output()
+                .unwrap();
+            assert!(is_nightly_toolchain());
+        }
+    }
+
     match args.command {
         Commands::Build { args } => {
             build_cmd.args(args);
@@ -99,6 +117,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         Commands::Simulate { args } => {
+            if !has_wasm_target() {
+                eprintln!("warn: simulation requires the wasm32-unknown-unknown target to be installed");
+                eprintln!("Install using rustup?");
+                eprint!("(rustup target add wasm32-unknown-unknown) [Y/n]: ");
+                let mut input = String::new();
+                std::io::stdin().read_line(&mut input).unwrap();
+                let input = input.trim().to_lowercase();
+                if input == "y" || input.is_empty() {
+                    std::process::Command::new("rustup")
+                        .arg("override")
+                        .arg("set")
+                        .arg("nightly")
+                        .output()
+                        .unwrap();
+                    assert!(has_wasm_target());
+                }
+            }
+
             build_cmd.args(args);
 
             build_cmd
@@ -155,4 +191,25 @@ fn strip_binary(bin: Utf8PathBuf) {
         .spawn_handling_not_found()
         .unwrap();
     elf_to_bin.wait_with_output().unwrap();
+}
+
+fn is_nightly_toolchain() -> bool {
+    let rustc = std::process::Command::new("rustc")
+        .arg("--version")
+        .output()
+        .unwrap();
+    let rustc = String::from_utf8(rustc.stdout).unwrap();
+    rustc.contains("nightly")
+}
+
+fn has_wasm_target() -> bool {
+    let Ok(rustup) = std::process::Command::new("rustup")
+        .arg("target")
+        .arg("list")
+        .arg("--installed")
+        .output() else {
+        return false;
+    };
+    let rustup = String::from_utf8(rustup.stdout).unwrap();
+    rustup.contains("wasm32-unknown-unknown")
 }
