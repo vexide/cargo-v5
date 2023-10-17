@@ -69,6 +69,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut build_cmd = Command::new(cargo_bin());
     build_cmd
         .arg("build")
+        .arg("--message-format")
+        .arg("json-render-diagnostics")
         .arg("--manifest-path")
         .arg(args.path.join("Cargo.toml"));
 
@@ -80,7 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::io::stdin().read_line(&mut input).unwrap();
         let input = input.trim().to_lowercase();
         if input == "y" || input.is_empty() {
-            std::process::Command::new("rustup")
+            Command::new("rustup")
                 .arg("override")
                 .arg("set")
                 .arg("nightly")
@@ -104,8 +106,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             build_cmd
                 .arg("-Zbuild-std=core,alloc,compiler_builtins")
-                .arg("--message-format")
-                .arg("json-render-diagnostics")
                 .stdout(Stdio::piped());
 
             let mut out = build_cmd.spawn_handling_not_found().unwrap();
