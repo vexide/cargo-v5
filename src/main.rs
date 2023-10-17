@@ -1,5 +1,6 @@
 use cargo_metadata::{camino::Utf8PathBuf, Message};
 use clap::{Args, Parser, Subcommand};
+use fs_err as fs;
 use std::{
     path::PathBuf,
     process::{Command, Stdio},
@@ -64,7 +65,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             let target = include_str!("armv7a-vexos-eabi.json");
-            std::fs::write(&target_path, target).unwrap();
+            fs::create_dir_all(target_path.parent().unwrap()).unwrap();
+            fs::write(&target_path, target).unwrap();
             build_cmd.arg("--target");
             build_cmd.arg(&target_path);
 
