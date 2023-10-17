@@ -49,7 +49,8 @@ fn cargo_bin() -> std::ffi::OsString {
 
 const TARGET_PATH: &str = "target/armv7a-vexos-eabi.json";
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let Cli::Pros(args) = Cli::parse();
     let target_path = args.path.join(TARGET_PATH);
     let mut build_cmd = Command::new(cargo_bin());
@@ -93,7 +94,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             build_cmd.arg("--target").arg("wasm32-unknown-unknown");
 
-            build_cmd.spawn().unwrap();
+            let mut out = build_cmd.spawn().unwrap();
+            let reader = std::io::BufReader::new(out.stdout.take().unwrap());
+            let mut wasm_path = None;
+            for message in Message::parse_stream(reader) {
+                if let Message::CompilerArtifact(artifact) = message.unwrap() {
+                    if let Some(binary_path) = artifact.executable {
+                        wasm_path = Some(binary_path);
+                    }
+                }
+            }
+
+            let wasm_path = wasm_path.expect("pros-simulator may not run libraries");
+
+            pros_simulator::simulate(wasm_path.as_std_path())
+                .await
+                .unwrap();
         }
     }
 
