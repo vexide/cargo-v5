@@ -4,7 +4,6 @@
   };
 
   outputs = {
-    self,
     nixpkgs,
     flake-utils,
     ...
@@ -13,7 +12,7 @@
       (system:
         let 
           pkgs = nixpkgs.legacyPackages.${system};
-        in with pkgs; rec {
+        in rec {
           devShells.${system} = import ./shell.nix;
 
           packages = rec {

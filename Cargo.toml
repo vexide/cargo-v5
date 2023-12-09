@@ -1,6 +1,6 @@
 [package]
 name = "cargo-pros"
-version = "0.0.4"
+version = "0.0.5"
 edition = "2021"
 authors = [
     "pros-rs",
@@ -19,6 +19,7 @@ cargo_metadata = "0.18.0"
 clap = { version = "4.4.2", features = ["derive"] }
 fs-err = "2.9.0"
 home = "0.5.5"
-pros-simulator = "0.1.0"
+jsonl = "4.0.1"
+pros-simulator = "0.3.0"
 serde_json = "1.0.106"
 tokio = { version = "1.33.0", features = ["macros", "rt"] }

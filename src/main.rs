@@ -132,7 +132,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let wasm_path = wasm_path.expect("pros-simulator may not run libraries");
 
-            pros_simulator::simulate(wasm_path.as_std_path())
+            let mut connection = jsonl::Connection::new_from_stdio();
+            pros_simulator::simulate(wasm_path.as_std_path(), move |event| {
+                connection.write(&event).unwrap();
+            })
                 .await
                 .unwrap();
         }

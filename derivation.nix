@@ -1,4 +1,4 @@
-{ rustPlatform, fetchgit, lib, pkgs, ... }:
+{ rustPlatform, pkgs, ... }:
 
 rustPlatform.buildRustPackage {
   pname = "cargo-pros";
@@ -6,7 +6,7 @@ rustPlatform.buildRustPackage {
 
   src = ./.;
 
-  cargoHash = "sha256-llkdJZ7PhsLzHYgy7AblMIGtBX2FwJquHYGZLs3bV6g=";
+  cargoLock.lockFile = ./Cargo.lock;
 
   buildInputs = with pkgs; [
     pkgconfig
