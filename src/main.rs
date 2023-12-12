@@ -71,13 +71,6 @@ const TARGET_PATH: &str = "target/armv7a-vexos-eabi.json";
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let Cli::Pros(args) = Cli::parse();
     let path = args.path;
-    let mut build_cmd = Command::new(cargo_bin());
-    build_cmd
-        .arg("build")
-        .arg("--message-format")
-        .arg("json-render-diagnostics")
-        .arg("--manifest-path")
-        .arg(path.join("Cargo.toml"));
 
     if !is_nightly_toolchain() {
         eprintln!("warn: pros-rs currently requires Nightly Rust features.");
