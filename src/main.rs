@@ -166,9 +166,30 @@ fn build(
     }
 }
 
+#[cfg(target_os = "windows")]
+fn find_objcopy_path_windows() -> Option<String> {
+    let arm_install_path =
+        PathBuf::from("C:\\Program Files (x86)\\Arm GNU Toolchain arm-none-eabi");
+    let mut versions = fs::read_dir(arm_install_path).ok()?;
+    let install = versions.next()?.ok()?.path();
+    let path = install.join("bin").join("arm-none-eabi-objcopy.exe");
+    Some(path.to_string_lossy().to_string())
+}
+
+fn objcopy_path() -> String {
+    #[cfg(target_os = "windows")]
+    let objcopy_path = find_objcopy_path_windows();
+
+    #[cfg(not(target_os = "windows"))]
+    let objcopy_path = None;
+
+    objcopy_path.unwrap_or_else(|| "arm-none-eabi-objcopy".to_owned())
+}
+
 fn strip_binary(bin: Utf8PathBuf) {
     println!("Stripping Binary: {}", bin.clone());
-    let strip = std::process::Command::new("arm-none-eabi-objcopy")
+    let objcopy = objcopy_path();
+    let strip = std::process::Command::new(&objcopy)
         .args([
             "--strip-symbol=install_hot_table",
             "--strip-symbol=__libc_init_array",
@@ -181,7 +202,7 @@ fn strip_binary(bin: Utf8PathBuf) {
         .spawn_handling_not_found()
         .unwrap();
     strip.wait_with_output().unwrap();
-    let elf_to_bin = std::process::Command::new("arm-none-eabi-objcopy")
+    let elf_to_bin = std::process::Command::new(&objcopy)
         .args([
             "-O",
             "binary",
