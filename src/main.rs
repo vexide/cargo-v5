@@ -140,6 +140,7 @@ fn build(
             .arg("--target")
             .arg("wasm32-unknown-unknown")
             .arg("-Zbuild-std=std,panic_abort")
+            .arg("--config=build.rustflags=['-Ctarget-feature=+atomics,+bulk-memory,+mutable-globals','-Clink-arg=--shared-memory','-Clink-arg=--export-table']")
             .stdout(Stdio::piped());
     } else {
         let target = include_str!("armv7a-vexos-eabi.json");
