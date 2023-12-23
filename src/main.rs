@@ -34,10 +34,6 @@ enum Commands {
         #[clap(last = true)]
         args: Vec<String>,
     },
-    Simulate {
-        #[clap(last = true)]
-        args: Vec<String>,
-    },
 }
 
 fn cargo_bin() -> std::ffi::OsString {
@@ -67,16 +63,9 @@ impl CommandExt for Command {
 
 const TARGET_PATH: &str = "target/armv7a-vexos-eabi.json";
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let Cli::Pros(args) = Cli::parse();
     let path = args.path;
-
-    if !is_nightly_toolchain() {
-        eprintln!("warn: pros-rs currently requires Nightly Rust features.");
-        eprintln!("hint: this can be fixed by running `rustup override set nightly`");
-        exit(1);
-    }
 
     match args.command {
         Commands::Build { simulator, args } => {
@@ -85,18 +74,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     strip_binary(path);
                 }
             });
-        }
-        Commands::Simulate { args } => {
-            let mut wasm_path = None;
-            build(path, args, true, |path| wasm_path = Some(path));
-            let wasm_path = wasm_path.expect("pros-simulator may not run libraries");
-
-            let mut connection = jsonl::Connection::new_from_stdio();
-            pros_simulator::simulate(wasm_path.as_std_path(), move |event| {
-                connection.write(&event).unwrap();
-            })
-            .await
-            .unwrap();
         }
     }
 
@@ -120,18 +97,18 @@ fn build(
         .arg(format!("{}/Cargo.toml", path.display()));
 
     if !is_nightly_toolchain() {
-        eprintln!("warn: pros-rs currently requires Nightly Rust features.");
-        eprintln!("hint: this can be fixed by running `rustup override set nightly`");
+        eprintln!("ERROR: pros-rs requires Nightly Rust features, but you're using stable.");
+        eprintln!(" hint: this can be fixed by running `rustup override set nightly`");
         exit(1);
     }
 
     if for_simulator {
         if !has_wasm_target() {
             eprintln!(
-                "warn: simulation requires the wasm32-unknown-unknown target to be installed"
+                "ERROR: simulation requires the wasm32-unknown-unknown target to be installed"
             );
             eprintln!(
-                "hint: this can be fixed by running `rustup target add wasm32-unknown-unknown`"
+                " hint: this can be fixed by running `rustup target add wasm32-unknown-unknown`"
             );
             exit(1);
         }
