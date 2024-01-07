@@ -1,9 +1,10 @@
 use cargo_metadata::{camino::Utf8PathBuf, Message};
+use cfg_if::cfg_if;
 use clap::{Args, Parser, Subcommand};
 use fs_err as fs;
 use std::{
     io::{self, ErrorKind},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{exit, Child, Command, Stdio},
 };
 
@@ -31,6 +32,12 @@ enum Commands {
     Build {
         #[clap(long, short)]
         simulator: bool,
+        #[clap(last = true)]
+        args: Vec<String>,
+    },
+    Sim {
+        #[clap(long)]
+        ui: Option<String>,
         #[clap(last = true)]
         args: Vec<String>,
     },
@@ -74,6 +81,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     strip_binary(path);
                 }
             });
+        }
+        Commands::Sim { ui, args } => {
+            let mut artifact = None;
+            build(path.clone(), args, true, |new_artifact| {
+                artifact = Some(new_artifact);
+            });
+            launch_simulator(
+                ui.clone(),
+                path.as_ref(),
+                artifact
+                    .expect("Binary target not found (is this a library?)")
+                    .as_ref(),
+            );
         }
     }
 
@@ -214,4 +234,62 @@ fn has_wasm_target() -> bool {
     };
     let rustup = String::from_utf8(rustup.stdout).unwrap();
     rustup.contains("wasm32-unknown-unknown")
+}
+
+#[cfg(target_os = "windows")]
+fn find_simulator_path_windows() -> Option<String> {
+    let wix_path = PathBuf::from(r#"C:\Program Files\PROS Simulator\PROS Simulator.exe"#);
+    if wix_path.exists() {
+        return Some(wix_path.to_string_lossy().to_string());
+    }
+    // C:\Users\USER\AppData\Local\PROS Simulator
+    let nsis_path = PathBuf::from(std::env::var("LOCALAPPDATA").unwrap())
+        .join("PROS Simulator")
+        .join("PROS Simulator.exe");
+    if nsis_path.exists() {
+        return Some(nsis_path.to_string_lossy().to_string());
+    }
+    None
+}
+
+fn find_simulator() -> Command {
+    cfg_if! {
+        if #[cfg(target_os = "macos")] {
+            Command::new("open").args(["-n", "-b", "rs.pros.simulator", "--args"]);
+        } else if #[cfg(target_os = "windows")] {
+            Command::new(find_simulator_path_windows().expect("Simulator install not found"))
+        } else {
+            Command::new("pros-simulator")
+        }
+    }
+}
+
+fn launch_simulator(ui: Option<String>, workspace_dir: &Path, binary_path: &Path) {
+    let mut command = if let Some(ui) = ui {
+        Command::new(ui)
+    } else {
+        find_simulator()
+    };
+    let command_name = command.get_program().to_string_lossy().to_string();
+    let res = command
+        .arg("--code")
+        .arg(binary_path)
+        .arg(workspace_dir)
+        .spawn()
+        .map_err(|err| match err.kind() {
+            ErrorKind::NotFound => {
+                eprintln!("Failed to start simulator:");
+                eprintln!("error: command `{command_name}` not found");
+                eprintln!();
+                eprintln!("Please install PROS Simulator using the link below.");
+                eprintln!("> https://github.com/pros-rs/pros-simulator-gui/releases");
+                exit(1);
+            }
+            _ => err,
+        })
+        .unwrap()
+        .wait();
+    if let Err(err) = res {
+        eprintln!("Failed to launch simulator: {}", err);
+    }
 }

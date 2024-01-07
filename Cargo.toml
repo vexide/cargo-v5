@@ -16,6 +16,7 @@ repository = "https://github.com/pros-rs/cargo-pros"
 [dependencies]
 cargo-subcommand-metadata = "0.1.0"
 cargo_metadata = "0.18.0"
+cfg-if = "1.0.0"
 clap = { version = "4.4.2", features = ["derive"] }
 fs-err = "2.9.0"
 home = "0.5.5"
