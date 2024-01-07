@@ -1,6 +1,7 @@
 use cargo_metadata::{camino::Utf8PathBuf, Message};
 use cfg_if::cfg_if;
 use clap::{Args, Parser, Subcommand};
+use fs::PathExt;
 use fs_err as fs;
 use std::{
     io::{self, ErrorKind},
@@ -255,7 +256,9 @@ fn find_simulator_path_windows() -> Option<String> {
 fn find_simulator() -> Command {
     cfg_if! {
         if #[cfg(target_os = "macos")] {
-            Command::new("open").args(["-n", "-b", "rs.pros.simulator", "--args"]);
+            let mut cmd = Command::new("open");
+            cmd.args(["-nWb", "rs.pros.simulator", "--args"]);
+            cmd
         } else if #[cfg(target_os = "windows")] {
             Command::new(find_simulator_path_windows().expect("Simulator install not found"))
         } else {
@@ -270,11 +273,20 @@ fn launch_simulator(ui: Option<String>, workspace_dir: &Path, binary_path: &Path
     } else {
         find_simulator()
     };
-    let command_name = command.get_program().to_string_lossy().to_string();
-    let res = command
+    command
         .arg("--code")
-        .arg(binary_path)
-        .arg(workspace_dir)
+        .arg(binary_path.fs_err_canonicalize().unwrap())
+        .arg(workspace_dir.fs_err_canonicalize().unwrap());
+
+    let command_name = command.get_program().to_string_lossy().to_string();
+    let args = command
+        .get_args()
+        .map(|arg| arg.to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+
+    eprintln!("$ {} {}", command_name, args.join(" "));
+
+    let res = command
         .spawn()
         .map_err(|err| match err.kind() {
             ErrorKind::NotFound => {
