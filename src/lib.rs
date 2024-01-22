@@ -1,6 +1,5 @@
 use cargo_metadata::{camino::Utf8PathBuf, Message};
 use cfg_if::cfg_if;
-use clap::{Args, Parser, Subcommand};
 use fs::PathExt;
 use fs_err as fs;
 use std::{
@@ -8,41 +7,6 @@ use std::{
     path::{Path, PathBuf},
     process::{exit, Child, Command, Stdio},
 };
-
-cargo_subcommand_metadata::description!("Manage pros-rs projects");
-
-#[derive(Parser, Debug)]
-#[clap(bin_name = "cargo")]
-enum Cli {
-    /// Manage pros-rs projects
-    #[clap(version)]
-    Pros(Opt),
-}
-
-#[derive(Args, Debug)]
-struct Opt {
-    #[command(subcommand)]
-    command: Commands,
-
-    #[arg(long, default_value = ".")]
-    path: PathBuf,
-}
-
-#[derive(Subcommand, Debug)]
-enum Commands {
-    Build {
-        #[clap(long, short)]
-        simulator: bool,
-        #[clap(last = true)]
-        args: Vec<String>,
-    },
-    Sim {
-        #[clap(long)]
-        ui: Option<String>,
-        #[clap(last = true)]
-        args: Vec<String>,
-    },
-}
 
 fn cargo_bin() -> std::ffi::OsString {
     std::env::var_os("CARGO").unwrap_or_else(|| "cargo".to_owned().into())
@@ -71,37 +35,7 @@ impl CommandExt for Command {
 
 const TARGET_PATH: &str = "target/armv7a-vexos-eabi.json";
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let Cli::Pros(args) = Cli::parse();
-    let path = args.path;
-
-    match args.command {
-        Commands::Build { simulator, args } => {
-            build(path, args, simulator, |path| {
-                if !simulator {
-                    strip_binary(path);
-                }
-            });
-        }
-        Commands::Sim { ui, args } => {
-            let mut artifact = None;
-            build(path.clone(), args, true, |new_artifact| {
-                artifact = Some(new_artifact);
-            });
-            launch_simulator(
-                ui.clone(),
-                path.as_ref(),
-                artifact
-                    .expect("Binary target not found (is this a library?)")
-                    .as_ref(),
-            );
-        }
-    }
-
-    Ok(())
-}
-
-fn build(
+pub fn build(
     path: PathBuf,
     args: Vec<String>,
     for_simulator: bool,
@@ -185,7 +119,7 @@ fn objcopy_path() -> String {
     objcopy_path.unwrap_or_else(|| "arm-none-eabi-objcopy".to_owned())
 }
 
-fn strip_binary(bin: Utf8PathBuf) {
+pub fn strip_binary(bin: Utf8PathBuf) {
     println!("Stripping Binary: {}", bin.clone());
     let objcopy = objcopy_path();
     let strip = std::process::Command::new(&objcopy)
@@ -267,7 +201,7 @@ fn find_simulator() -> Command {
     }
 }
 
-fn launch_simulator(ui: Option<String>, workspace_dir: &Path, binary_path: &Path) {
+pub fn launch_simulator(ui: Option<String>, workspace_dir: &Path, binary_path: &Path) {
     let mut command = if let Some(ui) = ui {
         Command::new(ui)
     } else {

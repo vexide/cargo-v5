@@ -17,7 +17,15 @@ repository = "https://github.com/pros-rs/cargo-pros"
 cargo-subcommand-metadata = "0.1.0"
 cargo_metadata = "0.18.0"
 cfg-if = "1.0.0"
-clap = { version = "4.4.2", features = ["derive"] }
 fs-err = "2.9.0"
 home = "0.5.5"
 serde_json = "1.0.106"
+clap = { version = "4.4.2", features = ["derive"], optional = true }
+
+[features]
+default = ["clap"]
+clap = ["dep:clap"]
+
+[[bin]]
+name = "cargo-pros"
+required-features = ["clap"]
