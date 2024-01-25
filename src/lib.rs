@@ -82,8 +82,6 @@ pub fn build(
             .arg("--target")
             .arg(&target_path);
 
-        println!("LINKER PATH: {}", linker_path());
-
         build_cmd
             .arg("--config")
             .arg(format!("target.armv7a-vexos-eabi.linker='{}'", linker_path()));
