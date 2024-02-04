@@ -33,7 +33,7 @@ impl CommandExt for Command {
     }
 }
 
-const TARGET_PATH: &str = "target/armv7a-vexos-eabi.json";
+const TARGET_PATH: &str = "armv7a-vexos-eabi.json";
 
 pub fn build(
     path: PathBuf,
@@ -76,8 +76,10 @@ pub fn build(
             .stdout(Stdio::piped());
     } else {
         let target = include_str!("armv7a-vexos-eabi.json");
-        fs::create_dir_all(target_path.parent().unwrap()).unwrap();
-        fs::write(&target_path, target).unwrap();
+        if !target_path.exists() {
+            fs::create_dir_all(target_path.parent().unwrap()).unwrap();
+            fs::write(&target_path, target).unwrap();
+        }
         build_cmd.arg("--target");
         build_cmd.arg(&target_path);
 
