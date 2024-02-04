@@ -2,7 +2,7 @@ with import <nixpkgs> {};
 
 pkgs.mkShell {
     buildInputs = with pkgs; [
-        pkgconfig
+        pkg-config
         openssl
         gcc-arm-embedded-9
         clang
