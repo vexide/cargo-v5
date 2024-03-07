@@ -18,6 +18,8 @@ Before releasing:
 
 ### Added
 
+- Added upload command
+
 ### Fixed
 
 ### Changed
