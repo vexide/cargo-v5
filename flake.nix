@@ -1,11 +1,13 @@
 {
   inputs = {
     flake-utils.url = "github:numtide/flake-utils";
+    pros-cli-nix.url = "github:BattleCh1cken/pros-cli-nix";
   };
 
   outputs = {
     nixpkgs,
     flake-utils,
+    pros-cli-nix,
     ...
   }:
     (flake-utils.lib.eachDefaultSystem
@@ -16,7 +18,7 @@
           devShells.${system} = import ./shell.nix;
 
           packages = rec {
-            cargo-pros = pkgs.callPackage ./derivation.nix {};
+            cargo-pros = pkgs.callPackage ./derivation.nix { pros-cli = pros-cli-nix.packages.${system}.default; };
             default = cargo-pros;
           };
 

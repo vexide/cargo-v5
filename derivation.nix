@@ -1,4 +1,4 @@
-{ rustPlatform, pkgs, ... }:
+{ rustPlatform, pkgs, pros-cli, ... }:
 
 rustPlatform.buildRustPackage {
   pname = "cargo-pros";
@@ -15,5 +15,6 @@ rustPlatform.buildRustPackage {
     clang
     libclang
     glibc_multi
+    pros-cli
   ];
 }
