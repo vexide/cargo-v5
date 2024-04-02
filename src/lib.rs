@@ -75,7 +75,10 @@ pub fn build(
             .arg("--config=build.rustflags=['-Ctarget-feature=+atomics,+bulk-memory,+mutable-globals','-Clink-arg=--shared-memory','-Clink-arg=--export-table']")
             .stdout(Stdio::piped());
     } else {
-        let target = include_str!("armv7a-vexos-eabi.json");
+        #[cfg(feature = "legacy-pros-rs-support")]
+        let target = include_str!("targets/pros-rs.json");
+        #[cfg(not(feature = "legacy-pros-rs-support"))]
+        let target = include_str!("targets/vexide.json");
         if !target_path.exists() {
             fs::create_dir_all(target_path.parent().unwrap()).unwrap();
             fs::write(&target_path, target).unwrap();
@@ -111,6 +114,7 @@ fn find_objcopy_path_windows() -> Option<String> {
     Some(path.to_string_lossy().to_string())
 }
 
+#[cfg(feature = "legacy-pros-rs-support")]
 fn objcopy_path() -> String {
     #[cfg(target_os = "windows")]
     let objcopy_path = find_objcopy_path_windows();
@@ -121,6 +125,7 @@ fn objcopy_path() -> String {
     objcopy_path.unwrap_or_else(|| "arm-none-eabi-objcopy".to_owned())
 }
 
+#[cfg(feature = "legacy-pros-rs-support")]
 pub fn strip_binary(bin: Utf8PathBuf) {
     println!("Stripping Binary: {}", bin.clone());
     let objcopy = objcopy_path();
@@ -149,6 +154,14 @@ pub fn strip_binary(bin: Utf8PathBuf) {
         .spawn_handling_not_found()
         .unwrap();
     elf_to_bin.wait_with_output().unwrap();
+}
+
+#[cfg(not(feature = "legacy-pros-rs-support"))]
+pub fn strip_binary(bin: Utf8PathBuf) {
+    Command::new("rust-objcopy")
+        .args(["-O", "binary", bin.as_str(), &format!("{}.bin", bin)])
+        .spawn_handling_not_found()
+        .unwrap();
 }
 
 fn is_nightly_toolchain() -> bool {

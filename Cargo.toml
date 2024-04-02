@@ -26,6 +26,8 @@ clap = { version = "4.4.2", features = ["derive"], optional = true }
 default = ["clap"]
 clap = ["dep:clap"]
 
+legacy-pros-rs-support = []
+
 [[bin]]
 name = "cargo-pros"
 required-features = ["clap"]
