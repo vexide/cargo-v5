@@ -1,4 +1,4 @@
-use cargo_pros::{build, launch_simulator, strip_binary};
+use cargo_pros::{build, finish_binary, launch_simulator, CommandExt};
 use clap::{Args, Parser, Subcommand};
 use std::{path::PathBuf, process::Command};
 
@@ -74,7 +74,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Build { simulator, args } => {
             build(path, args, simulator, |path| {
                 if !simulator {
-                    strip_binary(path);
+                    finish_binary(path);
                 }
             });
         }
@@ -93,7 +93,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let mut bin_path = new_artifact.clone();
                     bin_path.set_extension("bin");
                     artifact = Some(bin_path.into());
-                    strip_binary(new_artifact);
+                    finish_binary(new_artifact);
                     completed = true;
                 });
                 while !completed {
@@ -117,7 +117,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     },
                     &artifact.to_string_lossy(),
                 ])
-                .spawn()?
+                .spawn_handling_not_found()?
                 .wait()?;
         }
         Commands::Sim { ui, args } => {

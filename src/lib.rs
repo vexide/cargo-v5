@@ -12,7 +12,7 @@ fn cargo_bin() -> std::ffi::OsString {
     std::env::var_os("CARGO").unwrap_or_else(|| "cargo".to_owned().into())
 }
 
-trait CommandExt {
+pub trait CommandExt {
     fn spawn_handling_not_found(&mut self) -> io::Result<Child>;
 }
 
@@ -22,10 +22,19 @@ impl CommandExt for Command {
         self.spawn().map_err(|err| match err.kind() {
             ErrorKind::NotFound => {
                 eprintln!("error: command `{}` not found", command_name);
-                eprintln!(
-                    "Please refer to the documentation for installing pros-rs on your platform."
-                );
-                eprintln!("> https://github.com/pros-rs/pros-rs#compiling");
+                #[cfg(feature = "legacy-pros-rs-support")]
+                {
+                    eprintln!(
+                        "Please refer to the documentation for installing pros-rs' dependencies on your platform."
+                    );
+                    eprintln!("> https://github.com/vexide/pros-rs#compiling");
+                }
+                #[cfg(not(feature = "legacy-pros-rs-support"))]
+                {
+                    eprintln!("Please refer to the documentation for installing vexide's dependencies on your platform.");
+                    eprintln!("> https://github.com/vexide/vexide#compiling");
+                }
+                
                 exit(1);
             }
             _ => err,
@@ -126,7 +135,7 @@ fn objcopy_path() -> String {
 }
 
 #[cfg(feature = "legacy-pros-rs-support")]
-pub fn strip_binary(bin: Utf8PathBuf) {
+pub fn finish_binary(bin: Utf8PathBuf) {
     println!("Stripping Binary: {}", bin.clone());
     let objcopy = objcopy_path();
     let strip = std::process::Command::new(&objcopy)
@@ -157,11 +166,13 @@ pub fn strip_binary(bin: Utf8PathBuf) {
 }
 
 #[cfg(not(feature = "legacy-pros-rs-support"))]
-pub fn strip_binary(bin: Utf8PathBuf) {
+pub fn finish_binary(bin: Utf8PathBuf) {
+    println!("Stripping Binary: {}", bin.clone());
     Command::new("rust-objcopy")
         .args(["-O", "binary", bin.as_str(), &format!("{}.bin", bin)])
         .spawn_handling_not_found()
         .unwrap();
+    println!("Output binary: {}.bin", bin.clone());
 }
 
 fn is_nightly_toolchain() -> bool {
