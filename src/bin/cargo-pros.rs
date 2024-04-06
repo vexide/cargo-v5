@@ -67,6 +67,9 @@ impl std::str::FromStr for UploadAction {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(feature = "legacy-pros-rs-support")]
+    println!("cargo-pros is using legacy pros-rs support. Please consider upgrading to the new vexide crate.");
+
     let Cli::Pros(args) = Cli::parse();
     let path = args.path;
 
@@ -88,17 +91,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(path) = file {
                 artifact = Some(path);
             } else {
-                let mut completed = false;
                 build(path.clone(), args, false, |new_artifact| {
                     let mut bin_path = new_artifact.clone();
                     bin_path.set_extension("bin");
                     artifact = Some(bin_path.into());
                     finish_binary(new_artifact);
-                    completed = true;
                 });
-                while !completed {
-                    std::thread::sleep(std::time::Duration::from_millis(10));
-                }
             }
             let artifact =
                 artifact.expect("Binary not found! Try explicitly providing one with --path (-p)");
