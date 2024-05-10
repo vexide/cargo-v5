@@ -1,6 +1,6 @@
-use cargo_pros::{build, launch_simulator, strip_binary};
+use cargo_pros::{build, finish_binary, launch_simulator, CommandExt};
 use clap::{Args, Parser, Subcommand};
-use std::{path::PathBuf, process::Command};
+use std::{fmt::format, path::PathBuf, process::Command};
 
 cargo_subcommand_metadata::description!("Manage pros-rs projects");
 
@@ -34,7 +34,7 @@ enum Commands {
         slot: u8,
         #[clap(long, short)]
         file: Option<PathBuf>,
-        #[clap(long, short)]
+        #[clap(long, short, default_value = "none")]
         action: UploadAction,
 
         #[clap(last = true)]
@@ -48,10 +48,11 @@ enum Commands {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 enum UploadAction {
     Screen,
     Run,
+    #[default]
     None,
 }
 impl std::str::FromStr for UploadAction {
@@ -61,12 +62,18 @@ impl std::str::FromStr for UploadAction {
             "screen" => Ok(UploadAction::Screen),
             "run" => Ok(UploadAction::Run),
             "none" => Ok(UploadAction::None),
-            _ => Err("Invalid upload action".into()),
+            _ => Err(format!(
+                "Invalid upload action. Found: {}, expected one of: screen, run, or none",
+                s
+            )),
         }
     }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(feature = "legacy-pros-rs-support")]
+    println!("cargo-pros is using legacy pros-rs support. Please consider upgrading to the new vexide crate.");
+
     let Cli::Pros(args) = Cli::parse();
     let path = args.path;
 
@@ -74,7 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Build { simulator, args } => {
             build(path, args, simulator, |path| {
                 if !simulator {
-                    strip_binary(path);
+                    finish_binary(path);
                 }
             });
         }
@@ -88,17 +95,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(path) = file {
                 artifact = Some(path);
             } else {
-                let mut completed = false;
                 build(path.clone(), args, false, |new_artifact| {
                     let mut bin_path = new_artifact.clone();
                     bin_path.set_extension("bin");
                     artifact = Some(bin_path.into());
-                    strip_binary(new_artifact);
-                    completed = true;
+                    finish_binary(new_artifact);
                 });
-                while !completed {
-                    std::thread::sleep(std::time::Duration::from_millis(10));
-                }
             }
             let artifact =
                 artifact.expect("Binary not found! Try explicitly providing one with --path (-p)");
@@ -117,7 +119,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     },
                     &artifact.to_string_lossy(),
                 ])
-                .spawn()?
+                .spawn_handling_not_found()?
                 .wait()?;
         }
         Commands::Sim { ui, args } => {

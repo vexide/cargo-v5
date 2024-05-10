@@ -1,6 +1,6 @@
 [package]
 name = "cargo-pros"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 authors = [
     "pros-rs",
@@ -25,6 +25,8 @@ clap = { version = "4.4.2", features = ["derive"], optional = true }
 [features]
 default = ["clap"]
 clap = ["dep:clap"]
+
+legacy-pros-rs-support = []
 
 [[bin]]
 name = "cargo-pros"
