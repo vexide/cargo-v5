@@ -1,6 +1,6 @@
 use cargo_pros::{build, finish_binary, launch_simulator, CommandExt};
 use clap::{Args, Parser, Subcommand};
-use std::{path::PathBuf, process::Command};
+use std::{fmt::format, path::PathBuf, process::Command};
 
 cargo_subcommand_metadata::description!("Manage pros-rs projects");
 
@@ -34,7 +34,7 @@ enum Commands {
         slot: u8,
         #[clap(long, short)]
         file: Option<PathBuf>,
-        #[clap(long, short)]
+        #[clap(long, short, default_value = "none")]
         action: UploadAction,
 
         #[clap(last = true)]
@@ -48,10 +48,11 @@ enum Commands {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 enum UploadAction {
     Screen,
     Run,
+    #[default]
     None,
 }
 impl std::str::FromStr for UploadAction {
@@ -61,7 +62,10 @@ impl std::str::FromStr for UploadAction {
             "screen" => Ok(UploadAction::Screen),
             "run" => Ok(UploadAction::Run),
             "none" => Ok(UploadAction::None),
-            _ => Err("Invalid upload action".into()),
+            _ => Err(format!(
+                "Invalid upload action. Found: {}, expected one of: screen, run, or none",
+                s
+            )),
         }
     }
 }

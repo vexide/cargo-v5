@@ -34,7 +34,6 @@ impl CommandExt for Command {
                     eprintln!("Please refer to the documentation for installing vexide's dependencies on your platform.");
                     eprintln!("> https://github.com/vexide/vexide#compiling");
                 }
-                
                 exit(1);
             }
             _ => err,
