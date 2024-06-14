@@ -1,6 +1,7 @@
+use cargo_metadata::camino::Utf8PathBuf;
 use cargo_pros::{build, finish_binary, launch_simulator, CommandExt};
 use clap::{Args, Parser, Subcommand};
-use std::{fmt::format, path::PathBuf, process::Command};
+use std::{path::PathBuf, process::Command};
 
 cargo_subcommand_metadata::description!("Manage pros-rs projects");
 
@@ -33,7 +34,12 @@ enum Commands {
         #[clap(long, short)]
         slot: u8,
         #[clap(long, short)]
-        file: Option<PathBuf>,
+        file: Option<Utf8PathBuf>,
+        /// Convert the program to a stripped binary before uploading it.
+        /// This is necessary for uploading an ELF that has not yet
+        /// been processed.
+        #[clap(long, short)]
+        strip: bool,
         #[clap(long, short, default_value = "none")]
         action: UploadAction,
 
@@ -81,7 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Build { simulator, args } => {
             build(path, args, simulator, |path| {
                 if !simulator {
-                    finish_binary(path);
+                    finish_binary(&path);
                 }
             });
         }
@@ -89,17 +95,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             slot,
             file,
             action,
+            strip,
             args,
         } => {
             let mut artifact = None;
             if let Some(path) = file {
-                artifact = Some(path);
+                if strip {
+                    artifact = Some(finish_binary(&path));
+                } else {
+                    artifact = Some(path);
+                }
             } else {
                 build(path.clone(), args, false, |new_artifact| {
                     let mut bin_path = new_artifact.clone();
                     bin_path.set_extension("bin");
-                    artifact = Some(bin_path.into());
-                    finish_binary(new_artifact);
+                    artifact = Some(bin_path);
+                    finish_binary(&new_artifact);
                 });
             }
             let artifact =
@@ -117,7 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         UploadAction::Run => "run",
                         UploadAction::None => "none",
                     },
-                    &artifact.to_string_lossy(),
+                    artifact.as_str(),
                 ])
                 .spawn_handling_not_found()?
                 .wait()?;

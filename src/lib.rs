@@ -1,4 +1,7 @@
-use cargo_metadata::{camino::Utf8PathBuf, Message};
+use cargo_metadata::{
+    camino::{Utf8Path, Utf8PathBuf},
+    Message,
+};
 use cfg_if::cfg_if;
 use fs::PathExt;
 use fs_err as fs;
@@ -134,8 +137,8 @@ fn objcopy_path() -> String {
 }
 
 #[cfg(feature = "legacy-pros-rs-support")]
-pub fn finish_binary(bin: Utf8PathBuf) {
-    println!("Stripping Binary: {}", bin.clone());
+pub fn finish_binary(bin: &Utf8Path) -> Utf8PathBuf {
+    println!("Stripping Binary: {}", bin);
     let objcopy = objcopy_path();
     let strip = std::process::Command::new(&objcopy)
         .args([
@@ -150,6 +153,7 @@ pub fn finish_binary(bin: Utf8PathBuf) {
         .spawn_handling_not_found()
         .unwrap();
     strip.wait_with_output().unwrap();
+    let out = bin.with_extension("bin");
     let elf_to_bin = std::process::Command::new(&objcopy)
         .args([
             "-O",
@@ -157,21 +161,25 @@ pub fn finish_binary(bin: Utf8PathBuf) {
             "-R",
             ".hot_init",
             &format!("{}.stripped", bin),
-            &format!("{}.bin", bin),
+            out.as_str(),
         ])
         .spawn_handling_not_found()
         .unwrap();
     elf_to_bin.wait_with_output().unwrap();
+    println!("Output binary: {}", out);
+    out
 }
 
 #[cfg(not(feature = "legacy-pros-rs-support"))]
-pub fn finish_binary(bin: Utf8PathBuf) {
-    println!("Stripping Binary: {}", bin.clone());
+pub fn finish_binary(bin: &Utf8Path) -> Utf8PathBuf {
+    println!("Stripping Binary: {}", bin);
+    let out = bin.with_extension("bin");
     Command::new("rust-objcopy")
-        .args(["-O", "binary", bin.as_str(), &format!("{}.bin", bin)])
+        .args(["-O", "binary", bin.as_str(), out.as_str()])
         .spawn_handling_not_found()
         .unwrap();
-    println!("Output binary: {}.bin", bin.clone());
+    println!("Output binary: {}", out);
+    out
 }
 
 fn is_nightly_toolchain() -> bool {
