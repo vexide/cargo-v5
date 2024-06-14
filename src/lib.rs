@@ -7,7 +7,6 @@ use clap::Args;
 use fs::PathExt;
 use fs_err as fs;
 use std::{
-    ffi::OsStr,
     io::{self, ErrorKind},
     path::Path,
     process::{exit, Child, Command, Stdio},
