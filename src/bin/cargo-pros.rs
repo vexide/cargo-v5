@@ -9,12 +9,12 @@ use std::{
     time::Duration,
 };
 
-cargo_subcommand_metadata::description!("Manage pros-rs projects");
+cargo_subcommand_metadata::description!("Manage vexide projects");
 
 #[derive(Parser, Debug)]
 #[clap(bin_name = "cargo")]
 enum Cli {
-    /// Manage pros-rs projects
+    /// Manage vexide projects.
     #[clap(version)]
     Pros(Opt),
 }
@@ -30,12 +30,14 @@ struct Opt {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Build a vexide project for the V5 brain.
     Build {
         #[clap(long, short)]
         simulator: bool,
         #[clap(flatten)]
         opts: BuildOpts,
     },
+    /// Build and upload a vexide project to the V5 brain.
     Upload {
         #[clap(long, short, default_value = "none")]
         action: UploadAction,
@@ -43,13 +45,14 @@ enum Commands {
         #[command(flatten)]
         opts: UploadOpts,
     },
+    /// Build a vexide project and run it in the simulator.
     Sim {
         #[clap(long)]
         ui: Option<String>,
         #[clap(flatten)]
         opts: BuildOpts,
     },
-    /// Build, upload, run, and view the serial output of a vexide project.
+    /// Build, upload, start, and view the serial output of a vexide project.
     Run {
         #[command(flatten)]
         upload_opts: UploadOpts,
