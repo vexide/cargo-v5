@@ -232,8 +232,9 @@ pub fn upload(
     Ok(())
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", feature = "legacy-pros-rs-support"))]
 fn find_objcopy_path_windows() -> Option<String> {
+    use std::path::PathBuf;
     let arm_install_path =
         PathBuf::from("C:\\Program Files (x86)\\Arm GNU Toolchain arm-none-eabi");
     let mut versions = fs::read_dir(arm_install_path).ok()?;
@@ -323,6 +324,7 @@ fn has_wasm_target() -> bool {
 
 #[cfg(target_os = "windows")]
 fn find_simulator_path_windows() -> Option<String> {
+    use std::path::PathBuf;
     let wix_path = PathBuf::from(r#"C:\Program Files\PROS Simulator\PROS Simulator.exe"#);
     if wix_path.exists() {
         return Some(wix_path.to_string_lossy().to_string());
