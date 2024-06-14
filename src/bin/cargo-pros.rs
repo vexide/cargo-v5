@@ -1,7 +1,11 @@
 use cargo_metadata::camino::Utf8PathBuf;
-use cargo_pros::{build, finish_binary, launch_simulator, CommandExt};
+use cargo_pros::{build, finish_binary, launch_simulator, upload, UploadAction, UploadOpts};
 use clap::{Args, Parser, Subcommand};
-use std::{path::PathBuf, process::Command};
+use std::{
+    process::Command,
+    thread::{self, sleep},
+    time::Duration,
+};
 
 cargo_subcommand_metadata::description!("Manage pros-rs projects");
 
@@ -19,7 +23,7 @@ struct Opt {
     command: Commands,
 
     #[arg(long, default_value = ".")]
-    path: PathBuf,
+    path: Utf8PathBuf,
 }
 
 #[derive(Subcommand, Debug)]
@@ -31,17 +35,11 @@ enum Commands {
         args: Vec<String>,
     },
     Upload {
-        #[clap(long, short)]
-        slot: u8,
-        #[clap(long, short)]
-        file: Option<Utf8PathBuf>,
-        /// Convert the program to a stripped binary before uploading it.
-        /// This is necessary for uploading an ELF that has not yet
-        /// been processed.
-        #[clap(long, short)]
-        strip: bool,
         #[clap(long, short, default_value = "none")]
         action: UploadAction,
+
+        #[command(flatten)]
+        opts: UploadOpts,
 
         #[clap(last = true)]
         args: Vec<String>,
@@ -52,28 +50,14 @@ enum Commands {
         #[clap(last = true)]
         args: Vec<String>,
     },
-}
+    /// Build, upload, run, and view the serial output of a vexide project.
+    Run {
+        #[command(flatten)]
+        upload_opts: UploadOpts,
 
-#[derive(Clone, Debug, Default)]
-enum UploadAction {
-    Screen,
-    Run,
-    #[default]
-    None,
-}
-impl std::str::FromStr for UploadAction {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "screen" => Ok(UploadAction::Screen),
-            "run" => Ok(UploadAction::Run),
-            "none" => Ok(UploadAction::None),
-            _ => Err(format!(
-                "Invalid upload action. Found: {}, expected one of: screen, run, or none",
-                s
-            )),
-        }
-    }
+        #[clap(last = true)]
+        args: Vec<String>,
+    },
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -85,57 +69,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match args.command {
         Commands::Build { simulator, args } => {
-            build(path, args, simulator, |path| {
+            build(&path, &args, simulator, |path| {
                 if !simulator {
                     finish_binary(&path);
                 }
             });
         }
-        Commands::Upload {
-            slot,
-            file,
-            action,
-            strip,
-            args,
-        } => {
-            let mut artifact = None;
-            if let Some(path) = file {
-                if strip {
-                    artifact = Some(finish_binary(&path));
-                } else {
-                    artifact = Some(path);
-                }
-            } else {
-                build(path.clone(), args, false, |new_artifact| {
-                    let mut bin_path = new_artifact.clone();
-                    bin_path.set_extension("bin");
-                    artifact = Some(bin_path);
-                    finish_binary(&new_artifact);
-                });
-            }
-            let artifact =
-                artifact.expect("Binary not found! Try explicitly providing one with --path (-p)");
-            Command::new("pros")
-                .args([
-                    "upload",
-                    "--target",
-                    "v5",
-                    "--slot",
-                    &slot.to_string(),
-                    "--after",
-                    match action {
-                        UploadAction::Screen => "screen",
-                        UploadAction::Run => "run",
-                        UploadAction::None => "none",
-                    },
-                    artifact.as_str(),
-                ])
-                .spawn_handling_not_found()?
-                .wait()?;
-        }
+        Commands::Upload { opts, action, args } => upload(&path, opts, action, &args)?,
         Commands::Sim { ui, args } => {
             let mut artifact = None;
-            build(path.clone(), args, true, |new_artifact| {
+            build(&path, &args, true, |new_artifact| {
                 artifact = Some(new_artifact);
             });
             launch_simulator(
@@ -145,6 +88,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .expect("Binary target not found (is this a library?)")
                     .as_ref(),
             );
+        }
+        Commands::Run { upload_opts, args } => {
+            let term = thread::spawn(|| {
+                sleep(Duration::from_millis(500));
+                Command::new("pros")
+                    .args(["terminal", "--raw"])
+                    .spawn()
+                    .expect("Failed to start terminal")
+            });
+            upload(&path, upload_opts, UploadAction::Run, &args)?;
+            let mut term_child = term.join().unwrap();
+            let term_res = term_child.wait()?;
+            if !term_res.success() {
+                eprintln!("Failed to start terminal: {:?}", term_res);
+            }
         }
     }
 

@@ -3,11 +3,13 @@ use cargo_metadata::{
     Message,
 };
 use cfg_if::cfg_if;
+use clap::Args;
 use fs::PathExt;
 use fs_err as fs;
 use std::{
+    ffi::OsStr,
     io::{self, ErrorKind},
-    path::{Path, PathBuf},
+    path::Path,
     process::{exit, Child, Command, Stdio},
 };
 
@@ -47,20 +49,20 @@ impl CommandExt for Command {
 const TARGET_PATH: &str = "armv7a-vexos-eabi.json";
 
 pub fn build(
-    path: PathBuf,
-    args: Vec<String>,
+    path: &Utf8Path,
+    args: &[impl AsRef<OsStr>],
     for_simulator: bool,
     mut handle_executable: impl FnMut(Utf8PathBuf),
 ) {
     let target_path = path.join(TARGET_PATH);
     let mut build_cmd = Command::new(cargo_bin());
     build_cmd
-        .current_dir(&path)
+        .current_dir(path)
         .arg("build")
         .arg("--message-format")
         .arg("json-render-diagnostics")
         .arg("--manifest-path")
-        .arg(format!("{}/Cargo.toml", path.display()));
+        .arg(path.join("Cargo.toml").as_str());
 
     if !is_nightly_toolchain() {
         eprintln!("ERROR: pros-rs requires Nightly Rust features, but you're using stable.");
@@ -113,6 +115,84 @@ pub fn build(
             }
         }
     }
+}
+
+#[derive(Args, Debug)]
+pub struct UploadOpts {
+    #[clap(long, short)]
+    slot: u8,
+    #[clap(long, short)]
+    file: Option<Utf8PathBuf>,
+    /// Convert the program to a stripped binary before uploading it.
+    /// This is necessary for uploading an ELF that has not yet
+    /// been processed.
+    #[clap(long, short)]
+    strip: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub enum UploadAction {
+    Screen,
+    Run,
+    #[default]
+    None,
+}
+impl std::str::FromStr for UploadAction {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "screen" => Ok(UploadAction::Screen),
+            "run" => Ok(UploadAction::Run),
+            "none" => Ok(UploadAction::None),
+            _ => Err(format!(
+                "Invalid upload action. Found: {}, expected one of: screen, run, or none",
+                s
+            )),
+        }
+    }
+}
+
+pub fn upload(
+    path: &Utf8Path,
+    opts: UploadOpts,
+    action: UploadAction,
+    build_args: &[impl AsRef<OsStr>],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut artifact = None;
+    if let Some(path) = opts.file {
+        if opts.strip {
+            artifact = Some(finish_binary(&path));
+        } else {
+            artifact = Some(path);
+        }
+    } else {
+        build(path, build_args, false, |new_artifact| {
+            let mut bin_path = new_artifact.clone();
+            bin_path.set_extension("bin");
+            artifact = Some(bin_path);
+            finish_binary(&new_artifact);
+        });
+    }
+    let artifact =
+        artifact.expect("Binary not found! Try explicitly providing one with --path (-p)");
+    Command::new("pros")
+        .args([
+            "upload",
+            "--target",
+            "v5",
+            "--slot",
+            &opts.slot.to_string(),
+            "--after",
+            match action {
+                UploadAction::Screen => "screen",
+                UploadAction::Run => "run",
+                UploadAction::None => "none",
+            },
+            artifact.as_str(),
+        ])
+        .spawn_handling_not_found()?
+        .wait()?;
+    Ok(())
 }
 
 #[cfg(target_os = "windows")]
