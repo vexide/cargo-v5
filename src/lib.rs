@@ -48,9 +48,26 @@ impl CommandExt for Command {
 
 const TARGET_PATH: &str = "armv7a-vexos-eabi.json";
 
+/// Common Cargo options to forward.
+#[derive(Args, Debug)]
+pub struct BuildOpts {
+    #[clap(long, short)]
+    release: bool,
+    #[clap(long, short)]
+    example: Option<String>,
+    #[clap(long, short)]
+    features: Vec<String>,
+    #[clap(long, short)]
+    all_features: bool,
+    #[clap(long, short)]
+    no_default_features: bool,
+    #[clap(last = true)]
+    args: Vec<String>,
+}
+
 pub fn build(
     path: &Utf8Path,
-    args: &[impl AsRef<OsStr>],
+    opts: BuildOpts,
     for_simulator: bool,
     mut handle_executable: impl FnMut(Utf8PathBuf),
 ) {
@@ -104,7 +121,27 @@ pub fn build(
             .stdout(Stdio::piped());
     }
 
-    build_cmd.args(args);
+    if opts.release {
+        build_cmd.arg("--release");
+    }
+
+    if let Some(example) = opts.example {
+        build_cmd.arg("--example").arg(example);
+    }
+
+    if !opts.features.is_empty() {
+        build_cmd.arg("--features").arg(opts.features.join(","));
+    }
+
+    if opts.all_features {
+        build_cmd.arg("--all-features");
+    }
+
+    if opts.no_default_features {
+        build_cmd.arg("--no-default-features");
+    }
+
+    build_cmd.args(opts.args);
 
     let mut out = build_cmd.spawn_handling_not_found().unwrap();
     let reader = std::io::BufReader::new(out.stdout.take().unwrap());
@@ -128,6 +165,8 @@ pub struct UploadOpts {
     /// been processed.
     #[clap(long, short)]
     strip: bool,
+    #[clap(flatten)]
+    build_opts: BuildOpts,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -156,7 +195,6 @@ pub fn upload(
     path: &Utf8Path,
     opts: UploadOpts,
     action: UploadAction,
-    build_args: &[impl AsRef<OsStr>],
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut artifact = None;
     if let Some(path) = opts.file {
@@ -166,7 +204,7 @@ pub fn upload(
             artifact = Some(path);
         }
     } else {
-        build(path, build_args, false, |new_artifact| {
+        build(path, opts.build_opts, false, |new_artifact| {
             let mut bin_path = new_artifact.clone();
             bin_path.set_extension("bin");
             artifact = Some(bin_path);
