@@ -74,7 +74,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             });
         }
-        Commands::Upload { opts, action } => upload(&path, opts, action)?,
+        Commands::Upload { opts, action } => upload(&path, opts, action, |_| {})?,
         Commands::Sim { ui, opts } => {
             let mut artifact = None;
             build(&path, opts, true, |new_artifact| {
@@ -89,19 +89,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
         Commands::Run { upload_opts } => {
-            let term = thread::spawn(|| {
-                // Delay allows the upload process some time to get started.
-                sleep(Duration::from_millis(500));
-                Command::new("pros")
-                    .args(["terminal", "--raw"])
-                    .spawn()
-                    .expect("Failed to start terminal")
-            });
-            upload(&path, upload_opts, UploadAction::Run)?;
-            let mut term_child = term.join().unwrap();
-            let term_res = term_child.wait()?;
-            if !term_res.success() {
-                eprintln!("Failed to start terminal: {:?}", term_res);
+            let mut term = None;
+            upload(&path, upload_opts, UploadAction::Run, |_| {
+                term = Some(thread::spawn(|| {
+                    // Delay allows the upload process some time to get started.
+                    sleep(Duration::from_millis(500));
+                    Command::new("pros")
+                        .args(["terminal", "--raw"])
+                        .spawn()
+                        .expect("Failed to start terminal")
+                }));
+            })?;
+            if let Some(term) = term {
+                let mut term_child = term.join().unwrap();
+                let term_res = term_child.wait()?;
+                if !term_res.success() {
+                    eprintln!("Failed to start terminal: {:?}", term_res);
+                }
             }
         }
     }

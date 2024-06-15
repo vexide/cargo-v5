@@ -194,6 +194,7 @@ pub fn upload(
     path: &Utf8Path,
     opts: UploadOpts,
     action: UploadAction,
+    pre_upload: impl FnOnce(&Utf8Path),
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut artifact = None;
     if let Some(path) = opts.file {
@@ -212,6 +213,7 @@ pub fn upload(
     }
     let artifact =
         artifact.expect("Binary not found! Try explicitly providing one with --path (-p)");
+    pre_upload(&artifact);
     Command::new("pros")
         .args([
             "upload",
