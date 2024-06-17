@@ -25,6 +25,7 @@ directories = "5.0.1"
 toml = "0.8.14"
 serde = { version = "1.0.203", features = ["derive"] }
 anyhow = "1.0.86"
+inquire = "0.7.5"
 
 [features]
 default = ["clap"]

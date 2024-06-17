@@ -8,6 +8,10 @@ use clap::Args;
 use config::Config;
 use fs::PathExt;
 use fs_err as fs;
+use inquire::{
+    validator::{ErrorMessage, Validation},
+    CustomType,
+};
 use std::{
     io::{self, ErrorKind},
     path::Path,
@@ -203,6 +207,17 @@ pub fn upload(
 ) -> anyhow::Result<()> {
     let slot = opts.slot
         .or(config.defaults.slot)
+        .or_else(|| {
+            CustomType::<u8>::new("Choose a program slot to upload to:")
+                .with_validator(|slot: &u8| Ok(if (1..=8).contains(slot) {
+                    Validation::Valid
+                } else {
+                    Validation::Invalid(ErrorMessage::Custom("Slot out of range".to_string()))
+                }))
+                .with_help_message("Type a slot number from 1 to 8, inclusive")
+                .prompt()
+                .ok()
+        })
         .context("No upload slot was provided; consider using the --slot flag or setting a default in the config file")?;
     let mut artifact = None;
     if let Some(path) = opts.file {
