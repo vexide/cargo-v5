@@ -1,9 +1,11 @@
+use anyhow::Context;
 use cargo_metadata::{
     camino::{Utf8Path, Utf8PathBuf},
     Message,
 };
 use cfg_if::cfg_if;
 use clap::Args;
+use config::Config;
 use fs::PathExt;
 use fs_err as fs;
 use std::{
@@ -11,6 +13,8 @@ use std::{
     path::Path,
     process::{exit, Child, Command, Stdio},
 };
+
+pub mod config;
 
 fn cargo_bin() -> std::ffi::OsString {
     std::env::var_os("CARGO").unwrap_or_else(|| "cargo".to_owned().into())
@@ -156,7 +160,7 @@ pub fn build(
 #[derive(Args, Debug)]
 pub struct UploadOpts {
     #[clap(long, short)]
-    slot: u8,
+    slot: Option<u8>,
     #[clap(long, short)]
     file: Option<Utf8PathBuf>,
     /// Convert the program to a stripped binary before uploading it.
@@ -194,8 +198,12 @@ pub fn upload(
     path: &Utf8Path,
     opts: UploadOpts,
     action: UploadAction,
+    config: &Config,
     pre_upload: impl FnOnce(&Utf8Path),
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> anyhow::Result<()> {
+    let slot = opts.slot
+        .or(config.defaults.slot)
+        .context("No upload slot was provided; consider using the --slot flag or setting a default in the config file")?;
     let mut artifact = None;
     if let Some(path) = opts.file {
         if opts.strip {
@@ -220,7 +228,7 @@ pub fn upload(
             "--target",
             "v5",
             "--slot",
-            &opts.slot.to_string(),
+            &slot.to_string(),
             "--after",
             match action {
                 UploadAction::Screen => "screen",
