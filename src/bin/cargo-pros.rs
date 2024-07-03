@@ -1,8 +1,5 @@
 use cargo_metadata::camino::Utf8PathBuf;
-use cargo_pros::{
-    build, config::Config, finish_binary, launch_simulator, upload, BuildOpts, UploadAction,
-    UploadOpts,
-};
+use cargo_pros::{commands::{build::{build, BuildOpts}, simulator::launch_simulator, upload::{finish_binary, upload, UploadAction, UploadOpts}}, config::Config};
 use clap::{Args, Parser, Subcommand};
 use std::{
     process::Command,
@@ -56,7 +53,7 @@ enum Commands {
     /// Build, upload, start, and view the serial output of a vexide project.
     Run {
         #[command(flatten)]
-        upload_opts: UploadOpts,
+        opts: UploadOpts,
     },
     /// Manage the configuration file.
     Config {
@@ -97,11 +94,11 @@ fn main() -> anyhow::Result<()> {
                     .as_ref(),
             );
         }
-        Commands::Run { upload_opts } => {
+        Commands::Run { opts } => {
             let mut term = None;
             upload(
                 &path,
-                upload_opts,
+                opts,
                 UploadAction::Run,
                 &Config::load()?,
                 |_| {
