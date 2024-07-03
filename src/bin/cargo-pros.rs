@@ -72,9 +72,6 @@ enum ConfigCommands {
 }
 
 fn main() -> anyhow::Result<()> {
-    #[cfg(feature = "legacy-pros-rs-support")]
-    println!("cargo-pros is using legacy pros-rs support. Please consider upgrading to the new vexide crate.");
-
     let Cli::Pros(args) = Cli::parse();
     let path = args.path;
 

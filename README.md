@@ -42,8 +42,3 @@ slot = 1
 ### Properties
 
 - `defaults.slot` (integer): Set the default program slot to upload to.
-
-## Compatability
-
-By default cargo-pros only supports [vexide](https://crates.io/crates/vexide) projects.
-In order to support pros-rs projects you must enable the `legacy-pros-rs-support` feature.

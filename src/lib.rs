@@ -34,18 +34,8 @@ impl CommandExt for Command {
         self.spawn().map_err(|err| match err.kind() {
             ErrorKind::NotFound => {
                 eprintln!("error: command `{}` not found", command_name);
-                #[cfg(feature = "legacy-pros-rs-support")]
-                {
-                    eprintln!(
-                        "Please refer to the documentation for installing pros-rs' dependencies on your platform."
-                    );
-                    eprintln!("> https://github.com/vexide/pros-rs#compiling");
-                }
-                #[cfg(not(feature = "legacy-pros-rs-support"))]
-                {
-                    eprintln!("Please refer to the documentation for installing vexide's dependencies on your platform.");
-                    eprintln!("> https://github.com/vexide/vexide#compiling");
-                }
+                eprintln!("Please refer to the documentation for installing vexide's dependencies on your platform.");
+                eprintln!("> https://github.com/vexide/vexide#compiling");
                 exit(1);
             }
             _ => err,
@@ -112,10 +102,7 @@ pub fn build(
             .arg("--config=build.rustflags=['-Ctarget-feature=+atomics,+bulk-memory,+mutable-globals','-Clink-arg=--shared-memory','-Clink-arg=--export-table']")
             .stdout(Stdio::piped());
     } else {
-        #[cfg(feature = "legacy-pros-rs-support")]
-        let target = include_str!("targets/pros-rs.json");
-        #[cfg(not(feature = "legacy-pros-rs-support"))]
-        let target = include_str!("targets/vexide.json");
+        let target = include_str!("targets/armv7a-vex-v5.json");
         if !target_path.exists() {
             fs::create_dir_all(target_path.parent().unwrap()).unwrap();
             fs::write(&target_path, target).unwrap();
@@ -257,63 +244,6 @@ pub fn upload(
     Ok(())
 }
 
-#[cfg(all(target_os = "windows", feature = "legacy-pros-rs-support"))]
-fn find_objcopy_path_windows() -> Option<String> {
-    use std::path::PathBuf;
-    let arm_install_path =
-        PathBuf::from("C:\\Program Files (x86)\\Arm GNU Toolchain arm-none-eabi");
-    let mut versions = fs::read_dir(arm_install_path).ok()?;
-    let install = versions.next()?.ok()?.path();
-    let path = install.join("bin").join("arm-none-eabi-objcopy.exe");
-    Some(path.to_string_lossy().to_string())
-}
-
-#[cfg(feature = "legacy-pros-rs-support")]
-fn objcopy_path() -> String {
-    #[cfg(target_os = "windows")]
-    let objcopy_path = find_objcopy_path_windows();
-
-    #[cfg(not(target_os = "windows"))]
-    let objcopy_path = None;
-
-    objcopy_path.unwrap_or_else(|| "arm-none-eabi-objcopy".to_owned())
-}
-
-#[cfg(feature = "legacy-pros-rs-support")]
-pub fn finish_binary(bin: &Utf8Path) -> Utf8PathBuf {
-    println!("Stripping Binary: {}", bin);
-    let objcopy = objcopy_path();
-    let strip = std::process::Command::new(&objcopy)
-        .args([
-            "--strip-symbol=install_hot_table",
-            "--strip-symbol=__libc_init_array",
-            "--strip-symbol=_PROS_COMPILE_DIRECTORY",
-            "--strip-symbol=_PROS_COMPILE_TIMESTAMP",
-            "--strip-symbol=_PROS_COMPILE_TIMESTAMP_INT",
-            bin.as_str(),
-            &format!("{}.stripped", bin),
-        ])
-        .spawn_handling_not_found()
-        .unwrap();
-    strip.wait_with_output().unwrap();
-    let out = bin.with_extension("bin");
-    let elf_to_bin = std::process::Command::new(&objcopy)
-        .args([
-            "-O",
-            "binary",
-            "-R",
-            ".hot_init",
-            &format!("{}.stripped", bin),
-            out.as_str(),
-        ])
-        .spawn_handling_not_found()
-        .unwrap();
-    elf_to_bin.wait_with_output().unwrap();
-    println!("Output binary: {}", out);
-    out
-}
-
-#[cfg(not(feature = "legacy-pros-rs-support"))]
 pub fn finish_binary(bin: &Utf8Path) -> Utf8PathBuf {
     println!("Stripping Binary: {}", bin);
     let out = bin.with_extension("bin");

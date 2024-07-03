@@ -31,8 +31,6 @@ inquire = "0.7.5"
 default = ["clap"]
 clap = ["dep:clap"]
 
-legacy-pros-rs-support = []
-
 [[bin]]
 name = "cargo-pros"
 required-features = ["clap"]
