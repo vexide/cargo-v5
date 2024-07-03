@@ -31,9 +31,9 @@ Before releasing:
 
 ### Added
 
-- Added `cargo pros sim` command to easily simulate the current project. Cargo-pros will use Cargo's project metadata to provide a better simulator experience.
+- Added `cargo pros sim` command to easily simulate the current project. Cargo-v5 will use Cargo's project metadata to provide a better simulator experience.
 
 ### Removed
 
-[unreleased]: https://github.com/pros-rs/cargo-pros/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/pros-rs/cargo-pros/releases/tag/v0.3.0
+[unreleased]: https://github.com/pros-rs/vexide/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/pros-rs/vexide/releases/tag/v0.3.0

@@ -1,15 +1,15 @@
 [package]
-name = "cargo-pros"
+name = "cargo-v5"
 version = "0.6.0"
 edition = "2021"
 authors = [
-    "pros-rs",
+    "vexide",
     "Gavin Niederman <gavinniederman@gmail.com>",
     "doinkythederp <doinkythederp@icloud.com>",
 ]
 license = "MIT"
-description = "A cargo subcommand for managing PROS projects"
-repository = "https://github.com/pros-rs/cargo-pros"
+description = "A cargo subcommand for managing vexide projects"
+repository = "https://github.com/vexide/cargo-pros"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -32,5 +32,5 @@ default = ["clap"]
 clap = ["dep:clap"]
 
 [[bin]]
-name = "cargo-pros"
+name = "cargo-v5"
 required-features = ["clap"]

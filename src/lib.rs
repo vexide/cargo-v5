@@ -3,8 +3,8 @@ use std::{
     process::{exit, Child, Command},
 };
 
-pub mod config;
 pub mod commands;
+pub mod config;
 
 pub trait CommandExt {
     fn spawn_handling_not_found(&mut self) -> io::Result<Child>;

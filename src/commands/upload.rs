@@ -7,11 +7,10 @@ use inquire::{
 };
 use std::process::Command;
 
-use crate::CommandExt;
 use crate::config::Config;
+use crate::CommandExt;
 
 use super::build::{build, BuildOpts};
-
 
 #[derive(Args, Debug)]
 pub struct UploadOpts {

@@ -11,7 +11,7 @@ pub struct Config {
 
 impl Config {
     pub fn path() -> anyhow::Result<std::path::PathBuf> {
-        if let Some(proj_dirs) = ProjectDirs::from("dev", "vexide", "cargo-pros") {
+        if let Some(proj_dirs) = ProjectDirs::from("dev", "vexide", "cargo-v5") {
             Ok(proj_dirs.preference_dir().join("config.toml"))
         } else {
             bail!("Could not find user home directory")
@@ -25,7 +25,7 @@ impl Config {
 
         if config_path.exists() {
             let config =
-                fs_err::read_to_string(&config_path).context("Reading cargo-pros config file")?;
+                fs_err::read_to_string(&config_path).context("Reading cargo-v5 config file")?;
             Ok(toml::from_str(&config)
                 .with_context(|| format!("Parsing config file at {:?}", config_path))?)
         } else {

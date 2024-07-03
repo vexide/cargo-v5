@@ -1,5 +1,12 @@
 use cargo_metadata::camino::Utf8PathBuf;
-use cargo_pros::{commands::{build::{build, BuildOpts}, simulator::launch_simulator, upload::{finish_binary, upload, UploadAction, UploadOpts}}, config::Config};
+use cargo_v5::{
+    commands::{
+        build::{build, BuildOpts},
+        simulator::launch_simulator,
+        upload::{finish_binary, upload, UploadAction, UploadOpts},
+    },
+    config::Config,
+};
 use clap::{Args, Parser, Subcommand};
 use std::{
     process::Command,
@@ -96,22 +103,16 @@ fn main() -> anyhow::Result<()> {
         }
         Commands::Run { opts } => {
             let mut term = None;
-            upload(
-                &path,
-                opts,
-                UploadAction::Run,
-                &Config::load()?,
-                |_| {
-                    term = Some(thread::spawn(|| {
-                        // Delay allows the upload process some time to get started.
-                        sleep(Duration::from_millis(500));
-                        Command::new("pros")
-                            .args(["terminal", "--raw"])
-                            .spawn()
-                            .expect("Failed to start terminal")
-                    }));
-                },
-            )?;
+            upload(&path, opts, UploadAction::Run, &Config::load()?, |_| {
+                term = Some(thread::spawn(|| {
+                    // Delay allows the upload process some time to get started.
+                    sleep(Duration::from_millis(500));
+                    Command::new("pros")
+                        .args(["terminal", "--raw"])
+                        .spawn()
+                        .expect("Failed to start terminal")
+                }));
+            })?;
             if let Some(term) = term {
                 let mut term_child = term.join().unwrap();
                 let term_res = term_child.wait()?;

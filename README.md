@@ -1,13 +1,13 @@
-# cargo-pros
+# cargo-v5
 
 > Easily manage vexide projects
 
-cargo-pros is a command line tool that makes it simple to build, upload, and simulate [vexide](https://vexide.dev) projects.
+cargo-v5 is a command line tool that makes it simple to build, upload, and simulate [vexide](https://vexide.dev) projects.
 
 ## Install
 
 ```bash
-cargo install cargo-pros
+cargo install cargo-v5
 ```
 
 ## Usage
@@ -15,19 +15,19 @@ cargo install cargo-pros
 Build a vexide project:
 
 ```bash
-cargo pros build
+cargo v5 build
 ```
 
 Upload a vexide project over USB:
 
 ```bash
-cargo pros upload --slot 1
+cargo v5 upload --slot 1
 ```
 
 Upload, run, and view the serial output of a vexide project:
 
 ```bash
-cargo pros upload --slot 1
+cargo v5 upload --slot 1
 ```
 
 ## Config
