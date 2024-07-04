@@ -7,10 +7,9 @@ use inquire::{
 };
 use std::process::Command;
 
-use crate::config::Config;
-use crate::CommandExt;
+use crate::manifest::Config;
 
-use super::build::{build, BuildOpts};
+use super::build::{build, objcopy, BuildOpts};
 
 #[derive(Args, Debug)]
 pub struct UploadOpts {
@@ -18,11 +17,6 @@ pub struct UploadOpts {
     slot: Option<u8>,
     #[clap(long, short)]
     file: Option<Utf8PathBuf>,
-    /// Convert the program to a stripped binary before uploading it.
-    /// This is necessary for uploading an ELF that has not yet
-    /// been processed.
-    #[clap(long, short)]
-    strip: bool,
     #[clap(flatten)]
     build_opts: BuildOpts,
 }
@@ -72,17 +66,13 @@ pub fn upload(
         .context("No upload slot was provided; consider using the --slot flag or setting a default in the config file")?;
     let mut artifact = None;
     if let Some(path) = opts.file {
-        if opts.strip {
-            artifact = Some(finish_binary(&path));
-        } else {
-            artifact = Some(path);
-        }
+        artifact = Some(objcopy(&path));
     } else {
         build(path, opts.build_opts, false, |new_artifact| {
             let mut bin_path = new_artifact.clone();
             bin_path.set_extension("bin");
             artifact = Some(bin_path);
-            finish_binary(&new_artifact);
+            objcopy(&new_artifact);
         });
     }
     let artifact =
@@ -103,18 +93,7 @@ pub fn upload(
             },
             artifact.as_str(),
         ])
-        .spawn_handling_not_found()?
+        .spawn()?
         .wait()?;
     Ok(())
-}
-
-pub fn finish_binary(bin: &Utf8Path) -> Utf8PathBuf {
-    println!("Stripping Binary: {}", bin);
-    let out = bin.with_extension("bin");
-    Command::new("rust-objcopy")
-        .args(["-O", "binary", bin.as_str(), out.as_str()])
-        .spawn_handling_not_found()
-        .unwrap();
-    println!("Output binary: {}", out);
-    out
 }

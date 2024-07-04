@@ -113,6 +113,7 @@ dependencies = [
  "cargo_metadata",
  "cfg-if",
  "clap",
+ "clap-cargo",
  "directories",
  "fs-err",
  "home",
@@ -150,6 +151,17 @@ checksum = "90bc066a67923782aa8515dbaea16946c5bcc5addbd668bb80af688e53e548a0"
 dependencies = [
  "clap_builder",
  "clap_derive",
+]
+
+[[package]]
+name = "clap-cargo"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f6e2fd20c8f8c7cc395f69a86a61eb9d93e1de8fadc00338508cde2ffc656388"
+dependencies = [
+ "anstyle",
+ "cargo_metadata",
+ "clap",
 ]
 
 [[package]]

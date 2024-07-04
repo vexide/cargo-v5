@@ -12,7 +12,7 @@ pub struct Config {
 impl Config {
     pub fn path() -> anyhow::Result<std::path::PathBuf> {
         if let Some(proj_dirs) = ProjectDirs::from("dev", "vexide", "cargo-v5") {
-            Ok(proj_dirs.preference_dir().join("config.toml"))
+            Ok(proj_dirs.preference_dir().join("v5.toml"))
         } else {
             bail!("Could not find user home directory")
         }

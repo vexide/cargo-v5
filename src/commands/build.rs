@@ -1,4 +1,4 @@
-use std::process::{exit, Command, Stdio};
+use std::{io::ErrorKind, process::{exit, Command, Stdio}};
 
 use cargo_metadata::{
     camino::{Utf8Path, Utf8PathBuf},
@@ -6,8 +6,6 @@ use cargo_metadata::{
 };
 use clap::Args;
 use fs_err as fs;
-
-use crate::CommandExt;
 
 pub const TARGET_PATH: &str = "armv7a-vexos-eabi.json";
 
@@ -129,7 +127,7 @@ pub fn build(
 
     build_cmd.args(opts.args);
 
-    let mut out = build_cmd.spawn_handling_not_found().unwrap();
+    let mut out = build_cmd.spawn().unwrap();
     let reader = std::io::BufReader::new(out.stdout.take().unwrap());
     for message in Message::parse_stream(reader) {
         if let Message::CompilerArtifact(artifact) = message.unwrap() {
@@ -138,4 +136,26 @@ pub fn build(
             }
         }
     }
+}
+
+pub fn objcopy(elf: &Utf8Path) -> Utf8PathBuf {
+    println!("Creating binary: {}", elf);
+    let bin = elf.with_extension("bin");
+    Command::new("rust-objcopy")
+        .args(["-O", "binary", elf.as_str(), bin.as_str()])
+        .spawn()
+        .map_err(|err| match err.kind() {
+            ErrorKind::NotFound => {
+                eprintln!("ERROR: `rust-objcopy` not found");
+                eprintln!(
+                    " hint: cargo-binutils is missing. This can be installed using `cargo install cargo-binutils`"
+                );
+                std::process::exit(1);
+            }
+            _ => err,
+        })
+        .unwrap();
+    println!("Output binary: {}", bin);
+
+    bin
 }

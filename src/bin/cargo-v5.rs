@@ -1,11 +1,11 @@
 use cargo_metadata::camino::Utf8PathBuf;
 use cargo_v5::{
     commands::{
-        build::{build, BuildOpts},
+        build::{build, objcopy, BuildOpts},
         simulator::launch_simulator,
-        upload::{finish_binary, upload, UploadAction, UploadOpts},
+        upload::{upload, UploadAction, UploadOpts},
     },
-    config::Config,
+    manifest::Config,
 };
 use clap::{Args, Parser, Subcommand};
 use std::{
@@ -21,7 +21,7 @@ cargo_subcommand_metadata::description!("Manage vexide projects");
 enum Cli {
     /// Manage vexide projects.
     #[clap(version)]
-    Pros(Opt),
+    V5(Opt),
 }
 
 #[derive(Args, Debug)]
@@ -76,14 +76,14 @@ enum ConfigCommands {
 }
 
 fn main() -> anyhow::Result<()> {
-    let Cli::Pros(args) = Cli::parse();
+    let Cli::V5(args) = Cli::parse();
     let path = args.path;
 
     match args.command {
         Commands::Build { simulator, opts } => {
             build(&path, opts, simulator, |path| {
                 if !simulator {
-                    finish_binary(&path);
+                    objcopy(&path);
                 }
             });
         }
