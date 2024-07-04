@@ -5,13 +5,13 @@ use clap::ValueEnum;
 use crate::commands::upload::ProgramIcon;
 
 #[derive(Default, Debug, Clone, Copy, Eq, PartialEq)]
-pub struct Manifest {
+pub struct Metadata {
     pub slot: Option<u8>,
     pub icon: Option<ProgramIcon>,
     pub compress: Option<bool>,
 }
 
-impl Manifest {
+impl Metadata {
     pub fn new(pkg: &Package) -> anyhow::Result<Self> {
         if let Some(metadata) = pkg.metadata.as_object() {
             if let Some(v5_metadata) = metadata.get("v5").and_then(|m| m.as_object()) {

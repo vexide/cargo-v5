@@ -1,3 +1,4 @@
+use anyhow::Context;
 use cargo_metadata::camino::Utf8Path;
 use clap::ValueEnum;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -17,11 +18,17 @@ use vex_v5_serial::{
     },
 };
 
+/// An action to perform after uploading a program.
 #[derive(ValueEnum, Debug, Clone, Copy, Default)]
 pub enum AfterUpload {
+    /// Do nothing.
     #[default]
     None,
+
+    /// Execute the program.
     Run,
+
+    /// Show the program's "run" screen on the brain
     #[clap(name = "screen")]
     ShowScreen,
 }
@@ -36,6 +43,7 @@ impl From<AfterUpload> for FileExitAction {
     }
 }
 
+/// A prograShow the program's "Run"m file icon.
 #[derive(ValueEnum, Default, Debug, Clone, Copy, Eq, PartialEq)]
 #[repr(u16)]
 pub enum ProgramIcon {
@@ -72,6 +80,7 @@ pub enum ProgramIcon {
 
 const PROGRESS_CHARS: &str = "⣿⣦⣀";
 
+/// Upload a program to the brain.
 pub async fn upload(
     path: &Utf8Path,
     after: AfterUpload,
@@ -84,9 +93,12 @@ pub async fn upload(
 ) -> anyhow::Result<()> {
     let multi_progress = MultiProgress::new();
 
+    // indicatif is a little dumb with timestamp handling, so we're going to do this all custom,
+    // which unfortunately requires us to juggle timestamps across threads.
     let ini_timestamp = Arc::new(Mutex::new(None));
     let bin_timestamp = Arc::new(Mutex::new(None));
 
+    // Progress bars
     let ini_progress = Arc::new(Mutex::new(
         multi_progress
             .add(ProgressBar::new(10000))
@@ -99,7 +111,6 @@ pub async fn upload(
             )
             .with_message("INI"),
     ));
-
     let bin_progress = Arc::new(Mutex::new(
         multi_progress
             .add(ProgressBar::new(10000))
@@ -111,14 +122,23 @@ pub async fn upload(
             .with_message("BIN"),
     ));
 
-    // Find all vex devices on the serial ports
-    let devices = serial::find_devices()?;
+    // Find all vex devices on serial ports.
+    let devices = serial::find_devices()
+        .context("Failed to find avialable serial ports!")?;
 
-    // Open a connection to the device
-    let mut connection = devices[0].connect(Duration::from_secs(5))?;
+    // Open a connection to the device.
+    let mut connection = devices
+        .get(0)
+        .context("No V5 devices found! Ensure that the device plugged in and powered on with a stable connection, then try again.")?
+        .connect(Duration::from_secs(5))
+        .context("Failed to connect to V5 device. Ensure that other programs are not currently using the COM port.")?;
 
+    // Read our program file into a buffer.
+    //
+    // We're uploading a monolith (single-bin, no hot/cold linking).
     let data = ProgramData::Monolith(tokio::fs::read(path).await?);
 
+    // Switch to radio download channel if uploading from a controller.
     if connection.connection_type() == ConnectionType::Controller {
         connection
             .packet_handshake::<SelectRadioChannelReplyPacket>(
@@ -134,6 +154,7 @@ pub async fn upload(
         tokio::time::sleep(Duration::from_millis(250)).await;
     }
 
+    // Upload the program.
     connection
         .execute_command(UploadProgram {
             name,
@@ -145,6 +166,7 @@ pub async fn upload(
             data,
             after_upload: after.into(),
             ini_callback: {
+                // Update ini file progressbar. This code is a mess, yeah.
                 let ini_progres_clone = Arc::clone(&ini_progress);
                 let ini_timestamp_clone = Arc::clone(&ini_timestamp);
                 Some(Box::new(move |percent| {
@@ -168,6 +190,7 @@ pub async fn upload(
                 }))
             },
             monolith_callback: {
+                // Update bin file progressbar. This code is a mess, yeah.
                 let bin_progres_clone = Arc::clone(&bin_progress);
                 let bin_timestamp_clone = Arc::clone(&bin_timestamp);
                 Some(Box::new(move |percent| {
@@ -192,8 +215,10 @@ pub async fn upload(
             hot_callback: None,
             cold_callback: None,
         })
-        .await?;
+        .await
+        .context("Failed to upload program")?;
 
+    // Tell the progressbars that we're done once uploading is complete, allowing further messages to be printed to stdout.
     ini_progress.lock().await.finish();
     bin_progress.lock().await.finish();
 

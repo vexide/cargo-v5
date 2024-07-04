@@ -6,7 +6,7 @@ use cargo_v5::{
         simulator::launch_simulator,
         upload::{upload, AfterUpload, ProgramIcon},
     },
-    manifest::Manifest,
+    metadata::Metadata,
 };
 use clap::{Parser, Subcommand};
 use inquire::{
@@ -17,6 +17,7 @@ use tokio::{runtime::Handle, task::block_in_place};
 
 cargo_subcommand_metadata::description!("Manage vexide projects");
 
+/// Cargo's CLI arguments
 #[derive(Parser, Debug)]
 #[clap(name = "cargo", bin_name = "cargo")]
 enum Cargo {
@@ -31,6 +32,7 @@ enum Cargo {
     },
 }
 
+/// A possible `cargo v5` subcommand.
 #[derive(Subcommand, Debug)]
 enum Command {
     /// Build a project for the V5 brain.
@@ -38,63 +40,66 @@ enum Command {
         /// Build a binary for the WASM simulator instead of the native V5 target.
         #[arg(long, short)]
         simulator: bool,
+
+        /// Arguments forwarded to `cargo`.
         #[clap(flatten)]
-        opts: CargoOpts,
+        cargo_opts: CargoOpts,
     },
     /// Build and upload a vexide project to the V5 brain.
     Upload {
-        /// An ELF file to upload.
+        /// An ELF build artifact to upload.
         #[arg(long)]
         file: Option<Utf8PathBuf>,
 
         #[arg(long, default_value = "none")]
         after: AfterUpload,
 
-        /// Program slot
+        /// Program slot.
         #[arg(short, long)]
         slot: Option<u8>,
 
-        /// The name of the program
+        /// The name of the program.
         #[arg(long)]
         name: Option<String>,
 
-        /// The description of the program
+        /// The description of the program.
         #[arg(short, long)]
         description: Option<String>,
 
-        /// The icon to appear on the program
+        /// The program's file icon.
         #[arg(short, long)]
         icon: Option<ProgramIcon>,
 
-        /// Whether or not the program should be compressed before uploading
+        /// Skip gzip compression before uploading. Will result in longer upload times.
         #[arg(short, long)]
         uncompressed: Option<bool>,
 
+        /// Arguments forwarded to `cargo`.
         #[clap(flatten)]
-        build_opts: CargoOpts,
+        cargo_opts: CargoOpts,
     },
     /// Build a project and run it in the simulator.
     Sim {
         #[arg(long)]
         ui: Option<String>,
-        #[clap(flatten)]
-        opts: CargoOpts,
-    },
-}
 
-#[derive(Subcommand, Debug)]
-enum ConfigCommand {
-    /// Prints the path of the configuration file.
-    Print,
+        /// Arguments forwarded to `cargo`.
+        #[clap(flatten)]
+        cargo_opts: CargoOpts,
+    },
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Parse CLI arguments
     let Cargo::V5 { command, path } = Cargo::parse();
 
     match command {
-        Command::Build { simulator, opts } => {
-            build(&path, opts, simulator, |path| {
+        Command::Build {
+            simulator,
+            cargo_opts,
+        } => {
+            build(&path, cargo_opts, simulator, |path| {
                 if !simulator {
                     block_in_place(|| {
                         Handle::current().block_on(async move {
@@ -102,7 +107,8 @@ async fn main() -> anyhow::Result<()> {
                         });
                     });
                 }
-            }).await;
+            })
+            .await;
         }
         Command::Upload {
             file,
@@ -112,32 +118,45 @@ async fn main() -> anyhow::Result<()> {
             description,
             icon,
             uncompressed,
-            build_opts,
+            cargo_opts,
         } => {
-            let metadata = block_in_place(|| {
-                cargo_metadata::MetadataCommand::new().no_deps().exec()
-            })?;
+            // Uploading has the option to use the `package.metadata.v5` table for default configuration options.
+            //
+            // We'll use `cargo-metadata` to parse the output of `cargo metadata` to parse the current `Cargo.toml`
+            // files in the workspace directory.
+            let cargo_metadata =
+                block_in_place(|| cargo_metadata::MetadataCommand::new().no_deps().exec())?;
 
-            let package = metadata
+            // Locate all package tables and find either the first one with `package.metadata.v5` the first available
+            // package.
+            let package = cargo_metadata
                 .packages
                 .iter()
                 .find(|p| {
                     if let Some(v5_metadata) = p.metadata.get("v5") {
-                        v5_metadata.is_object()                        
+                        v5_metadata.is_object()
                     } else {
                         false
                     }
                 })
-                .or(metadata.packages.first())
+                .or(cargo_metadata.packages.first())
                 .context("Could not locate a valid Cargo package. Is this a Rust project?")?;
-            let manifest = Manifest::new(package)?;
 
+            // Attempt to serialize `package.metadata.v5` into a [`Metadata`] struct. This will just Default::default to
+            // all `None`s if it can't find a specific field, or error if the field is malformed.
+            let metadata = Metadata::new(package)?;
+
+            // Get the build artifact we'll be uploading with.
+            //
+            // The user either directly passed an ELF file through the `--file` argument, or they didn't and we need to run
+            // `cargo build`.
             let mut artifact = None;
-
             if let Some(file) = file {
+                // Convert ELF -> BIN using objcopy before we upload.
                 artifact = Some(objcopy(&file).await)
             } else {
-                build(&path, build_opts, false, |new_artifact| {
+                // Run cargo build, then objcopy.
+                build(&path, cargo_opts, false, |new_artifact| {
                     let mut bin_path = new_artifact.clone();
                     bin_path.set_extension("bin");
                     block_in_place(|| {
@@ -146,10 +165,14 @@ async fn main() -> anyhow::Result<()> {
                         });
                     });
                     artifact = Some(bin_path);
-                }).await;
+                })
+                .await;
             }
 
-            let slot = slot.or(manifest.slot).or_else(|| {
+            // The program's slot number is absolutely required for uploading. If the slot argument isn't directly provided:
+            // - Check for the `package.metadata.v5.slot` field in Cargo.toml.
+            // - If that doesn't exist, directly prompt the user asking what slot to upload to.
+            let slot = slot.or(metadata.slot).or_else(|| {
                 CustomType::<u8>::new("Choose a program slot to upload to:")
                     .with_validator(|slot: &u8| Ok(if (1..=8).contains(slot) {
                         Validation::Valid
@@ -162,32 +185,40 @@ async fn main() -> anyhow::Result<()> {
             })
             .context("No upload slot was provided; consider using the --slot flag or using the `package.metadata.v5.slot` field in Cargo.toml.")?;
 
+            // Pass information to the upload routine.
             upload(
-                &artifact.expect("ELF artifact not found! Try explicitly providing one with `--file` (`-f`)."),
+                &artifact.expect(
+                    "ELF artifact not found! Try explicitly providing one with `--file` (`-f`).",
+                ),
                 after,
                 slot,
-                name.unwrap_or(package.name.clone()),
-                description.or(package.description.clone()).unwrap_or("Uploaded with cargo-v5.".to_string()),
-                icon.or(manifest.icon).unwrap_or_default(),
-                "Rust".to_string(),
+                name.unwrap_or(package.name.clone()), // Fallback to crate name if no name was provided
+                description
+                    .or(package.description.clone())
+                    .unwrap_or("Uploaded with cargo-v5.".to_string()), // Fallback to crate description if no description was provided
+                icon.or(metadata.icon).unwrap_or_default(),
+                "Rust".to_string(), // `program_type` hardcoded for now, maybe configurable in the future.
                 match uncompressed {
                     Some(val) => !val,
-                    None => manifest.compress.unwrap_or(true)
+                    None => metadata.compress.unwrap_or(true),
                 },
-            ).await?;
+            )
+            .await?;
         }
-        Command::Sim { ui, opts } => {
+        Command::Sim { ui, cargo_opts } => {
             let mut artifact = None;
-            build(&path, opts, true, |new_artifact| {
+            build(&path, cargo_opts, true, |new_artifact| {
                 artifact = Some(new_artifact);
-            }).await;
+            })
+            .await;
             launch_simulator(
                 ui.clone(),
                 path.as_ref(),
                 artifact
                     .expect("Binary target not found (is this a library?)")
                     .as_ref(),
-            ).await;
+            )
+            .await;
         }
     }
 
