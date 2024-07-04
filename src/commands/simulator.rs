@@ -1,11 +1,7 @@
 use cfg_if::cfg_if;
-use fs::PathExt;
-use fs_err as fs;
-use std::{
-    io::ErrorKind,
-    path::Path,
-    process::{exit, Command},
-};
+use fs_err::PathExt;
+use std::{io::ErrorKind, path::Path, process::exit};
+use tokio::process::Command;
 
 #[cfg(target_os = "windows")]
 fn find_simulator_path_windows() -> Option<String> {
@@ -38,7 +34,7 @@ fn find_simulator() -> Command {
     }
 }
 
-pub fn launch_simulator(ui: Option<String>, workspace_dir: &Path, binary_path: &Path) {
+pub async fn launch_simulator(ui: Option<String>, workspace_dir: &Path, binary_path: &Path) {
     let mut command = if let Some(ui) = ui {
         Command::new(ui)
     } else {
@@ -49,8 +45,9 @@ pub fn launch_simulator(ui: Option<String>, workspace_dir: &Path, binary_path: &
         .arg(binary_path.fs_err_canonicalize().unwrap())
         .arg(workspace_dir.fs_err_canonicalize().unwrap());
 
-    let command_name = command.get_program().to_string_lossy().to_string();
+    let command_name = command.as_std().get_program().to_string_lossy().to_string();
     let args = command
+        .as_std()
         .get_args()
         .map(|arg| arg.to_string_lossy().to_string())
         .collect::<Vec<_>>();
@@ -71,7 +68,8 @@ pub fn launch_simulator(ui: Option<String>, workspace_dir: &Path, binary_path: &
             _ => err,
         })
         .unwrap()
-        .wait();
+        .wait()
+        .await;
     if let Err(err) = res {
         eprintln!("Failed to launch simulator: {}", err);
     }

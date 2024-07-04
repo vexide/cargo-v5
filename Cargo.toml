@@ -11,8 +11,8 @@ license = "MIT"
 description = "A cargo subcommand for managing vexide projects"
 repository = "https://github.com/vexide/cargo-pros"
 
-[package.metadata.v5.program]
-icon = "cool-x"
+[package.metadata.v5]
+icon = "robot"
 slot = 1
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -21,7 +21,7 @@ slot = 1
 cargo-subcommand-metadata = "0.1.0"
 cargo_metadata = "0.18.0"
 cfg-if = "1.0.0"
-fs-err = "2.9.0"
+fs-err = { version = "2.9.0", features = ["tokio"] }
 home = "0.5.5"
 serde_json = "1.0.106"
 clap = { version = "4.4.2", features = ["derive"], optional = true }
@@ -30,7 +30,9 @@ toml = "0.8.14"
 serde = { version = "1.0.203", features = ["derive"] }
 anyhow = "1.0.86"
 inquire = "0.7.5"
-clap-cargo = { version = "0.14.0", features = ["clap", "cargo_metadata"] }
+indicatif = "0.17.8"
+vex_v5_serial = { git = "https://github.com/vexide/vex-v5-serial", version = "0.0.1" }
+tokio = { version = "1.23.0", features = ["full"] }
 
 [features]
 default = ["clap"]

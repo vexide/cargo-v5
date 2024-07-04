@@ -1,28 +1,24 @@
-use std::{io::ErrorKind, process::{exit, Command, Stdio}};
+use std::{io::ErrorKind, process::{exit, Stdio}};
+use tokio::{process::Command, task::block_in_place};
 
 use cargo_metadata::{
     camino::{Utf8Path, Utf8PathBuf},
     Message,
 };
 use clap::Args;
-use fs_err as fs;
+use fs_err::tokio as fs;
 
-pub const TARGET_PATH: &str = "armv7a-vexos-eabi.json";
+pub const TARGET_PATH: &str = "armv7a-vex-v5.json";
 
 /// Common Cargo options to forward.
 #[derive(Args, Debug)]
-pub struct BuildOpts {
-    #[clap(long, short)]
-    release: bool,
-    #[clap(long, short)]
-    example: Option<String>,
-    #[clap(long, short)]
-    features: Vec<String>,
-    #[clap(long, short)]
-    all_features: bool,
-    #[clap(long, short)]
-    no_default_features: bool,
-    #[clap(last = true)]
+pub struct CargoOpts {
+    /// Arguments forwarded to cargo.
+    #[arg(
+        trailing_var_arg = true,
+        allow_hyphen_values = true,
+        value_name = "CARGO-OPTIONS"
+    )]
     args: Vec<String>,
 }
 
@@ -30,21 +26,23 @@ pub fn cargo_bin() -> std::ffi::OsString {
     std::env::var_os("CARGO").unwrap_or_else(|| "cargo".to_owned().into())
 }
 
-fn is_nightly_toolchain() -> bool {
-    let rustc = std::process::Command::new("rustc")
+async fn is_nightly_toolchain() -> bool {
+    let rustc = Command::new("rustc")
         .arg("--version")
         .output()
+        .await
         .unwrap();
     let rustc = String::from_utf8(rustc.stdout).unwrap();
     rustc.contains("nightly")
 }
 
-fn has_wasm_target() -> bool {
-    let Ok(rustup) = std::process::Command::new("rustup")
+async fn has_wasm_target() -> bool {
+    let Ok(rustup) = Command::new("rustup")
         .arg("target")
         .arg("list")
         .arg("--installed")
         .output()
+        .await
     else {
         return true;
     };
@@ -52,30 +50,28 @@ fn has_wasm_target() -> bool {
     rustup.contains("wasm32-unknown-unknown")
 }
 
-pub fn build(
+pub async fn build(
     path: &Utf8Path,
-    opts: BuildOpts,
+    opts: CargoOpts,
     for_simulator: bool,
     mut handle_executable: impl FnMut(Utf8PathBuf),
 ) {
     let target_path = path.join(TARGET_PATH);
-    let mut build_cmd = Command::new(cargo_bin());
+    let mut build_cmd = std::process::Command::new(cargo_bin());
     build_cmd
         .current_dir(path)
         .arg("build")
         .arg("--message-format")
-        .arg("json-render-diagnostics")
-        .arg("--manifest-path")
-        .arg(path.join("Cargo.toml").as_str());
+        .arg("json-render-diagnostics");
 
-    if !is_nightly_toolchain() {
+    if !is_nightly_toolchain().await {
         eprintln!("ERROR: pros-rs requires Nightly Rust features, but you're using stable.");
         eprintln!(" hint: this can be fixed by running `rustup override set nightly`");
         exit(1);
     }
 
     if for_simulator {
-        if !has_wasm_target() {
+        if !has_wasm_target().await {
             eprintln!(
                 "ERROR: simulation requires the wasm32-unknown-unknown target to be installed"
             );
@@ -94,8 +90,8 @@ pub fn build(
     } else {
         let target = include_str!("../targets/armv7a-vex-v5.json");
         if !target_path.exists() {
-            fs::create_dir_all(target_path.parent().unwrap()).unwrap();
-            fs::write(&target_path, target).unwrap();
+            fs::create_dir_all(target_path.parent().unwrap()).await.unwrap();
+            fs::write(&target_path, target).await.unwrap();
         }
         build_cmd.arg("--target");
         build_cmd.arg(&target_path);
@@ -104,41 +100,23 @@ pub fn build(
             .arg("-Zbuild-std=core,alloc,compiler_builtins")
             .stdout(Stdio::piped());
     }
-
-    if opts.release {
-        build_cmd.arg("--release");
-    }
-
-    if let Some(example) = opts.example {
-        build_cmd.arg("--example").arg(example);
-    }
-
-    if !opts.features.is_empty() {
-        build_cmd.arg("--features").arg(opts.features.join(","));
-    }
-
-    if opts.all_features {
-        build_cmd.arg("--all-features");
-    }
-
-    if opts.no_default_features {
-        build_cmd.arg("--no-default-features");
-    }
-
+    
     build_cmd.args(opts.args);
 
-    let mut out = build_cmd.spawn().unwrap();
-    let reader = std::io::BufReader::new(out.stdout.take().unwrap());
-    for message in Message::parse_stream(reader) {
-        if let Message::CompilerArtifact(artifact) = message.unwrap() {
-            if let Some(binary_path) = artifact.executable {
-                handle_executable(binary_path);
+    block_in_place(|| {
+        let mut out = build_cmd.spawn().unwrap();
+        let reader = std::io::BufReader::new(out.stdout.take().unwrap());
+        for message in Message::parse_stream(reader) {
+            if let Message::CompilerArtifact(artifact) = message.unwrap() {
+                if let Some(binary_path) = artifact.executable {
+                    handle_executable(binary_path);
+                }
             }
         }
-    }
+    });
 }
 
-pub fn objcopy(elf: &Utf8Path) -> Utf8PathBuf {
+pub async fn objcopy(elf: &Utf8Path) -> Utf8PathBuf {
     println!("Creating binary: {}", elf);
     let bin = elf.with_extension("bin");
     Command::new("rust-objcopy")
@@ -154,6 +132,9 @@ pub fn objcopy(elf: &Utf8Path) -> Utf8PathBuf {
             }
             _ => err,
         })
+        .unwrap()
+        .wait()
+        .await
         .unwrap();
     println!("Output binary: {}", bin);
 

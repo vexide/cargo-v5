@@ -1,99 +1,201 @@
-use anyhow::Context;
-use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
-use clap::Args;
-use inquire::{
-    validator::{ErrorMessage, Validation},
-    CustomType,
+use cargo_metadata::camino::Utf8Path;
+use clap::ValueEnum;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use tokio::{runtime::Handle, sync::Mutex, task::block_in_place, time::Instant};
+
+use std::{sync::Arc, time::Duration};
+
+use vex_v5_serial::{
+    commands::file::{ProgramData, UploadProgram},
+    connection::{serial, Connection, ConnectionType},
+    packets::{
+        file::FileExitAction,
+        radio::{
+            RadioChannel, SelectRadioChannelPacket, SelectRadioChannelPayload,
+            SelectRadioChannelReplyPacket,
+        },
+    },
 };
-use std::process::Command;
 
-use crate::manifest::Config;
-
-use super::build::{build, objcopy, BuildOpts};
-
-#[derive(Args, Debug)]
-pub struct UploadOpts {
-    #[clap(long, short)]
-    slot: Option<u8>,
-    #[clap(long, short)]
-    file: Option<Utf8PathBuf>,
-    #[clap(flatten)]
-    build_opts: BuildOpts,
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub enum UploadAction {
-    Screen,
-    Run,
+#[derive(ValueEnum, Debug, Clone, Copy, Default)]
+pub enum AfterUpload {
     #[default]
     None,
+    Run,
+    #[clap(name = "screen")]
+    ShowScreen,
 }
-impl std::str::FromStr for UploadAction {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "screen" => Ok(UploadAction::Screen),
-            "run" => Ok(UploadAction::Run),
-            "none" => Ok(UploadAction::None),
-            _ => Err(format!(
-                "Invalid upload action. Found: {}, expected one of: screen, run, or none",
-                s
-            )),
+
+impl From<AfterUpload> for FileExitAction {
+    fn from(value: AfterUpload) -> Self {
+        match value {
+            AfterUpload::None => FileExitAction::DoNothing,
+            AfterUpload::Run => FileExitAction::RunProgram,
+            AfterUpload::ShowScreen => FileExitAction::ShowRunScreen,
         }
     }
 }
 
-pub fn upload(
+#[derive(ValueEnum, Default, Debug, Clone, Copy, Eq, PartialEq)]
+#[repr(u16)]
+pub enum ProgramIcon {
+    VexCodingStudio = 0,
+    CoolX = 1,
+    /// This is the icon that appears when you provide a missing icon name.
+    /// 2 is one such icon that doesn't exist.
+    #[default]
+    QuestionMark = 2,
+    Pizza = 3,
+    Clawbot = 10,
+    Robot = 11,
+    PowerButton = 12,
+    Planets = 13,
+    Alien = 27,
+    AlienInUfo = 29,
+    CupInField = 50,
+    CupAndBall = 51,
+    Matlab = 901,
+    Pros = 902,
+    RobotMesh = 903,
+    RobotMeshCpp = 911,
+    RobotMeshBlockly = 912,
+    RobotMeshFlowol = 913,
+    RobotMeshJS = 914,
+    RobotMeshPy = 915,
+    /// This icon is duplicated several times and has many file names.
+    CodeFile = 920,
+    VexcodeBrackets = 921,
+    VexcodeBlocks = 922,
+    VexcodePython = 925,
+    VexcodeCpp = 926,
+}
+
+const PROGRESS_CHARS: &str = "⣿⣦⣀";
+
+pub async fn upload(
     path: &Utf8Path,
-    opts: UploadOpts,
-    action: UploadAction,
-    config: &Config,
-    pre_upload: impl FnOnce(&Utf8Path),
+    after: AfterUpload,
+    slot: u8,
+    name: String,
+    description: String,
+    icon: ProgramIcon,
+    program_type: String,
+    compress: bool,
 ) -> anyhow::Result<()> {
-    let slot = opts.slot
-        .or(config.defaults.slot)
-        .or_else(|| {
-            CustomType::<u8>::new("Choose a program slot to upload to:")
-                .with_validator(|slot: &u8| Ok(if (1..=8).contains(slot) {
-                    Validation::Valid
-                } else {
-                    Validation::Invalid(ErrorMessage::Custom("Slot out of range".to_string()))
-                }))
-                .with_help_message("Type a slot number from 1 to 8, inclusive")
-                .prompt()
-                .ok()
-        })
-        .context("No upload slot was provided; consider using the --slot flag or setting a default in the config file")?;
-    let mut artifact = None;
-    if let Some(path) = opts.file {
-        artifact = Some(objcopy(&path));
-    } else {
-        build(path, opts.build_opts, false, |new_artifact| {
-            let mut bin_path = new_artifact.clone();
-            bin_path.set_extension("bin");
-            artifact = Some(bin_path);
-            objcopy(&new_artifact);
-        });
+    let multi_progress = MultiProgress::new();
+
+    let ini_timestamp = Arc::new(Mutex::new(None));
+    let bin_timestamp = Arc::new(Mutex::new(None));
+
+    let ini_progress = Arc::new(Mutex::new(
+        multi_progress
+            .add(ProgressBar::new(10000))
+            .with_style(
+                ProgressStyle::with_template(
+                    "{msg:4} {percent_precise:>7}% {bar:40.green} {prefix}",
+                )
+                .unwrap()
+                .progress_chars(PROGRESS_CHARS),
+            )
+            .with_message("INI"),
+    ));
+
+    let bin_progress = Arc::new(Mutex::new(
+        multi_progress
+            .add(ProgressBar::new(10000))
+            .with_style(
+                ProgressStyle::with_template("{msg:4} {percent_precise:>7}% {bar:40.red} {prefix}")
+                    .unwrap()
+                    .progress_chars(PROGRESS_CHARS),
+            )
+            .with_message("BIN"),
+    ));
+
+    // Find all vex devices on the serial ports
+    let devices = serial::find_devices()?;
+
+    // Open a connection to the device
+    let mut connection = devices[0].connect(Duration::from_secs(5))?;
+
+    let data = ProgramData::Monolith(tokio::fs::read(path).await?);
+
+    if connection.connection_type() == ConnectionType::Controller {
+        connection
+            .packet_handshake::<SelectRadioChannelReplyPacket>(
+                Duration::from_millis(500),
+                10,
+                SelectRadioChannelPacket::new(SelectRadioChannelPayload {
+                    channel: RadioChannel::Download,
+                }),
+            )
+            .await?
+            .try_into_inner()?;
+
+        tokio::time::sleep(Duration::from_millis(250)).await;
     }
-    let artifact =
-        artifact.expect("Binary not found! Try explicitly providing one with --path (-p)");
-    pre_upload(&artifact);
-    Command::new("pros")
-        .args([
-            "upload",
-            "--target",
-            "v5",
-            "--slot",
-            &slot.to_string(),
-            "--after",
-            match action {
-                UploadAction::Screen => "screen",
-                UploadAction::Run => "run",
-                UploadAction::None => "none",
+
+    connection
+        .execute_command(UploadProgram {
+            name,
+            description,
+            icon: format!("USER{:03}x.bmp", icon as u16),
+            program_type,
+            slot: slot - 1,
+            compress_program: compress,
+            data,
+            after_upload: after.into(),
+            ini_callback: {
+                let ini_progres_clone = Arc::clone(&ini_progress);
+                let ini_timestamp_clone = Arc::clone(&ini_timestamp);
+                Some(Box::new(move |percent| {
+                    let ini_progres_clone = Arc::clone(&ini_progres_clone);
+                    let ini_timestamp_clone = Arc::clone(&ini_timestamp_clone);
+
+                    block_in_place(move || {
+                        Handle::current().block_on(async move {
+                            let progress = ini_progres_clone.lock().await;
+                            let mut timestamp = ini_timestamp_clone.lock().await;
+
+                            if timestamp.is_none() {
+                                *timestamp = Some(Instant::now());
+                            }
+
+                            progress
+                                .set_prefix(format!("{:.2?}", timestamp.unwrap().elapsed()));
+                            progress.set_position((percent * 100.0) as u64);
+                        });
+                    });
+                }))
             },
-            artifact.as_str(),
-        ])
-        .spawn()?
-        .wait()?;
+            monolith_callback: {
+                let bin_progres_clone = Arc::clone(&bin_progress);
+                let bin_timestamp_clone = Arc::clone(&bin_timestamp);
+                Some(Box::new(move |percent| {
+                    let bin_progres_clone = Arc::clone(&bin_progres_clone);
+                    let bin_timestamp_clone = Arc::clone(&bin_timestamp_clone);
+
+                    block_in_place(move || {
+                        Handle::current().block_on(async move {
+                            let progress = bin_progres_clone.lock().await;
+                            let mut timestamp = bin_timestamp_clone.lock().await;
+
+                            if timestamp.is_none() {
+                                *timestamp = Some(Instant::now());
+                            }
+                            progress
+                                .set_prefix(format!("{:.2?}", timestamp.unwrap().elapsed()));
+                            progress.set_position((percent * 100.0) as u64);
+                        });
+                    });
+                }))
+            },
+            hot_callback: None,
+            cold_callback: None,
+        })
+        .await?;
+
+    ini_progress.lock().await.finish();
+    bin_progress.lock().await.finish();
+
     Ok(())
 }

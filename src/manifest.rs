@@ -1,42 +1,51 @@
-use anyhow::{bail, Context};
-use directories::ProjectDirs;
-use serde::Deserialize;
+use anyhow::Context;
+use cargo_metadata::Package;
+use clap::ValueEnum;
 
-#[derive(Deserialize, Debug, Default)]
-#[serde(rename_all = "kebab-case")]
-#[serde(default)]
-pub struct Config {
-    pub defaults: Defaults,
-}
+use crate::commands::upload::ProgramIcon;
 
-impl Config {
-    pub fn path() -> anyhow::Result<std::path::PathBuf> {
-        if let Some(proj_dirs) = ProjectDirs::from("dev", "vexide", "cargo-v5") {
-            Ok(proj_dirs.preference_dir().join("v5.toml"))
-        } else {
-            bail!("Could not find user home directory")
-        }
-    }
-
-    pub fn load() -> anyhow::Result<Self> {
-        let Ok(config_path) = Self::path() else {
-            return Ok(Config::default());
-        };
-
-        if config_path.exists() {
-            let config =
-                fs_err::read_to_string(&config_path).context("Reading cargo-v5 config file")?;
-            Ok(toml::from_str(&config)
-                .with_context(|| format!("Parsing config file at {:?}", config_path))?)
-        } else {
-            Ok(Config::default())
-        }
-    }
-}
-
-#[derive(Deserialize, Debug, Default)]
-#[serde(rename_all = "kebab-case")]
-#[serde(default)]
-pub struct Defaults {
+#[derive(Default, Debug, Clone, Copy, Eq, PartialEq)]
+pub struct Manifest {
     pub slot: Option<u8>,
+    pub icon: Option<ProgramIcon>,
+    pub compress: Option<bool>,
+}
+
+impl Manifest {
+    pub fn new(pkg: &Package) -> anyhow::Result<Self> {
+        if let Some(metadata) = pkg.metadata.as_object() {
+            if let Some(v5_metadata) = metadata.get("v5").and_then(|m| m.as_object()) {
+                return Ok(Self {
+                    slot: if let Some(slot) = &v5_metadata.get("slot") {
+                        Some(
+                            slot.as_u64()
+                                .context("The provided slot must be in the range [1, 8].")?
+                                as u8,
+                        )
+                    } else {
+                        None
+                    },
+                    icon: if let Some(icon) = &v5_metadata.get("icon") {
+                        Some(
+                            ProgramIcon::from_str(icon.as_str().context("`icon` field should be a string.")?, false)
+                                .expect("Invalid icon"),
+                        )
+                    } else {
+                        None
+                    },
+                    compress: if let Some(compress) = &v5_metadata.get("compress") {
+                        Some(
+                            compress
+                                .as_bool()
+                                .context("`compress` field should be a boolean.")?,
+                        )
+                    } else {
+                        None
+                    },
+                });
+            }
+        }
+        
+        Ok(Self::default())
+    }
 }
