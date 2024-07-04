@@ -129,7 +129,7 @@ pub async fn upload(
     // Open a connection to the device.
     let mut connection = devices
         .get(0)
-        .context("No V5 devices found! Ensure that the device plugged in and powered on with a stable connection, then try again.")?
+        .context("No V5 devices found! ensure that the device is plugged in and powered on with a stable connection, then try again.")?
         .connect(Duration::from_secs(5))
         .context("Failed to connect to V5 device. Ensure that other programs are not currently using the COM port.")?;
 
