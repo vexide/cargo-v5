@@ -181,8 +181,7 @@ pub async fn upload(
                                 *timestamp = Some(Instant::now());
                             }
 
-                            progress
-                                .set_prefix(format!("{:.2?}", timestamp.unwrap().elapsed()));
+                            progress.set_prefix(format!("{:.2?}", timestamp.unwrap().elapsed()));
                             progress.set_position((percent * 100.0) as u64);
                         });
                     });
@@ -204,8 +203,7 @@ pub async fn upload(
                             if timestamp.is_none() {
                                 *timestamp = Some(Instant::now());
                             }
-                            progress
-                                .set_prefix(format!("{:.2?}", timestamp.unwrap().elapsed()));
+                            progress.set_prefix(format!("{:.2?}", timestamp.unwrap().elapsed()));
                             progress.set_position((percent * 100.0) as u64);
                         });
                     });

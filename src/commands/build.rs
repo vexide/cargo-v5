@@ -1,4 +1,6 @@
-use std::{io::ErrorKind, process::{exit, Stdio}};
+use elf::{endian::LittleEndian, ElfBytes};
+use itertools::Itertools;
+use std::process::{exit, Stdio};
 use tokio::{process::Command, task::block_in_place};
 
 use cargo_metadata::{
@@ -90,7 +92,9 @@ pub async fn build(
     } else {
         let target = include_str!("../targets/armv7a-vex-v5.json");
         if !target_path.exists() {
-            fs::create_dir_all(target_path.parent().unwrap()).await.unwrap();
+            fs::create_dir_all(target_path.parent().unwrap())
+                .await
+                .unwrap();
             fs::write(&target_path, target).await.unwrap();
         }
         build_cmd.arg("--target");
@@ -100,7 +104,7 @@ pub async fn build(
             .arg("-Zbuild-std=core,alloc,compiler_builtins")
             .stdout(Stdio::piped());
     }
-    
+
     build_cmd.args(opts.args);
 
     block_in_place(|| {
@@ -118,24 +122,24 @@ pub async fn build(
 
 pub async fn objcopy(elf: &Utf8Path) -> Utf8PathBuf {
     println!("Creating binary: {}", elf);
-    let bin = elf.with_extension("bin");
-    Command::new("rust-objcopy")
-        .args(["-O", "binary", elf.as_str(), bin.as_str()])
-        .spawn()
-        .map_err(|err| match err.kind() {
-            ErrorKind::NotFound => {
-                eprintln!("ERROR: `rust-objcopy` not found");
-                eprintln!(
-                    " hint: cargo-binutils is missing. This can be installed using `cargo install cargo-binutils`"
-                );
-                std::process::exit(1);
-            }
-            _ => err,
-        })
+    let data = tokio::fs::read(elf).await.unwrap();
+    let elf_bytes = ElfBytes::<LittleEndian>::minimal_parse(&data).unwrap();
+    let program_headers = elf_bytes
+        .segments()
         .unwrap()
-        .wait()
-        .await
-        .unwrap();
+        .iter()
+        .filter(|header| header.p_type == elf::abi::PT_LOAD)
+        .sorted_by_key(|header| header.p_vaddr) // This is probably not necessary
+        .collect::<Vec<_>>();
+    let mut bytes = Vec::new();
+    for header in program_headers {
+        let section_data =
+            &data[header.p_offset as usize..(header.p_offset + header.p_filesz) as usize];
+        bytes.extend_from_slice(section_data);
+    }
+
+    let bin = elf.with_extension("bin");
+    tokio::fs::write(&bin, bytes).await.unwrap();
     println!("Output binary: {}", bin);
 
     bin
