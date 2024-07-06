@@ -15,7 +15,6 @@ use inquire::{
     validator::{ErrorMessage, Validation},
     CustomType,
 };
-use miette::IntoDiagnostic;
 use tokio::{runtime::Handle, task::block_in_place};
 use vex_v5_serial::connection::serial;
 
@@ -130,7 +129,7 @@ async fn main() -> miette::Result<()> {
             // files in the workspace directory.
             let cargo_metadata =
                 block_in_place(|| cargo_metadata::MetadataCommand::new().no_deps().exec())
-                    .map_err(|err| CliError::CargoMetadata(err))?;
+                    .map_err(CliError::CargoMetadata)?;
 
             // Locate packages with valid v5 metadata fields.
             let package = cargo_metadata
@@ -221,14 +220,13 @@ async fn main() -> miette::Result<()> {
         }
         Command::Terminal => {
             // Find all vex devices on serial ports.
-            let devices = serial::find_devices().map_err(|err| CliError::ConnectionError(err))?;
+            let devices = serial::find_devices().map_err(CliError::ConnectionError)?;
 
             // Open a connection to the device.
-            let mut _connection = devices
-                .get(0)
+            let mut _connection = devices.first()
                 .ok_or(CliError::NoDevice)?
                 .connect(Duration::from_secs(5))
-                .map_err(|err| CliError::ConnectionError(err))?;
+                .map_err(CliError::ConnectionError)?;
         }
         Command::Sim { ui, cargo_opts } => {
             let mut artifact = None;
