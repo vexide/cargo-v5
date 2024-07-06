@@ -4,10 +4,9 @@ pkgs.mkShell {
     buildInputs = with pkgs; [
         pkg-config
         openssl
-        gcc-arm-embedded-9
-        clang
         libclang
-        glibc_multi
+        dbus
+        udev
     ];
 
     LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
