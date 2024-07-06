@@ -27,8 +27,11 @@ impl Metadata {
                     },
                     icon: if let Some(icon) = &v5_metadata.get("icon") {
                         Some(
-                            ProgramIcon::from_str(icon.as_str().context("`icon` field should be a string.")?, false)
-                                .expect("Invalid icon"),
+                            ProgramIcon::from_str(
+                                icon.as_str().context("`icon` field should be a string.")?,
+                                false,
+                            )
+                            .expect("Invalid icon"),
                         )
                     } else {
                         None
@@ -45,7 +48,7 @@ impl Metadata {
                 });
             }
         }
-        
+
         Ok(Self::default())
     }
 }

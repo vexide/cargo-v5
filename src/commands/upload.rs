@@ -123,8 +123,7 @@ pub async fn upload(
     ));
 
     // Find all vex devices on serial ports.
-    let devices = serial::find_devices()
-        .context("Failed to find avialable serial ports!")?;
+    let devices = serial::find_devices().context("Failed to find avialable serial ports!")?;
 
     // Open a connection to the device.
     let mut connection = devices
@@ -182,8 +181,7 @@ pub async fn upload(
                                 *timestamp = Some(Instant::now());
                             }
 
-                            progress
-                                .set_prefix(format!("{:.2?}", timestamp.unwrap().elapsed()));
+                            progress.set_prefix(format!("{:.2?}", timestamp.unwrap().elapsed()));
                             progress.set_position((percent * 100.0) as u64);
                         });
                     });
@@ -205,8 +203,7 @@ pub async fn upload(
                             if timestamp.is_none() {
                                 *timestamp = Some(Instant::now());
                             }
-                            progress
-                                .set_prefix(format!("{:.2?}", timestamp.unwrap().elapsed()));
+                            progress.set_prefix(format!("{:.2?}", timestamp.unwrap().elapsed()));
                             progress.set_position((percent * 100.0) as u64);
                         });
                     });
