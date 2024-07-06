@@ -129,7 +129,8 @@ async fn main() -> miette::Result<()> {
             // We'll use `cargo-metadata` to parse the output of `cargo metadata` and find valid `Cargo.toml`
             // files in the workspace directory.
             let cargo_metadata =
-                block_in_place(|| cargo_metadata::MetadataCommand::new().no_deps().exec()).into_diagnostic()?;
+                block_in_place(|| cargo_metadata::MetadataCommand::new().no_deps().exec())
+                    .map_err(|err| CliError::CargoMetadata(err))?;
 
             // Locate packages with valid v5 metadata fields.
             let package = cargo_metadata
@@ -216,22 +217,18 @@ async fn main() -> miette::Result<()> {
                     None => metadata.compress.unwrap_or(true),
                 },
             )
-            .await.into_diagnostic()?;
+            .await?;
         }
         Command::Terminal => {
             // Find all vex devices on serial ports.
-            let devices = serial::find_devices().map_err(|err| {
-                CliError::ConnectionError(err)
-            })?;
+            let devices = serial::find_devices().map_err(|err| CliError::ConnectionError(err))?;
 
             // Open a connection to the device.
             let mut _connection = devices
                 .get(0)
-                .ok_or(CliError::NoDevice)
-                .into_diagnostic()?
-                .connect(Duration::from_secs(5)).map_err(|err| {
-                    CliError::ConnectionError(err)
-                })?;
+                .ok_or(CliError::NoDevice)?
+                .connect(Duration::from_secs(5))
+                .map_err(|err| CliError::ConnectionError(err))?;
         }
         Command::Sim { ui, cargo_opts } => {
             let mut artifact = None;
