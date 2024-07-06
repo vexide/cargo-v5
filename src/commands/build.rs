@@ -122,7 +122,7 @@ pub async fn build(
 
 pub async fn objcopy(elf: &Utf8Path) -> Utf8PathBuf {
     println!("Creating binary: {}", elf);
-    let data = std::fs::read(elf).unwrap();
+    let data = tokio::fs::read(elf).await.unwrap();
     let elf_bytes = ElfBytes::<LittleEndian>::minimal_parse(&data).unwrap();
     let program_headers = elf_bytes
         .segments()
@@ -139,7 +139,7 @@ pub async fn objcopy(elf: &Utf8Path) -> Utf8PathBuf {
     }
 
     let bin = elf.with_extension("bin");
-    std::fs::write(&bin, bytes).unwrap();
+    tokio::fs::write(&bin, bytes).await.unwrap();
     println!("Output binary: {}", bin);
 
     bin
