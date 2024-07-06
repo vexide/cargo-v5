@@ -64,14 +64,14 @@ pub enum CliError {
 
     #[error("ELF build artifact not found. Is this a binary crate?")]
     #[diagnostic(
-        code(cargo_v5::no_slot),
+        code(cargo_v5::no_artifact),
         help("`cargo v5 build` should generate an ELF file in your project's `target` folder unless this is a library crate. You can explicitly supply a file to upload with the `--file` (`-f`) argument.")
     )]
     NoArtifact,
 
     #[error("No V5 devices found.")]
     #[diagnostic(
-        code(cargo_v5::no_slot),
+        code(cargo_v5::no_device),
         help("Ensure that a V5 brain or controller is plugged in and powered on with a stable USB connection, then try again.")
     )]
     NoDevice,
