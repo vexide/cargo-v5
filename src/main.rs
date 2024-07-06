@@ -48,7 +48,7 @@ enum Command {
         #[clap(flatten)]
         cargo_opts: CargoOpts,
     },
-    /// Build and upload a vexide project to the V5 brain.
+    /// Build a project and upload it to the V5 brain.
     Upload {
         /// An ELF build artifact to upload.
         #[arg(long)]
