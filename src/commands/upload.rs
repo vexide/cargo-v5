@@ -1,4 +1,3 @@
-use anyhow::Context;
 use cargo_metadata::camino::Utf8Path;
 use clap::ValueEnum;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -17,6 +16,8 @@ use vex_v5_serial::{
         },
     },
 };
+
+use crate::errors::CliError;
 
 /// An action to perform after uploading a program.
 #[derive(ValueEnum, Debug, Clone, Copy, Default)]
@@ -90,7 +91,7 @@ pub async fn upload(
     icon: ProgramIcon,
     program_type: String,
     compress: bool,
-) -> anyhow::Result<()> {
+) -> Result<(), CliError> {
     let multi_progress = MultiProgress::new();
 
     // indicatif is a little dumb with timestamp handling, so we're going to do this all custom,
@@ -106,7 +107,7 @@ pub async fn upload(
                 ProgressStyle::with_template(
                     "{msg:4} {percent_precise:>7}% {bar:40.green} {prefix}",
                 )
-                .unwrap()
+                .unwrap() // Okay to unwrap, since this just validates style formatting.
                 .progress_chars(PROGRESS_CHARS),
             )
             .with_message("INI"),
@@ -116,22 +117,20 @@ pub async fn upload(
             .add(ProgressBar::new(10000))
             .with_style(
                 ProgressStyle::with_template("{msg:4} {percent_precise:>7}% {bar:40.red} {prefix}")
-                    .unwrap()
+                    .unwrap() // Okay to unwrap, since this just validates style formatting.
                     .progress_chars(PROGRESS_CHARS),
             )
             .with_message("BIN"),
     ));
 
     // Find all vex devices on serial ports.
-    let devices = serial::find_devices()
-        .context("Failed to find avialable serial ports!")?;
+    let devices = serial::find_devices()?;
 
     // Open a connection to the device.
     let mut connection = devices
         .get(0)
-        .context("No V5 devices found! ensure that the device is plugged in and powered on with a stable connection, then try again.")?
-        .connect(Duration::from_secs(5))
-        .context("Failed to connect to V5 device. Ensure that other programs are not currently using the COM port.")?;
+        .ok_or(CliError::NoDevice)?
+        .connect(Duration::from_secs(5))?;
 
     // Read our program file into a buffer.
     //
@@ -215,8 +214,7 @@ pub async fn upload(
             hot_callback: None,
             cold_callback: None,
         })
-        .await
-        .context("Failed to upload program")?;
+        .await?;
 
     // Tell the progressbars that we're done once uploading is complete, allowing further messages to be printed to stdout.
     ini_progress.lock().await.finish();

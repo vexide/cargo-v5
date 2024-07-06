@@ -1,4 +1,5 @@
-use anyhow::Context;
+use std::time::Duration;
+
 use cargo_metadata::camino::Utf8PathBuf;
 use cargo_v5::{
     commands::{
@@ -6,6 +7,7 @@ use cargo_v5::{
         simulator::launch_simulator,
         upload::{upload, AfterUpload, ProgramIcon},
     },
+    errors::CliError,
     metadata::Metadata,
 };
 use clap::{Parser, Subcommand};
@@ -13,7 +15,9 @@ use inquire::{
     validator::{ErrorMessage, Validation},
     CustomType,
 };
+use miette::IntoDiagnostic;
 use tokio::{runtime::Handle, task::block_in_place};
+use vex_v5_serial::connection::serial;
 
 cargo_subcommand_metadata::description!("Manage vexide projects");
 
@@ -78,6 +82,8 @@ enum Command {
         #[clap(flatten)]
         cargo_opts: CargoOpts,
     },
+    /// Access the brain's remote terminal I/O.
+    Terminal,
     /// Build a project and run it in the simulator.
     Sim {
         #[arg(long)]
@@ -90,7 +96,7 @@ enum Command {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> miette::Result<()> {
     // Parse CLI arguments
     let Cargo::V5 { command, path } = Cargo::parse();
 
@@ -120,15 +126,12 @@ async fn main() -> anyhow::Result<()> {
             uncompressed,
             cargo_opts,
         } => {
-            // Uploading has the option to use the `package.metadata.v5` table for default configuration options.
-            //
-            // We'll use `cargo-metadata` to parse the output of `cargo metadata` to parse the current `Cargo.toml`
+            // We'll use `cargo-metadata` to parse the output of `cargo metadata` and find valid `Cargo.toml`
             // files in the workspace directory.
             let cargo_metadata =
-                block_in_place(|| cargo_metadata::MetadataCommand::new().no_deps().exec())?;
+                block_in_place(|| cargo_metadata::MetadataCommand::new().no_deps().exec()).into_diagnostic()?;
 
-            // Locate all package tables and find either the first one with `package.metadata.v5` the first available
-            // package.
+            // Locate packages with valid v5 metadata fields.
             let package = cargo_metadata
                 .packages
                 .iter()
@@ -139,9 +142,9 @@ async fn main() -> anyhow::Result<()> {
                         false
                     }
                 })
-                .or(cargo_metadata.packages.first())
-                .context("Could not locate a valid Cargo package. Is this a Rust project?")?;
+                .ok_or(CliError::NoManifest)?;
 
+            // Uploading has the option to use the `package.metadata.v5` table for default configuration options.
             // Attempt to serialize `package.metadata.v5` into a [`Metadata`] struct. This will just Default::default to
             // all `None`s if it can't find a specific field, or error if the field is malformed.
             let metadata = Metadata::new(package)?;
@@ -170,26 +173,36 @@ async fn main() -> anyhow::Result<()> {
             }
 
             // The program's slot number is absolutely required for uploading. If the slot argument isn't directly provided:
+            //
             // - Check for the `package.metadata.v5.slot` field in Cargo.toml.
             // - If that doesn't exist, directly prompt the user asking what slot to upload to.
-            let slot = slot.or(metadata.slot).or_else(|| {
-                CustomType::<u8>::new("Choose a program slot to upload to:")
-                    .with_validator(|slot: &u8| Ok(if (1..=8).contains(slot) {
-                        Validation::Valid
-                    } else {
-                        Validation::Invalid(ErrorMessage::Custom("Slot out of range".to_string()))
-                    }))
-                    .with_help_message("Type a slot number from 1 to 8, inclusive")
-                    .prompt()
-                    .ok()
-            })
-            .context("No upload slot was provided; consider using the --slot flag or using the `package.metadata.v5.slot` field in Cargo.toml.")?;
+            let slot = slot
+                .or(metadata.slot)
+                .or_else(|| {
+                    CustomType::<u8>::new("Choose a program slot to upload to:")
+                        .with_validator(|slot: &u8| {
+                            Ok(if (1..=8).contains(slot) {
+                                Validation::Valid
+                            } else {
+                                Validation::Invalid(ErrorMessage::Custom(
+                                    "Slot out of range".to_string(),
+                                ))
+                            })
+                        })
+                        .with_help_message("Type a slot number from 1 to 8, inclusive")
+                        .prompt()
+                        .ok()
+                })
+                .ok_or(CliError::NoSlot)?;
+
+            // Ensure [1, 8] range bounds for slot number
+            if !(1..8).contains(&slot) {
+                Err(CliError::SlotOutOfRange)?;
+            }
 
             // Pass information to the upload routine.
             upload(
-                &artifact.expect(
-                    "ELF artifact not found! Try explicitly providing one with `--file` (`-f`).",
-                ),
+                &artifact.ok_or(CliError::NoArtifact)?,
                 after,
                 slot,
                 name.unwrap_or(package.name.clone()), // Fallback to crate name if no name was provided
@@ -203,7 +216,22 @@ async fn main() -> anyhow::Result<()> {
                     None => metadata.compress.unwrap_or(true),
                 },
             )
-            .await?;
+            .await.into_diagnostic()?;
+        }
+        Command::Terminal => {
+            // Find all vex devices on serial ports.
+            let devices = serial::find_devices().map_err(|err| {
+                CliError::ConnectionError(err)
+            })?;
+
+            // Open a connection to the device.
+            let mut _connection = devices
+                .get(0)
+                .ok_or(CliError::NoDevice)
+                .into_diagnostic()?
+                .connect(Duration::from_secs(5)).map_err(|err| {
+                    CliError::ConnectionError(err)
+                })?;
         }
         Command::Sim { ui, cargo_opts } => {
             let mut artifact = None;

@@ -1,8 +1,19 @@
-use anyhow::Context;
 use cargo_metadata::Package;
 use clap::ValueEnum;
+use serde_json::Value;
 
-use crate::commands::upload::ProgramIcon;
+use crate::{commands::upload::ProgramIcon, errors::CliError};
+
+fn field_type(field: &Value) -> &'static str {
+    match field {
+        Value::Array(_) => "array",
+        Value::Bool(_) => "bool",
+        Value::Null => "null",
+        Value::Object(_) => "object",
+        Value::String(_) => "string",
+        Value::Number(_) => "number",
+    }
+}
 
 #[derive(Default, Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Metadata {
@@ -12,40 +23,50 @@ pub struct Metadata {
 }
 
 impl Metadata {
-    pub fn new(pkg: &Package) -> anyhow::Result<Self> {
+    pub fn new(pkg: &Package) -> Result<Self, CliError> {
         if let Some(metadata) = pkg.metadata.as_object() {
             if let Some(v5_metadata) = metadata.get("v5").and_then(|m| m.as_object()) {
                 return Ok(Self {
-                    slot: if let Some(slot) = &v5_metadata.get("slot") {
+                    slot: if let Some(field) = v5_metadata.get("slot") {
+                        let slot = field.as_u64().ok_or(CliError::BadFieldType {
+                            field: "slot".to_string(),
+                            expected: "string".to_string(),
+                            found: field_type(field).to_string(),
+                        })?;
+
+                        Some(slot as u8) // NOTE: range validation is done at a later step
+                    } else {
+                        None
+                    },
+                    icon: if let Some(field) = v5_metadata.get("icon") {
+                        let icon = field.as_str().ok_or(CliError::BadFieldType {
+                            field: "icon".to_string(),
+                            expected: "string".to_string(),
+                            found: field_type(field).to_string(),
+                        })?;
+
                         Some(
-                            slot.as_u64()
-                                .context("The provided slot must be in the range [1, 8].")?
-                                as u8,
+                            ProgramIcon::from_str(icon, false)
+                                .map_err(|_| CliError::InvalidIcon(icon.to_string()))?,
                         )
                     } else {
                         None
                     },
-                    icon: if let Some(icon) = &v5_metadata.get("icon") {
-                        Some(
-                            ProgramIcon::from_str(icon.as_str().context("`icon` field should be a string.")?, false)
-                                .expect("Invalid icon"),
-                        )
-                    } else {
-                        None
-                    },
-                    compress: if let Some(compress) = &v5_metadata.get("compress") {
-                        Some(
-                            compress
-                                .as_bool()
-                                .context("`compress` field should be a boolean.")?,
-                        )
+                    compress: if let Some(compress) = v5_metadata.get("compress") {
+                        let compress = compress.as_bool().ok_or(CliError::BadFieldType {
+                            field: "compress".to_string(),
+                            expected: "bool".to_string(),
+                            found: field_type(compress).to_string(),
+                        })?;
+
+                        Some(compress)
                     } else {
                         None
                     },
                 });
             }
         }
-        
+
         Ok(Self::default())
     }
 }
