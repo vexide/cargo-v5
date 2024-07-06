@@ -50,8 +50,8 @@ impl From<AfterUpload> for FileExitAction {
 pub enum ProgramIcon {
     VexCodingStudio = 0,
     CoolX = 1,
-    /// This is the icon that appears when you provide a missing icon name.
-    /// 2 is one such icon that doesn't exist.
+    // This is the icon that appears when you provide a missing icon name.
+    // 2 is one such icon that doesn't exist.
     #[default]
     QuestionMark = 2,
     Pizza = 3,
@@ -71,7 +71,7 @@ pub enum ProgramIcon {
     RobotMeshFlowol = 913,
     RobotMeshJS = 914,
     RobotMeshPy = 915,
-    /// This icon is duplicated several times and has many file names.
+    // This icon is duplicated several times and has many file names.
     CodeFile = 920,
     VexcodeBrackets = 921,
     VexcodeBlocks = 922,
