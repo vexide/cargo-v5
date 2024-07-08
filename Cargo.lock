@@ -127,9 +127,9 @@ checksum = "96d30a06541fbafbc7f82ed10c06164cfbd2c401138f6addd8404629c4b16711"
 
 [[package]]
 name = "async-trait"
-version = "0.1.80"
+version = "0.1.81"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6fa2087f2753a7da8cc1c0dbfcf89579dd57458e36769de5ac750b4671737ca"
+checksum = "6e0c28dcc82d7c8ead5cb13beb15405b57b8546e93215673ff8ca0349a028107"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -278,9 +278,9 @@ dependencies = [
 
 [[package]]
 name = "built"
-version = "0.7.3"
+version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6a6c0b39c38fd754ac338b00a88066436389c0f029da5d37d1e01091d9b7c17"
+checksum = "236e6289eda5a812bc6b53c3b024039382a2895fbbeef2d748b2931546d392c4"
 
 [[package]]
 name = "bumpalo"
@@ -1783,9 +1783,9 @@ dependencies = [
 
 [[package]]
 name = "ravif"
-version = "0.11.7"
+version = "0.11.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67376f469e7e7840d0040bbf4b9b3334005bb167f814621326e4c7ab8cd6e944"
+checksum = "c6ba61c28ba24c0cf8406e025cb29a742637e3f70776e61c27a8a8b72a042d12"
 dependencies = [
  "avif-serialize",
  "imgref",
@@ -1873,9 +1873,9 @@ checksum = "194d8e591e405d1eecf28819740abed6d719d1a2db87fc0bcdedee9a26d55560"
 
 [[package]]
 name = "rgb"
-version = "0.8.40"
+version = "0.8.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7439be6844e40133eda024efd85bf07f59d0dd2f59b10c00dd6cfb92cc5c741"
+checksum = "1aee83dc281d5a3200d37b299acd13b81066ea126a7f16f0eae70fc9aed241d9"
 dependencies = [
  "bytemuck",
 ]
@@ -2164,9 +2164,9 @@ dependencies = [
 
 [[package]]
 name = "target-lexicon"
-version = "0.12.14"
+version = "0.12.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1fc403891a21bcfb7c37834ba66a547a8f402146eba7265b5a6d88059c9ff2f"
+checksum = "4873307b7c257eddcb50c9bedf158eb669578359fb28428bef438fec8e6ba7c2"
 
 [[package]]
 name = "terminal_size"
@@ -2397,13 +2397,14 @@ checksum = "852e951cb7832cb45cb1169900d19760cfa39b82bc0ea9c0e5a14ae88411c98b"
 [[package]]
 name = "vex_v5_serial"
 version = "0.0.1"
-source = "git+https://github.com/vexide/vex-v5-serial#218d87a225111b9955fe9b553a68d8a654306ea7"
+source = "git+https://github.com/vexide/vex-v5-serial#5324c6c588d40eef410e4fb1d6a2a35de8bebfe0"
 dependencies = [
  "bitflags 2.6.0",
  "btleplug",
  "chrono",
  "crc",
  "flate2",
+ "futures",
  "image",
  "log",
  "serde",

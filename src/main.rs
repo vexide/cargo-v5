@@ -16,7 +16,7 @@ use inquire::{
     CustomType,
 };
 use tokio::{runtime::Handle, task::block_in_place};
-use vex_v5_serial::connection::serial;
+use vex_v5_serial::connection::{serial, Connection};
 
 cargo_subcommand_metadata::description!("Manage vexide projects");
 
@@ -223,10 +223,16 @@ async fn main() -> miette::Result<()> {
             let devices = serial::find_devices().map_err(CliError::ConnectionError)?;
 
             // Open a connection to the device.
-            let mut _connection = devices.first()
+            let mut connection = devices.first()
                 .ok_or(CliError::NoDevice)?
                 .connect(Duration::from_secs(5))
                 .map_err(CliError::ConnectionError)?;
+
+            loop {
+                let mut buf = Vec::new();
+                connection.read_user(&mut buf).await.ok();
+                print!("{}", String::from_utf8(buf).unwrap());
+            }
         }
         Command::Sim { ui, cargo_opts } => {
             let mut artifact = None;
