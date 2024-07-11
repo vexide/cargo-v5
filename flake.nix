@@ -1,32 +1,35 @@
 {
   inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    pros-cli-nix.url = "github:BattleCh1cken/pros-cli-nix";
+    naersk.url = "github:nix-community/naersk";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = {
-    nixpkgs,
-    flake-utils,
-    pros-cli-nix,
-    ...
-  }:
-    (flake-utils.lib.eachDefaultSystem
-      (system:
-        let 
-          pkgs = nixpkgs.legacyPackages.${system};
-        in rec {
-          devShells.${system} = import ./shell.nix;
+  outputs = { nixpkgs, flake-utils, naersk, rust-overlay, ... }:
+    (flake-utils.lib.eachDefaultSystem (system:
+      let
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [ (import rust-overlay) ];
+        };
+      in rec {
+        devShells.${system} = import ./shell.nix;
 
-          packages = rec {
-            cargo-pros = pkgs.callPackage ./derivation.nix { pros-cli = pros-cli-nix.packages.${system}.default; };
-            default = cargo-pros;
-          };
+        packages = rec {
+          cargo-v5 = pkgs.callPackage ./derivation.nix { naersk = pkgs.callPackage naersk {
+            cargo = pkgs.rust-bin.stable.latest.default;
+            rustc = pkgs.rust-bin.stable.latest.default;
+          };};
+          default = cargo-v5;
+        };
 
-          apps = rec {
-            cargo-pros = flake-utils.lib.mkApp { drv = packages.cargo-pros; };
-            default = cargo-pros;
-          };
-        }
-      )
-    );
+        apps = rec {
+          cargo-v5 = flake-utils.lib.mkApp { drv = packages.cargo-v5; };
+          default = cargo-v5;
+        };
+      }));
 }
