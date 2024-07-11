@@ -1,6 +1,6 @@
 # cargo-v5
 
-> Build, upload, run and simulate Rust projects written for VEX!
+> Build, upload, run, and simulate Rust projects written for VEX!
 
 cargo-v5 is a command line tool that simplifies working with VEX projects written in Rust (with a focus on the [vexide runtime](https://github.com/vexide/vexide)).
 
