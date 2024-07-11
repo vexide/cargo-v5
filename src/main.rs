@@ -230,9 +230,13 @@ async fn main() -> miette::Result<()> {
                 .map_err(CliError::ConnectionError)?;
 
             loop {
-                let mut buf = Vec::new();
-                connection.read_user(&mut buf).await.ok();
-                print!("{}", String::from_utf8(buf).unwrap());
+                let mut output = [0; 2048];
+
+                if let Ok(size) = connection.read_user(&mut output).await {
+                    if size > 0 {
+                        print!("{}", std::str::from_utf8(&output).unwrap());
+                    }
+                }
             }
         }
         Command::Sim { ui, cargo_opts } => {

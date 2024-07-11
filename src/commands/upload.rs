@@ -127,7 +127,8 @@ pub async fn upload(
     let devices = serial::find_devices()?;
 
     // Open a connection to the device.
-    let mut connection = devices.first()
+    let mut connection = devices
+        .first()
         .ok_or(CliError::NoDevice)?
         .connect(Duration::from_secs(5))?;
 
