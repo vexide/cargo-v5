@@ -6,6 +6,7 @@ authors = [
     "vexide",
     "Gavin Niederman <gavinniederman@gmail.com>",
     "doinkythederp <doinkythederp@icloud.com>",
+    "Tropical"
 ]
 license = "MIT"
 description = "A cargo subcommand for managing vexide projects"
