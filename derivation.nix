@@ -6,15 +6,13 @@ rustPlatform.buildRustPackage {
 
   src = ./.;
 
-  cargoLock.lockFile = ./Cargo.lock;
+  cargoLock = {
+    lockFile = ./Cargo.lock;
+    outputHashes = {
+      "vex_v5_serial-0.0.1" =
+        "sha256-YK5k4uUmHkpFPhBxQuPp4tr2PrPFVi6imKUqbXP8t+0=";
+    };
+  };
 
-  buildInputs = with pkgs; [
-    pkg-config
-    openssl
-    gcc-arm-embedded-9
-    clang
-    libclang
-    glibc_multi
-    pros-cli
-  ];
+  buildInputs = with pkgs; [ pkg-config openssl libclang dbus udev ];
 }
