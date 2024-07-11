@@ -142,6 +142,7 @@ async fn main() -> miette::Result<()> {
                         false
                     }
                 })
+                .or(cargo_metadata.packages.iter().next())
                 .ok_or(CliError::NoManifest)?;
 
             // Uploading has the option to use the `package.metadata.v5` table for default configuration options.
