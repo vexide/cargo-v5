@@ -357,7 +357,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "toml",
- "vex_v5_serial",
+ "vex-v5-serial",
 ]
 
 [[package]]
@@ -2395,9 +2395,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "852e951cb7832cb45cb1169900d19760cfa39b82bc0ea9c0e5a14ae88411c98b"
 
 [[package]]
-name = "vex_v5_serial"
+name = "vex-v5-serial"
 version = "0.0.1"
-source = "git+https://github.com/vexide/vex-v5-serial#aa6a9cdb186541fd28d5c3e8e37dd77fef7761da"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a57e0b8bd38f34f220563771e0075b6499f520bbdd087832ced2328d780d01e6"
 dependencies = [
  "bitflags 2.6.0",
  "btleplug",
