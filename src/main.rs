@@ -50,7 +50,7 @@ enum Command {
     },
     /// Build a project and upload it to the V5 brain.
     Upload {
-        /// An ELF build artifact to upload.
+        /// An build artifact to upload (either an ELF or BIN).
         #[arg(long)]
         file: Option<Utf8PathBuf>,
 
@@ -152,12 +152,16 @@ async fn main() -> miette::Result<()> {
 
             // Get the build artifact we'll be uploading with.
             //
-            // The user either directly passed an ELF file through the `--file` argument, or they didn't and we need to run
+            // The user either directly passed an file through the `--file` argument, or they didn't and we need to run
             // `cargo build`.
             let mut artifact = None;
             if let Some(file) = file {
-                // Convert ELF -> BIN using objcopy before we upload.
-                artifact = Some(objcopy(&file).await)
+                if file.extension() == Some("bin") {
+                    artifact = Some(file);
+                } else {
+                    // If a BIN file wasn't provided, we'll attempt to objcopy it as if it were an ELF.
+                    artifact = Some(objcopy(&file).await);
+                }
             } else {
                 // Run cargo build, then objcopy.
                 build(&path, cargo_opts, false, |new_artifact| {
