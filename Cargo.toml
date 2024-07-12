@@ -24,6 +24,8 @@ cargo_metadata = "0.18.0"
 serde_json = "1.0.106"
 clap = { version = "4.4.2", features = ["derive"], optional = true }
 serde = { version = "1.0.203", features = ["derive"] }
+fs-err = { version = "2.9.0", features = ["tokio"] }
+cfg-if = "1.0.0"
 inquire = "0.7.5"
 indicatif = "0.17.8"
 vex-v5-serial = "0.0.1"

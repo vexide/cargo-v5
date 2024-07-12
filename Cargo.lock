@@ -342,8 +342,10 @@ version = "0.6.0"
 dependencies = [
  "cargo-subcommand-metadata",
  "cargo_metadata",
+ "cfg-if",
  "clap",
  "elf",
+ "fs-err",
  "indicatif",
  "inquire",
  "itertools 0.13.0",
@@ -788,6 +790,16 @@ name = "foreign-types-shared"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
+
+[[package]]
+name = "fs-err"
+version = "2.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "88a41f105fe1d5b6b34b2055e3dc59bb79b46b48b2040b9e6c7b4b5de097aa41"
+dependencies = [
+ "autocfg",
+ "tokio",
+]
 
 [[package]]
 name = "futures"
