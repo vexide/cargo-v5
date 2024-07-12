@@ -1,5 +1,4 @@
-use elf::{endian::LittleEndian, ElfBytes};
-use itertools::Itertools;
+use object::{Object, ObjectSegment};
 use std::process::{exit, Stdio};
 use tokio::{process::Command, task::block_in_place};
 
@@ -122,22 +121,20 @@ pub async fn build(
 
 pub async fn objcopy(elf: &Utf8Path) -> Utf8PathBuf {
     println!("Creating binary: {}", elf);
+    // Read the ELF file built by cargo.
     let data = tokio::fs::read(elf).await.unwrap();
-    let elf_bytes = ElfBytes::<LittleEndian>::minimal_parse(&data).unwrap();
-    let program_headers = elf_bytes
-        .segments()
-        .unwrap()
-        .iter()
-        .filter(|header| header.p_type == elf::abi::PT_LOAD)
-        .sorted_by_key(|header| header.p_vaddr) // This is probably not necessary
-        .collect::<Vec<_>>();
+
+    // Parse the ELF file.
+    let elf_data = object::File::parse(data.as_slice()).unwrap();
+    // Get the loadable segments (program data)
+    let program_segments = elf_data.segments();
+    // Concatenate all the segments into a single binary.
     let mut bytes = Vec::new();
-    for header in program_headers {
-        let section_data =
-            &data[header.p_offset as usize..(header.p_offset + header.p_filesz) as usize];
-        bytes.extend_from_slice(section_data);
+    for segment in program_segments {
+        bytes.extend_from_slice(segment.data().unwrap())
     }
 
+    // Write the binary to a file.
     let bin = elf.with_extension("bin");
     tokio::fs::write(&bin, bytes).await.unwrap();
     println!("Output binary: {}", bin);

@@ -32,8 +32,7 @@ vex-v5-serial = "0.0.1"
 tokio = { version = "1.23.0", features = ["full"] }
 miette = { version = "7.2.0", features = ["fancy"] }
 thiserror = "1.0.61"
-elf = "0.7.4"
-itertools = "0.13.0"
+object = { version = "0.36.1", default-features = false, features = ["elf", "std"] }
 
 [features]
 default = ["clap"]
