@@ -225,13 +225,13 @@ async fn main() -> miette::Result<()> {
         }
         Command::Terminal => {
             // Find all vex devices on serial ports.
-            let devices = serial::find_devices().map_err(CliError::ConnectionError)?;
+            let devices = serial::find_devices().map_err(|e| CliError::SerialError(e))?;
 
             // Open a connection to the device.
             let mut connection = devices.first()
                 .ok_or(CliError::NoDevice)?
                 .connect(Duration::from_secs(5))
-                .map_err(CliError::ConnectionError)?;
+                .map_err(|e| CliError::SerialError(e))?;
 
             loop {
                 let mut output = [0; 2048];
