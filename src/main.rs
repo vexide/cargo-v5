@@ -142,7 +142,7 @@ async fn main() -> miette::Result<()> {
                         false
                     }
                 })
-                .or(cargo_metadata.packages.iter().next())
+                .or(cargo_metadata.packages.first())
                 .ok_or(CliError::NoManifest)?;
 
             // Uploading has the option to use the `package.metadata.v5` table for default configuration options.
@@ -225,13 +225,13 @@ async fn main() -> miette::Result<()> {
         }
         Command::Terminal => {
             // Find all vex devices on serial ports.
-            let devices = serial::find_devices().map_err(|e| CliError::SerialError(e))?;
+            let devices = serial::find_devices().map_err(CliError::SerialError)?;
 
             // Open a connection to the device.
             let mut connection = devices.first()
                 .ok_or(CliError::NoDevice)?
                 .connect(Duration::from_secs(5))
-                .map_err(|e| CliError::SerialError(e))?;
+                .map_err(CliError::SerialError)?;
 
             loop {
                 let mut output = [0; 2048];
