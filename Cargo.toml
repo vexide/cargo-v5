@@ -28,7 +28,7 @@ fs-err = { version = "2.9.0", features = ["tokio"] }
 cfg-if = "1.0.0"
 inquire = "0.7.5"
 indicatif = "0.17.8"
-vex-v5-serial = { version = "0.1.0", default-features = false, features = ["serial"] }
+vex-v5-serial = { version = "0.2.0", default-features = false, features = ["serial"] }
 tokio = { version = "1.23.0", features = ["full"] }
 miette = { version = "7.2.0", features = ["fancy"] }
 thiserror = "1.0.61"

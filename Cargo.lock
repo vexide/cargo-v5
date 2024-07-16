@@ -1193,9 +1193,9 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "vex-v5-serial"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a4c6d3269c7ff0e9f635d3958dbe2e40014cc95c93cdd8fdeb044c3fbfccfe5"
+checksum = "c1d05e2758601853f0a7b7651347efc42630a1f9ad78c7bd7daef5720443cb3b"
 dependencies = [
  "bitflags 2.6.0",
  "crc",
