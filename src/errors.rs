@@ -80,4 +80,11 @@ pub enum CliError {
         help("Ensure that a V5 brain or controller is plugged in and powered on with a stable USB connection, then try again.")
     )]
     NoDevice,
+
+    #[error("Could not execute `rust-objcopy`.")]
+    #[diagnostic(
+        code(cargo_v5::missing_binutils),
+        help("Make sure that you have cargo-binutils installed. Try installing it with `rustup component add llvm-tools` and `cargo install cargo-binutils`.")
+    )]
+    MissingBinutils,
 }

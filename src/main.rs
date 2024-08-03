@@ -108,7 +108,7 @@ async fn main() -> miette::Result<()> {
                 if !simulator {
                     block_in_place(|| {
                         Handle::current().block_on(async move {
-                            objcopy(&path).await;
+                            objcopy(&path).await.unwrap();
                         });
                     });
                 }
@@ -160,7 +160,7 @@ async fn main() -> miette::Result<()> {
                     artifact = Some(file);
                 } else {
                     // If a BIN file wasn't provided, we'll attempt to objcopy it as if it were an ELF.
-                    artifact = Some(objcopy(&file).await);
+                    artifact = Some(objcopy(&file).await?);
                 }
             } else {
                 // Run cargo build, then objcopy.
@@ -169,7 +169,7 @@ async fn main() -> miette::Result<()> {
                     bin_path.set_extension("bin");
                     block_in_place(|| {
                         Handle::current().block_on(async move {
-                            objcopy(&new_artifact).await;
+                            objcopy(&new_artifact).await.unwrap();
                         });
                     });
                     artifact = Some(bin_path);
