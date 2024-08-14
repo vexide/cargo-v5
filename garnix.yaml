@@ -1,7 +1,6 @@
 builds:
   include:
     - "packages.*.default"
-  exclude: [
-    - "packages.aarch64-darwin.*",
-  ]
+  exclude:
+    - "packages.aarch64-darwin.*"
   branch: main
