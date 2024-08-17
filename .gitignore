@@ -82,3 +82,6 @@ $RECYCLE.BIN/
 
 # Nix output
 result
+
+# Direnv
+/.direnv

@@ -1,4 +1,4 @@
-// use object::{Object, ObjectSegment};
+use object::{Object, ObjectSegment};
 use std::process::{exit, Stdio};
 use tokio::{process::Command, task::block_in_place};
 
@@ -121,39 +121,30 @@ pub async fn build(
     });
 }
 
-// pub async fn objcopy(elf: &Utf8Path) -> Utf8PathBuf {
-//     println!("Creating binary: {}", elf);
-//     // Read the ELF file built by cargo.
-//     let data = tokio::fs::read(elf).await.unwrap();
+pub async fn objcopy(elf: &Utf8Path) -> Utf8PathBuf {
+    println!("Creating binary: {}", elf);
+    // Read the ELF file built by cargo.
+    let data = tokio::fs::read(elf).await.unwrap();
 
-//     // Parse the ELF file.
-//     let elf_data = object::File::parse(data.as_slice()).unwrap();
-//     // Get the loadable segments (program data)
-//     let program_segments = elf_data.segments();
-//     // Concatenate all the segments into a single binary.
-//     let mut bytes = Vec::new();
-//     for segment in program_segments {
-//         bytes.extend_from_slice(segment.data().unwrap())
-//     }
+    // Parse the ELF file.
+    let elf_data = object::File::parse(data.as_slice()).unwrap();
+    // Get the loadable segments (program data)
+    let program_segments = elf_data.segments();
+    // Concatenate all the segments into a single binary.
+    let mut bytes = Vec::new();
+    for segment in program_segments {
+        if segment.address() as usize > bytes.len() {
+            let missing_bytes = segment.address() as usize - bytes.len();
+            bytes.extend(vec![0; missing_bytes]);
+            println!("bin {:?} has gap", segment.name());
+        };
+        bytes.extend_from_slice(segment.data().unwrap())
+    }
 
-//     // Write the binary to a file.
-//     let bin = elf.with_extension("bin");
-//     tokio::fs::write(&bin, bytes).await.unwrap();
-//     println!("Output binary: {}", bin);
-
-//     bin
-// }
-
-pub async fn objcopy(elf: &Utf8Path) -> Result<Utf8PathBuf, CliError> {
-    println!("Creating binary: {}.bin", elf);
+    // Write the binary to a file.
     let bin = elf.with_extension("bin");
-    Command::new("rust-objcopy")
-        .args(["-O", "binary", elf.as_str(), bin.as_str()])
-        .spawn()
-        .map_err(|_| CliError::MissingBinutils)?
-        .wait()
-        .await
-        .unwrap();
+    tokio::fs::write(&bin, bytes).await.unwrap();
+    println!("Output binary: {}", bin);
 
-    Ok(bin)
+    bin
 }

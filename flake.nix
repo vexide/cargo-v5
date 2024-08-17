@@ -17,13 +17,27 @@
           overlays = [ (import rust-overlay) ];
         };
       in rec {
-        devShells.${system} = import ./shell.nix;
+        devShells.default = pkgs.mkShell {
+          buildInputs = with pkgs; [
+            (rust-bin.nightly.latest.default.override {
+              extensions = [ "rust-src" "rust-analyzer" "clippy" ];
+            })
+            pkg-config
+            openssl
+            dbus
+            udev
+          ];
+
+          LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
+        };
 
         packages = rec {
-          cargo-v5 = pkgs.callPackage ./derivation.nix { naersk = pkgs.callPackage naersk {
-            cargo = pkgs.rust-bin.stable.latest.default;
-            rustc = pkgs.rust-bin.stable.latest.default;
-          };};
+          cargo-v5 = pkgs.callPackage ./derivation.nix {
+            naersk = pkgs.callPackage naersk {
+              cargo = pkgs.rust-bin.stable.latest.default;
+              rustc = pkgs.rust-bin.stable.latest.default;
+            };
+          };
           default = cargo-v5;
         };
 

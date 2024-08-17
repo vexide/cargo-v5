@@ -1,3 +1,3 @@
 pub mod commands;
-pub mod metadata;
 pub mod errors;
+pub mod metadata;

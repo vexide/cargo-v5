@@ -108,7 +108,7 @@ async fn main() -> miette::Result<()> {
                 if !simulator {
                     block_in_place(|| {
                         Handle::current().block_on(async move {
-                            objcopy(&path).await.unwrap();
+                            objcopy(&path).await;
                         });
                     });
                 }
@@ -160,7 +160,7 @@ async fn main() -> miette::Result<()> {
                     artifact = Some(file);
                 } else {
                     // If a BIN file wasn't provided, we'll attempt to objcopy it as if it were an ELF.
-                    artifact = Some(objcopy(&file).await?);
+                    artifact = Some(objcopy(&file).await);
                 }
             } else {
                 // Run cargo build, then objcopy.
@@ -169,7 +169,7 @@ async fn main() -> miette::Result<()> {
                     bin_path.set_extension("bin");
                     block_in_place(|| {
                         Handle::current().block_on(async move {
-                            objcopy(&new_artifact).await.unwrap();
+                            objcopy(&new_artifact).await;
                         });
                     });
                     artifact = Some(bin_path);
@@ -228,7 +228,8 @@ async fn main() -> miette::Result<()> {
             let devices = serial::find_devices().map_err(CliError::SerialError)?;
 
             // Open a connection to the device.
-            let mut connection = devices.first()
+            let mut connection = devices
+                .first()
                 .ok_or(CliError::NoDevice)?
                 .connect(Duration::from_secs(5))
                 .map_err(CliError::SerialError)?;
