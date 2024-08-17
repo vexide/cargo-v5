@@ -136,7 +136,12 @@ pub async fn objcopy(elf: &Utf8Path) -> Utf8PathBuf {
         if segment.address() as usize > bytes.len() {
             let missing_bytes = segment.address() as usize - bytes.len();
             bytes.extend(vec![0; missing_bytes]);
-            println!("bin {:?} has gap", segment.name());
+            if let Ok(Some(name)) = segment.name() {
+                print!("section {:?} has", name);
+            } else {
+                print!("section has");
+            }
+            println!("gap of size: {}", missing_bytes);
         };
         bytes.extend_from_slice(segment.data().unwrap())
     }
