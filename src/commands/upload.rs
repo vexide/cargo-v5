@@ -31,9 +31,6 @@ pub struct UploadOpts {
     #[arg(long)]
     pub file: Option<Utf8PathBuf>,
 
-    #[arg(long, default_value = "none")]
-    pub after: AfterUpload,
-
     /// Program slot.
     #[arg(short, long)]
     pub slot: Option<u8>,

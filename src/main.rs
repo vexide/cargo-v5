@@ -57,7 +57,13 @@ enum Command {
         cargo_opts: CargoOpts,
     },
     /// Build a project and upload it to the V5 brain.
-    Upload(UploadOpts),
+    Upload {
+        #[arg(long, default_value = "none")]
+        after: AfterUpload,
+
+        #[clap(flatten)]
+        upload_opts: UploadOpts,
+    },
     /// Build, upload, and run a program on the V5 brain, showing its output in the terminal.
     Run(UploadOpts),
     /// Access the brain's remote terminal I/O.
@@ -94,11 +100,11 @@ async fn main() -> miette::Result<()> {
             })
             .await;
         }
-        Command::Upload(opts) => {
-            upload(&path, opts, false).await?;
+        Command::Upload { upload_opts, after } => {
+            upload(&path, upload_opts, after, false).await?;
         }
         Command::Run(opts) => {
-            upload(&path, opts, true).await?;
+            upload(&path, opts, AfterUpload::Run, true).await?;
         }
         Command::Terminal => {
             terminal(&mut open_connection().await?).await;
@@ -143,7 +149,6 @@ async fn upload(
     path: &Utf8Path,
     UploadOpts {
         file,
-        after,
         slot,
         name,
         description,
@@ -151,6 +156,7 @@ async fn upload(
         uncompressed,
         cargo_opts,
     }: UploadOpts,
+    after: AfterUpload,
     then_terminal: bool,
 ) -> miette::Result<()> {
     // We'll use `cargo-metadata` to parse the output of `cargo metadata` and find valid `Cargo.toml`
@@ -252,6 +258,7 @@ async fn upload(
     .await?;
 
     if then_terminal {
+        println!();
         terminal(&mut connection).await;
     }
 
