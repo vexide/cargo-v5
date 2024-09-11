@@ -1,5 +1,5 @@
-use cargo_metadata::camino::Utf8Path;
-use clap::ValueEnum;
+use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
+use clap::{Args, ValueEnum};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use tokio::{runtime::Handle, sync::Mutex, task::block_in_place, time::Instant};
 
@@ -7,7 +7,10 @@ use std::{sync::Arc, time::Duration};
 
 use vex_v5_serial::{
     commands::file::{ProgramData, UploadProgram},
-    connection::{serial, Connection, ConnectionType},
+    connection::{
+        serial::{self, SerialConnection},
+        Connection, ConnectionType,
+    },
     packets::{
         file::FileExitAction,
         radio::{
@@ -18,6 +21,43 @@ use vex_v5_serial::{
 };
 
 use crate::errors::CliError;
+
+use super::build::CargoOpts;
+
+/// Options used to control the behavior of a program upload
+#[derive(Args, Debug)]
+pub struct UploadOpts {
+    /// An build artifact to upload (either an ELF or BIN).
+    #[arg(long)]
+    pub file: Option<Utf8PathBuf>,
+
+    #[arg(long, default_value = "none")]
+    pub after: AfterUpload,
+
+    /// Program slot.
+    #[arg(short, long)]
+    pub slot: Option<u8>,
+
+    /// The name of the program.
+    #[arg(long)]
+    pub name: Option<String>,
+
+    /// The description of the program.
+    #[arg(short, long)]
+    pub description: Option<String>,
+
+    /// The program's file icon.
+    #[arg(short, long)]
+    pub icon: Option<ProgramIcon>,
+
+    /// Skip gzip compression before uploading. Will result in longer upload times.
+    #[arg(short, long)]
+    pub uncompressed: Option<bool>,
+
+    /// Arguments forwarded to `cargo`.
+    #[clap(flatten)]
+    pub cargo_opts: CargoOpts,
+}
 
 /// An action to perform after uploading a program.
 #[derive(ValueEnum, Debug, Clone, Copy, Default)]
@@ -82,7 +122,8 @@ pub enum ProgramIcon {
 const PROGRESS_CHARS: &str = "⣿⣦⣀";
 
 /// Upload a program to the brain.
-pub async fn upload(
+pub async fn upload_program(
+    connection: &mut SerialConnection,
     path: &Utf8Path,
     after: AfterUpload,
     slot: u8,
@@ -122,15 +163,6 @@ pub async fn upload(
             )
             .with_message("BIN"),
     ));
-
-    // Find all vex devices on serial ports.
-    let devices = serial::find_devices()?;
-
-    // Open a connection to the device.
-    let mut connection = devices
-        .first()
-        .ok_or(CliError::NoDevice)?
-        .connect(Duration::from_secs(5))?;
 
     // Read our program file into a buffer.
     //
