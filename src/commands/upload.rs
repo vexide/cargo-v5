@@ -48,6 +48,7 @@ pub struct UploadOpts {
     pub uncompressed: Option<bool>,
     
     /// An build artifact to upload (either an ELF or BIN).
+    #[arg(long)]
     pub file: Option<Utf8PathBuf>,
 
     /// Arguments forwarded to `cargo`.
