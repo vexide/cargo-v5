@@ -8,7 +8,7 @@ use std::{sync::Arc, time::Duration};
 use vex_v5_serial::{
     commands::file::{ProgramData, UploadProgram},
     connection::{
-        serial::{self, SerialConnection},
+        serial::SerialConnection,
         Connection, ConnectionType,
     },
     packets::{

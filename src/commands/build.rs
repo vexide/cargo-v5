@@ -96,8 +96,8 @@ pub async fn build(
             fs::create_dir_all(target_path.parent().unwrap())
                 .await
                 .unwrap();
-            fs::write(&target_path, target).await.unwrap();
         }
+        fs::write(&target_path, target).await.unwrap();
         build_cmd.arg("--target");
         build_cmd.arg(&target_path);
 

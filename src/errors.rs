@@ -4,13 +4,6 @@ use vex_v5_serial::packets::cdc2::Cdc2Ack;
 
 #[derive(Error, Diagnostic, Debug)]
 pub enum CliError {
-    #[error("Could not locate a valid cargo manifest (Cargo.toml) file!")]
-    #[diagnostic(
-        code(cargo_v5::no_manifest),
-        help("Ensure you are running `cargo v5` inside of a Rust project or workspace.")
-    )]
-    NoManifest,
-
     #[error(transparent)]
     #[diagnostic(code(cargo_v5::cargo_metadata))]
     CargoMetadata(#[from] cargo_metadata::Error),

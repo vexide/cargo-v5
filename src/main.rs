@@ -5,7 +5,7 @@ use cargo_v5::{
     commands::{
         build::{build, objcopy, CargoOpts},
         simulator::launch_simulator,
-        upload::{upload_program, AfterUpload, ProgramIcon, UploadOpts},
+        upload::{upload_program, AfterUpload, UploadOpts},
     },
     errors::CliError,
     metadata::Metadata,
@@ -16,10 +16,8 @@ use inquire::{
     CustomType,
 };
 use tokio::{
-    io::{stdin, AsyncReadExt},
     runtime::Handle,
     task::{block_in_place, spawn_blocking},
-    try_join,
 };
 use vex_v5_serial::connection::{
     serial::{self, SerialConnection},
@@ -175,13 +173,16 @@ async fn upload(
                 false
             }
         })
-        .or(cargo_metadata.packages.first())
-        .ok_or(CliError::NoManifest)?;
+        .or(cargo_metadata.packages.first());
 
     // Uploading has the option to use the `package.metadata.v5` table for default configuration options.
     // Attempt to serialize `package.metadata.v5` into a [`Metadata`] struct. This will just Default::default to
     // all `None`s if it can't find a specific field, or error if the field is malformed.
-    let metadata = Metadata::new(package)?;
+    let metadata = if let Some(package) = package {
+        Some(Metadata::new(package)?)
+    } else {
+        None
+    };
 
     // Get the build artifact we'll be uploading with.
     //
@@ -215,7 +216,7 @@ async fn upload(
     // - Check for the `package.metadata.v5.slot` field in Cargo.toml.
     // - If that doesn't exist, directly prompt the user asking what slot to upload to.
     let slot = slot
-        .or(metadata.slot)
+        .or(metadata.and_then(|m| m.slot))
         .or_else(|| {
             CustomType::<u8>::new("Choose a program slot to upload to:")
                 .with_validator(|slot: &u8| {
@@ -244,15 +245,19 @@ async fn upload(
         &artifact.ok_or(CliError::NoArtifact)?,
         after,
         slot,
-        name.unwrap_or(package.name.clone()), // Fallback to crate name if no name was provided
+        name.or(package.and_then(|pkg| Some(pkg.name.clone())))
+            .unwrap_or("cargo-v5".to_string()),
         description
-            .or(package.description.clone())
-            .unwrap_or("Uploaded with cargo-v5.".to_string()), // Fallback to crate description if no description was provided
-        icon.or(metadata.icon).unwrap_or_default(),
+            .or(package.and_then(|pkg| pkg.description.clone()))
+            .unwrap_or("Uploaded with cargo-v5.".to_string()),
+        icon.or(metadata.and_then(|metadata| metadata.icon.clone()))
+            .unwrap_or_default(),
         "Rust".to_string(), // `program_type` hardcoded for now, maybe configurable in the future.
         match uncompressed {
             Some(val) => !val,
-            None => metadata.compress.unwrap_or(true),
+            None => metadata
+                .and_then(|metadata| metadata.compress)
+                .unwrap_or(true),
         },
     )
     .await?;
