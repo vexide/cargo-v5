@@ -159,27 +159,30 @@ async fn upload(
 ) -> miette::Result<()> {
     // We'll use `cargo-metadata` to parse the output of `cargo metadata` and find valid `Cargo.toml`
     // files in the workspace directory.
-    let cargo_metadata = block_in_place(|| cargo_metadata::MetadataCommand::new().no_deps().exec())
-        .map_err(CliError::CargoMetadata)?;
+    let cargo_metadata =
+        block_in_place(|| cargo_metadata::MetadataCommand::new().no_deps().exec()).ok();
 
     // Locate packages with valid v5 metadata fields.
-    let package = cargo_metadata
-        .packages
-        .iter()
-        .find(|p| {
-            if let Some(v5_metadata) = p.metadata.get("v5") {
-                v5_metadata.is_object()
-            } else {
-                false
-            }
-        })
-        .or(cargo_metadata.packages.first());
+    let package = cargo_metadata.and_then(|metadata| {
+        metadata
+            .packages
+            .iter()
+            .find(|p| {
+                if let Some(v5_metadata) = p.metadata.get("v5") {
+                    v5_metadata.is_object()
+                } else {
+                    false
+                }
+            })
+            .cloned()
+            .or(metadata.packages.first().cloned())
+    });
 
     // Uploading has the option to use the `package.metadata.v5` table for default configuration options.
     // Attempt to serialize `package.metadata.v5` into a [`Metadata`] struct. This will just Default::default to
     // all `None`s if it can't find a specific field, or error if the field is malformed.
-    let metadata = if let Some(package) = package {
-        Metadata::new(package).ok()
+    let metadata = if let Some(ref package) = package {
+        Some(Metadata::new(package)?)
     } else {
         None
     };
@@ -245,10 +248,10 @@ async fn upload(
         &artifact.ok_or(CliError::NoArtifact)?,
         after,
         slot,
-        name.or(package.and_then(|pkg| Some(pkg.name.clone())))
+        name.or(package.as_ref().and_then(|pkg| Some(pkg.name.clone())))
             .unwrap_or("cargo-v5".to_string()),
         description
-            .or(package.and_then(|pkg| pkg.description.clone()))
+            .or(package.as_ref().and_then(|pkg| pkg.description.clone()))
             .unwrap_or("Uploaded with cargo-v5.".to_string()),
         icon.or(metadata.and_then(|metadata| metadata.icon.clone()))
             .unwrap_or_default(),

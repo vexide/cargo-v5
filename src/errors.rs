@@ -5,10 +5,6 @@ use vex_v5_serial::packets::cdc2::Cdc2Ack;
 #[derive(Error, Diagnostic, Debug)]
 pub enum CliError {
     #[error(transparent)]
-    #[diagnostic(code(cargo_v5::cargo_metadata))]
-    CargoMetadata(#[from] cargo_metadata::Error),
-
-    #[error(transparent)]
     #[diagnostic(code(cargo_v5::io_error))]
     IoError(#[from] std::io::Error),
 
