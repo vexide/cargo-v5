@@ -27,29 +27,28 @@ use super::build::CargoOpts;
 /// Options used to control the behavior of a program upload
 #[derive(Args, Debug)]
 pub struct UploadOpts {
-    /// An build artifact to upload (either an ELF or BIN).
-    #[arg(long)]
-    pub file: Option<Utf8PathBuf>,
-
     /// Program slot.
     #[arg(short, long)]
     pub slot: Option<u8>,
-
+    
     /// The name of the program.
     #[arg(long)]
     pub name: Option<String>,
-
+    
     /// The description of the program.
     #[arg(short, long)]
     pub description: Option<String>,
-
+    
     /// The program's file icon.
     #[arg(short, long)]
     pub icon: Option<ProgramIcon>,
-
+    
     /// Skip gzip compression before uploading. Will result in longer upload times.
     #[arg(short, long)]
     pub uncompressed: Option<bool>,
+    
+    /// An build artifact to upload (either an ELF or BIN).
+    pub file: Option<Utf8PathBuf>,
 
     /// Arguments forwarded to `cargo`.
     #[clap(flatten)]
