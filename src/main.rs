@@ -179,7 +179,7 @@ async fn upload(
     // Attempt to serialize `package.metadata.v5` into a [`Metadata`] struct. This will just Default::default to
     // all `None`s if it can't find a specific field, or error if the field is malformed.
     let metadata = if let Some(package) = package {
-        Some(Metadata::new(package)?)
+        Metadata::new(package).ok()
     } else {
         None
     };
