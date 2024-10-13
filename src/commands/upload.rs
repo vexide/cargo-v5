@@ -7,10 +7,7 @@ use std::{sync::Arc, time::Duration};
 
 use vex_v5_serial::{
     commands::file::{ProgramData, UploadProgram},
-    connection::{
-        serial::SerialConnection,
-        Connection, ConnectionType,
-    },
+    connection::{serial::SerialConnection, Connection, ConnectionType},
     packets::{
         file::FileExitAction,
         radio::{
@@ -30,23 +27,23 @@ pub struct UploadOpts {
     /// Program slot.
     #[arg(short, long)]
     pub slot: Option<u8>,
-    
+
     /// The name of the program.
     #[arg(long)]
     pub name: Option<String>,
-    
+
     /// The description of the program.
     #[arg(short, long)]
     pub description: Option<String>,
-    
+
     /// The program's file icon.
     #[arg(short, long)]
     pub icon: Option<ProgramIcon>,
-    
+
     /// Skip gzip compression before uploading. Will result in longer upload times.
     #[arg(short, long)]
     pub uncompressed: Option<bool>,
-    
+
     /// An build artifact to upload (either an ELF or BIN).
     #[arg(long)]
     pub file: Option<Utf8PathBuf>,

@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use cargo_v5::{
@@ -16,7 +16,11 @@ use inquire::{
     CustomType,
 };
 use tokio::{
-    io::{stdin, AsyncReadExt}, runtime::Handle, select, spawn, sync::Mutex, task::{block_in_place, spawn_blocking}, time::sleep
+    io::{stdin, AsyncReadExt},
+    runtime::Handle,
+    select,
+    task::{block_in_place, spawn_blocking},
+    time::sleep,
 };
 use vex_v5_serial::connection::{
     serial::{self, SerialConnection},
@@ -276,13 +280,13 @@ async fn terminal(mut connection: SerialConnection) -> ! {
     let mut stdin = stdin();
 
     loop {
-        let mut program_output = [0; 1024]; 
+        let mut program_output = [0; 1024];
         let mut program_input = [0; 1024];
         select! {
             read = connection.read_user(&mut program_output) => {
                 if let Ok(size) = read {
                     print!("{}", std::str::from_utf8(&program_output[..size]).unwrap());
-                }   
+                }
             },
             read = stdin.read(&mut program_input) => {
                 if let Ok(size) = read {
