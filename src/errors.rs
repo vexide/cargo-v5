@@ -73,4 +73,11 @@ pub enum CliError {
     #[error("Output ELF file could not be parsed.")]
     #[diagnostic(code(cargo_v5::elf_parse_error))]
     ElfParseError(#[from] object::Error),
+
+    #[error("Controller never reconnected after switching to download channel.")]
+    #[diagnostic(
+        code(cargo_v5::download_channel_timeout),
+        help("Try running `cargo v5 upload` again. If the problem persists, power cycle your controller and Brain.")
+    )]
+    DownloadChannelTimeout,
 }

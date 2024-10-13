@@ -1,19 +1,26 @@
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use clap::{Args, ValueEnum};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use tokio::{runtime::Handle, sync::Mutex, task::block_in_place, time::Instant};
+use tokio::{
+    runtime::Handle,
+    select,
+    sync::Mutex,
+    task::block_in_place,
+    time::{sleep, Instant},
+};
 
-use std::{sync::Arc, time::Duration};
+use std::{default, sync::Arc, time::Duration};
 
 use vex_v5_serial::{
     commands::file::{ProgramData, UploadProgram},
-    connection::{serial::SerialConnection, Connection, ConnectionType},
+    connection::{serial::SerialConnection, Connection},
     packets::{
         file::FileExitAction,
         radio::{
             RadioChannel, SelectRadioChannelPacket, SelectRadioChannelPayload,
             SelectRadioChannelReplyPacket,
         },
+        system::{GetSystemVersionPacket, GetSystemVersionReplyPacket, ProductFlags},
     },
 };
 
@@ -113,6 +120,58 @@ pub enum ProgramIcon {
     VexcodeCpp = 926,
 }
 
+async fn controller_connected(connection: &mut SerialConnection) -> Result<bool, CliError> {
+    let version = connection
+        .packet_handshake::<GetSystemVersionReplyPacket>(
+            Duration::from_millis(500),
+            1,
+            GetSystemVersionPacket::new(()),
+        )
+        .await?;
+    let connected = version
+        .payload
+        .flags
+        .contains(ProductFlags::CONNECTED_WIRELESS);
+    Ok(connected)
+}
+
+async fn switch_to_download_channel(connection: &mut SerialConnection) -> Result<(), CliError> {
+    if connection.connection_type().is_controller() {
+        println!("Switching radio to download channel...");
+
+        // Tell the controller to switch to the download channel.
+        connection
+            .packet_handshake::<SelectRadioChannelReplyPacket>(
+                Duration::from_secs(2),
+                3,
+                SelectRadioChannelPacket::new(SelectRadioChannelPayload {
+                    channel: RadioChannel::Download,
+                }),
+            )
+            .await?;
+
+        // Wait for the radio to switch channels before polling the connection
+        sleep(Duration::from_millis(250)).await;
+
+        // Poll the connection of the controller to ensure the radio has switched channels.
+        let timeout = Duration::from_secs(5);
+        select! {
+            _ = sleep(timeout) => {
+                return Err(CliError::DownloadChannelTimeout)
+            }
+            _ = async {
+                while !controller_connected(connection).await.unwrap_or(false) {
+                    sleep(Duration::from_millis(250)).await;
+                }
+            } => {
+                println!("Radio successfully switched to download channel.");
+            }
+        }
+    }
+
+    Ok(())
+}
+
 const PROGRESS_CHARS: &str = "⣿⣦⣀";
 
 /// Upload a program to the brain.
@@ -163,21 +222,8 @@ pub async fn upload_program(
     // We're uploading a monolith (single-bin, no hot/cold linking).
     let data = ProgramData::Monolith(tokio::fs::read(path).await?);
 
-    // Switch to radio download channel if uploading from a controller.
-    if connection.connection_type() == ConnectionType::Controller {
-        connection
-            .packet_handshake::<SelectRadioChannelReplyPacket>(
-                Duration::from_millis(500),
-                10,
-                SelectRadioChannelPacket::new(SelectRadioChannelPayload {
-                    channel: RadioChannel::Download,
-                }),
-            )
-            .await?
-            .try_into_inner()?;
-
-        tokio::time::sleep(Duration::from_millis(250)).await;
-    }
+    // Attempt to switch to the download channel if we're uploading from a controller.
+    switch_to_download_channel(connection).await?;
 
     // Upload the program.
     connection
@@ -243,6 +289,17 @@ pub async fn upload_program(
     // Tell the progressbars that we're done once uploading is complete, allowing further messages to be printed to stdout.
     ini_progress.lock().await.finish();
     bin_progress.lock().await.finish();
+
+    // Switch back to the Pit channel
+    connection
+        .packet_handshake::<SelectRadioChannelReplyPacket>(
+            Duration::from_secs(2),
+            1,
+            SelectRadioChannelPacket::new(SelectRadioChannelPayload {
+                channel: RadioChannel::Pit,
+            }),
+        )
+        .await?;
 
     Ok(())
 }
