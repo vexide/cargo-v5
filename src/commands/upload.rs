@@ -9,7 +9,7 @@ use tokio::{
     time::{sleep, Instant},
 };
 
-use std::{default, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use vex_v5_serial::{
     commands::file::{ProgramData, UploadProgram},
