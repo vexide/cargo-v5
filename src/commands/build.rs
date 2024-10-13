@@ -143,7 +143,7 @@ pub async fn objcopy(elf: &Utf8Path) -> Result<Utf8PathBuf, CliError> {
         // Fill gaps between segments with zeros.
         let gap = segment.address() - last_addr;
         if gap > 0 {
-            bytes.resize(bytes.len() + gap as usize, 0);
+            bytes.extend(vec![0; gap as usize]);
         }
 
         // Push the segment data to the binary.
