@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use cargo_v5::{
@@ -16,8 +16,7 @@ use inquire::{
     CustomType,
 };
 use tokio::{
-    runtime::Handle,
-    task::{block_in_place, spawn_blocking},
+    io::{stdin, AsyncReadExt}, runtime::Handle, select, spawn, sync::Mutex, task::{block_in_place, spawn_blocking}, time::sleep
 };
 use vex_v5_serial::connection::{
     serial::{self, SerialConnection},
@@ -105,7 +104,7 @@ async fn main() -> miette::Result<()> {
             upload(&path, opts, AfterUpload::Run, true).await?;
         }
         Command::Terminal => {
-            terminal(&mut open_connection().await?).await;
+            terminal(open_connection().await?).await;
         }
         Command::Sim { ui, cargo_opts } => {
             let mut artifact = None;
@@ -267,20 +266,31 @@ async fn upload(
 
     if then_terminal {
         println!();
-        terminal(&mut connection).await;
+        terminal(connection).await;
     }
 
     Ok(())
 }
 
-async fn terminal(connection: &mut SerialConnection) -> ! {
-    loop {
-        let mut output = [0; 2048];
+async fn terminal(mut connection: SerialConnection) -> ! {
+    let mut stdin = stdin();
 
-        if let Ok(size) = connection.read_user(&mut output).await {
-            if size > 0 {
-                print!("{}", std::str::from_utf8(&output[..size]).unwrap());
+    loop {
+        let mut program_output = [0; 1024]; 
+        let mut program_input = [0; 1024];
+        select! {
+            read = connection.read_user(&mut program_output) => {
+                if let Ok(size) = read {
+                    print!("{}", std::str::from_utf8(&program_output[..size]).unwrap());
+                }   
+            },
+            read = stdin.read(&mut program_input) => {
+                if let Ok(size) = read {
+                    connection.write_user(&program_input[..size]).await.unwrap();
+                }
             }
         }
+
+        sleep(Duration::from_millis(10)).await;
     }
 }
