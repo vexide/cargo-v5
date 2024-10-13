@@ -1,4 +1,4 @@
-// use object::{Object, ObjectSegment};
+use object::{Object, ObjectSegment};
 use std::process::{exit, Stdio};
 use tokio::{process::Command, task::block_in_place};
 
@@ -68,7 +68,7 @@ pub async fn build(
         .arg("json-render-diagnostics");
 
     if !is_nightly_toolchain().await {
-        eprintln!("ERROR: pros-rs requires Nightly Rust features, but you're using stable.");
+        eprintln!("ERROR: vexid requires Nightly Rust features, but you're using stable.");
         eprintln!(" hint: this can be fixed by running `rustup override set nightly`");
         exit(1);
     }
@@ -121,39 +121,42 @@ pub async fn build(
     });
 }
 
-// pub async fn objcopy(elf: &Utf8Path) -> Utf8PathBuf {
-//     println!("Creating binary: {}", elf);
-//     // Read the ELF file built by cargo.
-//     let data = tokio::fs::read(elf).await.unwrap();
-
-//     // Parse the ELF file.
-//     let elf_data = object::File::parse(data.as_slice()).unwrap();
-//     // Get the loadable segments (program data)
-//     let program_segments = elf_data.segments();
-//     // Concatenate all the segments into a single binary.
-//     let mut bytes = Vec::new();
-//     for segment in program_segments {
-//         bytes.extend_from_slice(segment.data().unwrap())
-//     }
-
-//     // Write the binary to a file.
-//     let bin = elf.with_extension("bin");
-//     tokio::fs::write(&bin, bytes).await.unwrap();
-//     println!("Output binary: {}", bin);
-
-//     bin
-// }
-
 pub async fn objcopy(elf: &Utf8Path) -> Result<Utf8PathBuf, CliError> {
     println!("Creating binary: {}.bin", elf);
+    // Read the ELF file built by cargo.
+    let data = tokio::fs::read(elf).await?;
+
+    // Parse the ELF file.
+    let elf_data = object::File::parse(data.as_slice())?;
+
+    // Get the loadable segments (program data) and sort them by virtual address.
+    let mut program_segments: Vec<_> = elf_data.segments().collect();
+    program_segments.sort_by_key(|seg| seg.address());
+
+    // used to fill gaps between segments with zeros
+    let mut last_addr = program_segments.first().unwrap().address();
+    // final binary
+    let mut bytes = Vec::new();
+
+    // Concatenate all the segments into a single binary.
+    for segment in program_segments {
+        // Fill gaps between segments with zeros.
+        let gap = segment.address() - last_addr;
+        if gap > 0 {
+            bytes.resize(bytes.len() + gap as usize, 0);
+        }
+
+        // Push the segment data to the binary.
+        let data = segment.data()?;
+        bytes.extend_from_slice(data);
+
+        // data.len() can be different from segment.size() so we use the actual data length
+        last_addr = segment.address() + data.len() as u64;
+    }
+
+    // Write the binary to a file.
     let bin = elf.with_extension("bin");
-    Command::new("rust-objcopy")
-        .args(["-O", "binary", elf.as_str(), bin.as_str()])
-        .spawn()
-        .map_err(|_| CliError::MissingBinutils)?
-        .wait()
-        .await
-        .unwrap();
+    tokio::fs::write(&bin, bytes).await?;
 
     Ok(bin)
 }

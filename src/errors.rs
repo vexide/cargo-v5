@@ -70,10 +70,7 @@ pub enum CliError {
     )]
     NoDevice,
 
-    #[error("Could not execute `rust-objcopy`.")]
-    #[diagnostic(
-        code(cargo_v5::missing_binutils),
-        help("Make sure that you have cargo-binutils installed. Try installing it with `rustup component add llvm-tools` and `cargo install cargo-binutils`.")
-    )]
-    MissingBinutils,
+    #[error("Output ELF file could not be parsed.")]
+    #[diagnostic(code(cargo_v5::elf_parse_error))]
+    ElfParseError(#[from] object::Error),
 }

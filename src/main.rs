@@ -248,12 +248,12 @@ async fn upload(
         &artifact.ok_or(CliError::NoArtifact)?,
         after,
         slot,
-        name.or(package.as_ref().and_then(|pkg| Some(pkg.name.clone())))
+        name.or(package.as_ref().map(|pkg| pkg.name.clone()))
             .unwrap_or("cargo-v5".to_string()),
         description
             .or(package.as_ref().and_then(|pkg| pkg.description.clone()))
             .unwrap_or("Uploaded with cargo-v5.".to_string()),
-        icon.or(metadata.and_then(|metadata| metadata.icon.clone()))
+        icon.or(metadata.and_then(|metadata| metadata.icon))
             .unwrap_or_default(),
         "Rust".to_string(), // `program_type` hardcoded for now, maybe configurable in the future.
         match uncompressed {
