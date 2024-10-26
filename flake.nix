@@ -25,7 +25,7 @@
             dbus
             udev
             (pkgs.rust-bin.nightly.latest.default.override {
-              extensions = [ "rust-analyzer" "rust-src" "clippy" "llvm-tools" ];
+              extensions = [ "rust-analyzer" "rust-src" "clippy" ];
             })
           ];
 

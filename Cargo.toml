@@ -21,18 +21,19 @@ slot = 1
 [dependencies]
 cargo-subcommand-metadata = "0.1.0"
 cargo_metadata = "0.18.0"
-clap = { version = "4.4.2", features = ["derive"], optional = true }
-serde = { version = "1.0.203", features = ["derive"] }
-serde_json = "1.0.106"
-fs-err = { version = "2.9.0", features = ["tokio"] }
+clap = { version = "4.5.20", features = ["derive"], optional = true }
+serde = { version = "1.0.213", features = ["derive"] }
+serde_json = "1.0.132"
+fs-err = { version = "3.0.0", features = ["tokio"] }
 cfg-if = "1.0.0"
 inquire = "0.7.5"
 indicatif = "0.17.8"
-vex-v5-serial = { version = "0.2.1", default-features = false, features = ["serial"] }
-tokio = { version = "1.23.0", features = ["full"] }
+vex-v5-serial = { version = "0.2.2", default-features = false, features = ["serial"] }
+tokio = { version = "1.41.0", features = ["full"] }
 miette = { version = "7.2.0", features = ["fancy"] }
-thiserror = "1.0.61"
-object = { version = "0.36.1", default-features = false, features = ["std", "read_core", "elf"] }
+thiserror = "1.0.65"
+object = { version = "0.36.5", default-features = false, features = ["std", "read_core", "elf"] }
+ratatui = "0.29.0"
 
 [features]
 default = ["clap"]
