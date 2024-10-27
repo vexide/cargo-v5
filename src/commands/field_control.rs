@@ -3,9 +3,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::{
+    cursor,
+    event::{self, Event, KeyCode, KeyModifiers},
+};
 use ratatui::{
-    layout::{Constraint, Flex, Layout},
+    layout::{Constraint, Flex, Layout, Position},
     style::Stylize,
     widgets::{Block, Paragraph},
     Frame,
@@ -41,15 +44,37 @@ async fn set_match_mode(
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MatchModeFocus {
     Auto,
     Driver,
     Disabled,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Focus {
     MatchMode(MatchModeFocus),
     Countdown,
+}
+
+struct CountdownState {
+    auto_set_time: Duration,
+    driver_set_time: Duration,
+    disabled_set_time: Duration,
+    current_time: Duration,
+    start_time: Instant,
+    running: bool,
+
+    cursor_pos: usize,
+}
+impl CountdownState {
+    fn current_set_time(&self, match_mode: MatchMode) -> Duration {
+        match match_mode {
+            MatchMode::Auto => self.auto_set_time,
+            MatchMode::Driver => self.driver_set_time,
+            MatchMode::Disabled => self.disabled_set_time,
+        }
+    }
 }
 
 struct TuiState {
@@ -57,15 +82,12 @@ struct TuiState {
     focus: Focus,
     program_output: String,
 
-    countdown_set_time: Duration,
-    countdown_current_time: Duration,
-    countdown_start_time: Instant,
-    countdown_running: bool,
+    countdown: CountdownState,
 }
 
 pub fn draw_tui(frame: &mut Frame, state: &TuiState) {
-    let minutes = state.countdown_current_time.as_secs() / 60;
-    let seconds = state.countdown_current_time.as_secs() % 60;
+    let minutes = state.countdown.current_time.as_secs() / 60;
+    let seconds = state.countdown.current_time.as_secs() % 60;
     let countdown_text = format!("{minutes:02}:{seconds:02}");
 
     let main_sections =
@@ -76,8 +98,19 @@ pub fn draw_tui(frame: &mut Frame, state: &TuiState) {
 
     let countdown_block = Block::bordered().title("Countdown");
     let mut countdown = Paragraph::new(countdown_text);
-    if state.countdown_running {
+    if state.countdown.running {
         countdown = countdown.green();
+    } else if state.focus == Focus::Countdown {
+        let area = countdown_block.inner(countdown_area);
+        frame.set_cursor_position(Position::new(
+            area.x
+                + if state.countdown.cursor_pos > 1 {
+                    state.countdown.cursor_pos + 1
+                } else {
+                    state.countdown.cursor_pos
+                } as u16,
+            area.y,
+        ))
     }
     if let Focus::Countdown = state.focus {
         countdown = countdown.bold();
@@ -162,7 +195,7 @@ fn handle_events(tui_state: &mut TuiState) -> io::Result<Control> {
             }
             KeyCode::Char(' ') | KeyCode::Enter => {
                 match tui_state.focus {
-                    Focus::Countdown => tui_state.countdown_running = !tui_state.countdown_running,
+                    Focus::Countdown => tui_state.countdown.running = !tui_state.countdown.running,
                     Focus::MatchMode(MatchModeFocus::Driver) => {
                         tui_state.current_mode = MatchMode::Driver;
                     }
@@ -175,6 +208,52 @@ fn handle_events(tui_state: &mut TuiState) -> io::Result<Control> {
                 }
                 Control::ChangeMode(tui_state.current_mode)
             }
+            KeyCode::Char('h') | KeyCode::Left => {
+                if let Focus::Countdown = tui_state.focus {
+                    if tui_state.countdown.cursor_pos > 0 {
+                        tui_state.countdown.cursor_pos -= 1;
+                    }
+                }
+                Control::None
+            }
+            KeyCode::Char('l') | KeyCode::Right => {
+                if let Focus::Countdown = tui_state.focus {
+                    if tui_state.countdown.cursor_pos < 3 {
+                        tui_state.countdown.cursor_pos += 1;
+                    }
+                }
+                Control::None
+            }
+            KeyCode::Char(ch) if ch.is_numeric() => {
+                if let Focus::Countdown = tui_state.focus {
+                    let digit = ch.to_digit(10).unwrap() as u64;
+                    let current_time = tui_state.countdown.current_time.as_secs();
+
+                    let new_time = match tui_state.countdown.cursor_pos {
+                        0 => digit * 600 + current_time % 600,
+                        1 => digit * 60 + current_time % 60 + (current_time / 600) * 600,
+                        2 => digit * 10 + current_time % 10 + (current_time / 60) * 60,
+                        3 => digit + (current_time / 10) * 10,
+                        _ => current_time,
+                    };
+
+                    match tui_state.current_mode {
+                        MatchMode::Auto => {
+                            tui_state.countdown.auto_set_time = Duration::from_secs(new_time)
+                        }
+                        MatchMode::Driver => {
+                            tui_state.countdown.driver_set_time = Duration::from_secs(new_time)
+                        }
+                        MatchMode::Disabled => {
+                            tui_state.countdown.disabled_set_time = Duration::from_secs(new_time)
+                        }
+                    }
+                    if tui_state.countdown.cursor_pos < 3 {
+                        tui_state.countdown.cursor_pos += 1;
+                    }
+                }
+                Control::None
+            }
             _ => Control::None,
         },
         _ => Control::None,
@@ -182,14 +261,15 @@ fn handle_events(tui_state: &mut TuiState) -> io::Result<Control> {
 }
 
 fn handle_countdown(tui_state: &mut TuiState) -> Control {
-    if tui_state.countdown_running {
-        let elapsed = tui_state.countdown_start_time.elapsed();
-        tui_state.countdown_current_time = tui_state
-            .countdown_set_time
+    if tui_state.countdown.running {
+        let elapsed = tui_state.countdown.start_time.elapsed();
+        tui_state.countdown.current_time = tui_state
+            .countdown
+            .current_set_time(tui_state.current_mode)
             .checked_sub(elapsed)
             .unwrap_or_default();
-        if tui_state.countdown_current_time.as_secs() == 0 {
-            tui_state.countdown_start_time = Instant::now();
+        if tui_state.countdown.current_time.as_secs() == 0 {
+            tui_state.countdown.start_time = Instant::now();
             match tui_state.current_mode {
                 MatchMode::Auto => {
                     tui_state.current_mode = MatchMode::Driver;
@@ -197,7 +277,7 @@ fn handle_countdown(tui_state: &mut TuiState) -> Control {
                 }
                 MatchMode::Driver => {
                     tui_state.current_mode = MatchMode::Disabled;
-                    tui_state.countdown_running = false;
+                    tui_state.countdown.running = false;
                     return Control::ChangeMode(MatchMode::Disabled);
                 }
                 MatchMode::Disabled => {
@@ -207,8 +287,9 @@ fn handle_countdown(tui_state: &mut TuiState) -> Control {
             }
         }
     } else {
-        tui_state.countdown_current_time = tui_state.countdown_set_time;
-        tui_state.countdown_start_time = Instant::now();
+        tui_state.countdown.current_time =
+            tui_state.countdown.current_set_time(tui_state.current_mode);
+        tui_state.countdown.start_time = Instant::now();
     }
 
     Control::None
@@ -230,10 +311,15 @@ pub async fn run_field_control_tui(connection: &mut SerialConnection) -> Result<
         current_mode: MatchMode::Disabled,
         focus: Focus::MatchMode(MatchModeFocus::Driver),
         program_output: String::new(),
-        countdown_set_time: Duration::from_secs(3),
-        countdown_current_time: Duration::from_secs(3),
-        countdown_start_time: Instant::now(),
-        countdown_running: false,
+        countdown: CountdownState {
+            auto_set_time: Duration::from_secs(15),
+            driver_set_time: Duration::from_secs(105),
+            disabled_set_time: Duration::from_secs(0),
+            current_time: Duration::from_secs(0),
+            start_time: Instant::now(),
+            running: false,
+            cursor_pos: 0,
+        },
     };
 
     let mut terminal = ratatui::init();
