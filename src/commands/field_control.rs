@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     io,
     time::{Duration, Instant},
 };
@@ -7,15 +8,18 @@ use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Flex, Layout, Position},
     style::Stylize,
+    text::Line,
     widgets::{Block, Paragraph},
     Frame,
 };
+use tokio::time::sleep;
 use vex_v5_serial::{
     connection::{
         serial::{SerialConnection, SerialError},
         Connection,
     },
     packets::{
+        controller::{UserFifoPacket, UserFifoPayload, UserFifoReplyPacket},
         match_mode::{MatchMode, SetMatchModePacket, SetMatchModePayload, SetMatchModeReplyPacket},
         system::{GetSystemVersionPacket, GetSystemVersionReplyPacket, ProductType},
     },
@@ -38,6 +42,27 @@ async fn set_match_mode(
         )
         .await?;
     Ok(())
+}
+
+async fn try_read_terminal(connection: &mut SerialConnection) -> Result<Vec<u8>, CliError> {
+    let read = connection
+        .packet_handshake::<UserFifoReplyPacket>(
+            Duration::from_millis(100),
+            1,
+            UserFifoPacket::new(UserFifoPayload {
+                channel: 1, // stdio channel
+                write: None,
+            }),
+        )
+        .await?
+        .try_into_inner()?;
+
+    let mut data = Vec::new();
+    if let Some(read) = read.data {
+        data.extend(read.0.as_bytes());
+    }
+
+    Ok(data)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,12 +101,12 @@ impl CountdownState {
 struct TuiState {
     current_mode: MatchMode,
     focus: Focus,
-    program_output: String,
+    program_output: VecDeque<String>,
 
     countdown: CountdownState,
 }
 
-fn draw_tui(frame: &mut Frame, state: &TuiState) {
+fn draw_tui(frame: &mut Frame, state: &mut TuiState) {
     let minutes = state.countdown.current_time.as_secs() / 60;
     let seconds = state.countdown.current_time.as_secs() % 60;
     let countdown_text = format!("{minutes:02}:{seconds:02}");
@@ -118,13 +143,13 @@ fn draw_tui(frame: &mut Frame, state: &TuiState) {
     let mode_block = Block::bordered().title("Match Mode");
 
     let [driver_area, auto_area, disabled_area] =
-        Layout::vertical([Constraint::Min(1), Constraint::Min(1), Constraint::Min(1)])
-            .flex(Flex::Center)
+        Layout::vertical([Constraint::Max(1), Constraint::Max(1), Constraint::Max(1)])
+            .flex(Flex::Start)
             .areas(mode_block.inner(mode_area));
 
-    let mut driver = Paragraph::new("Driver");
-    let mut auto = Paragraph::new("Auto");
-    let mut disabled = Paragraph::new("Disabled");
+    let mut driver = Line::raw("Driver");
+    let mut auto = Line::raw("Auto");
+    let mut disabled = Line::raw("Disabled");
 
     if let Focus::MatchMode(mode) = &state.focus {
         match mode {
@@ -144,7 +169,21 @@ fn draw_tui(frame: &mut Frame, state: &TuiState) {
     frame.render_widget(disabled, disabled_area);
     frame.render_widget(mode_block, mode_area);
 
-    frame.render_widget(Block::bordered().title("Program Output"), terminal_area);
+    let terminal_block = Block::bordered().title("Program Output");
+
+    let height = terminal_block.inner(terminal_area).as_size().height as usize;
+    state.program_output.truncate(height);
+
+    let lines = Layout::vertical(vec![Constraint::Max(1); height])
+        .flex(Flex::End)
+        .split(terminal_block.inner(terminal_area));
+    for (i, line) in lines.iter().rev().enumerate() {
+        if let Some(term_line) = state.program_output.get(i) {
+            let term_line = Line::raw(term_line);
+            frame.render_widget(term_line, *line);
+        }
+    }
+    frame.render_widget(terminal_block, terminal_area);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -306,7 +345,7 @@ pub async fn run_field_control_tui(connection: &mut SerialConnection) -> Result<
     let mut tui_state = TuiState {
         current_mode: MatchMode::Disabled,
         focus: Focus::MatchMode(MatchModeFocus::Driver),
-        program_output: String::new(),
+        program_output: VecDeque::new(),
         countdown: CountdownState {
             auto_set_time: Duration::from_secs(15),
             driver_set_time: Duration::from_secs(105),
@@ -323,7 +362,6 @@ pub async fn run_field_control_tui(connection: &mut SerialConnection) -> Result<
         if let Control::ChangeMode(mode) = handle_countdown(&mut tui_state) {
             set_match_mode(connection, mode).await?;
         }
-        terminal.draw(|frame| draw_tui(frame, &tui_state))?;
         if event::poll(Duration::from_millis(1))? {
             match handle_events(&mut tui_state)? {
                 Control::None => {}
@@ -333,6 +371,15 @@ pub async fn run_field_control_tui(connection: &mut SerialConnection) -> Result<
                 }
             }
         }
+        terminal.draw(|frame| draw_tui(frame, &mut tui_state))?;
+
+        if let Ok(output) = try_read_terminal(connection).await {
+            let output = std::str::from_utf8(&output).unwrap();
+            for line in output.lines() {
+                tui_state.program_output.push_front(line.to_string());
+            }
+        }
+        sleep(Duration::from_millis(10)).await;
     }
     ratatui::restore();
     Ok(())
