@@ -46,6 +46,7 @@ enum Cargo {
 #[derive(Subcommand, Debug)]
 enum Command {
     /// Build a project for the V5 brain.
+    #[clap(visible_alias = "b")]
     Build {
         /// Build a binary for the WASM simulator instead of the native V5 target.
         #[arg(long, short)]
@@ -56,6 +57,7 @@ enum Command {
         cargo_opts: CargoOpts,
     },
     /// Build a project and upload it to the V5 brain.
+    #[clap(visible_alias = "u")]
     Upload {
         #[arg(long, default_value = "none")]
         after: AfterUpload,
@@ -64,8 +66,10 @@ enum Command {
         upload_opts: UploadOpts,
     },
     /// Build, upload, and run a program on the V5 brain, showing its output in the terminal.
+    #[clap(visible_alias = "r")]
     Run(UploadOpts),
     /// Access the brain's remote terminal I/O.
+    #[clap(visible_alias = "t")]
     Terminal,
     /// Build a project and run it in the simulator.
     Sim {
@@ -76,6 +80,8 @@ enum Command {
         #[clap(flatten)]
         cargo_opts: CargoOpts,
     },
+    #[clap(visible_aliases = ["fc", "match"])]
+    /// Run a field control TUI.
     FieldControl,
 }
 
