@@ -208,7 +208,7 @@ fn draw_tui(frame: &mut Frame, state: &mut TuiState) {
         .title_style(title_style);
 
     let size = terminal_block.inner(terminal_area).as_size();
-    state.parser.set_size(size.height, size.width);
+    state.parser.set_size(size.height + 1, size.width);
 
     let mut cursor = Cursor::default();
     cursor.hide();
@@ -407,6 +407,8 @@ pub async fn run_field_control_tui(connection: &mut SerialConnection) -> Result<
             running: false,
         },
     };
+
+    set_match_mode(connection, tui_state.current_mode).await?;
 
     let mut terminal = ratatui::init();
     loop {
