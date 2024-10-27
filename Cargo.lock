@@ -158,6 +158,7 @@ dependencies = [
  "cargo_metadata",
  "cfg-if",
  "clap",
+ "crossterm 0.28.1",
  "fs-err",
  "indicatif",
  "inquire",

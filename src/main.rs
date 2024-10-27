@@ -3,9 +3,7 @@ use std::time::Duration;
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use cargo_v5::{
     commands::{
-        build::{build, objcopy, CargoOpts},
-        simulator::launch_simulator,
-        upload::{upload_program, AfterUpload, UploadOpts},
+        build::{build, objcopy, CargoOpts}, field_control::run_field_control_tui, simulator::launch_simulator, upload::{upload_program, AfterUpload, UploadOpts}
     },
     errors::CliError,
     metadata::Metadata,
@@ -78,6 +76,7 @@ enum Command {
         #[clap(flatten)]
         cargo_opts: CargoOpts,
     },
+    FieldControl,
 }
 
 #[tokio::main]
@@ -124,6 +123,10 @@ async fn main() -> miette::Result<()> {
                     .as_ref(),
             )
             .await;
+        },
+        Command::FieldControl => {
+            let mut connection = open_connection().await?;
+            run_field_control_tui(&mut connection).await?;
         }
     }
 

@@ -80,4 +80,11 @@ pub enum CliError {
         help("Try running `cargo v5 upload` again. If the problem persists, power cycle your controller and Brain.")
     )]
     DownloadChannelTimeout,
+
+    #[error("Attempted to change the match mode over a direct Brain connection.")]
+    #[diagnostic(
+        code(cargo_v5::brain_connection_set_match_mode),
+        help("Connect to the Brain over a controller connection to change the match mode.")
+    )]
+    BrainConnectionSetMatchMode,
 }
