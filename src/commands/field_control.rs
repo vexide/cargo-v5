@@ -3,10 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crossterm::{
-    cursor,
-    event::{self, Event, KeyCode, KeyModifiers},
-};
+use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Flex, Layout, Position},
     style::Stylize,
@@ -20,7 +17,6 @@ use vex_v5_serial::{
     },
     packets::{
         match_mode::{MatchMode, SetMatchModePacket, SetMatchModePayload, SetMatchModeReplyPacket},
-        program::GetProgramInfoPacket,
         system::{GetSystemVersionPacket, GetSystemVersionReplyPacket, ProductType},
     },
 };
@@ -85,7 +81,7 @@ struct TuiState {
     countdown: CountdownState,
 }
 
-pub fn draw_tui(frame: &mut Frame, state: &TuiState) {
+fn draw_tui(frame: &mut Frame, state: &TuiState) {
     let minutes = state.countdown.current_time.as_secs() / 60;
     let seconds = state.countdown.current_time.as_secs() % 60;
     let countdown_text = format!("{minutes:02}:{seconds:02}");
@@ -234,7 +230,7 @@ fn handle_events(tui_state: &mut TuiState) -> io::Result<Control> {
                         1 => digit * 60 + current_time % 60 + (current_time / 600) * 600,
                         2 => digit * 10 + current_time % 10 + (current_time / 60) * 60,
                         3 => digit + (current_time / 10) * 10,
-                        _ => current_time,
+                        _ => unreachable!(),
                     };
 
                     match tui_state.current_mode {
