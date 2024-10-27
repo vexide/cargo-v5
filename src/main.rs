@@ -80,8 +80,8 @@ enum Command {
         #[clap(flatten)]
         cargo_opts: CargoOpts,
     },
-    #[clap(visible_aliases = ["fc", "match"])]
     /// Run a field control TUI.
+    #[clap(visible_aliases = ["fc", "comp-control"])]
     FieldControl,
 }
 
