@@ -1,5 +1,4 @@
 use std::{
-    collections::VecDeque,
     io,
     time::{Duration, Instant},
 };
@@ -7,12 +6,16 @@ use std::{
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Flex, Layout, Position},
-    style::Stylize,
+    style::{Color, Style, Stylize},
     text::Line,
     widgets::{Block, Paragraph},
     Frame,
 };
 use tokio::time::sleep;
+use tui_term::{
+    vt100,
+    widget::{Cursor, PseudoTerminal},
+};
 use vex_v5_serial::{
     connection::{
         serial::{SerialConnection, SerialError},
@@ -101,7 +104,7 @@ impl CountdownState {
 struct TuiState {
     current_mode: MatchMode,
     focus: Focus,
-    program_output: VecDeque<String>,
+    parser: vt100::Parser,
 
     countdown: CountdownState,
 }
@@ -112,7 +115,7 @@ fn draw_tui(frame: &mut Frame, state: &mut TuiState) {
     let countdown_text = format!("{minutes:02}:{seconds:02}");
 
     let main_sections =
-        Layout::horizontal([Constraint::Percentage(30), Constraint::Percentage(70)]);
+        Layout::horizontal([Constraint::Min(13), Constraint::Percentage(100)]);
     let [left_area, terminal_area] = main_sections.areas(frame.area());
     let options = Layout::vertical([Constraint::Min(3), Constraint::Percentage(100)]);
     let [countdown_area, mode_area] = options.areas(left_area);
@@ -171,19 +174,17 @@ fn draw_tui(frame: &mut Frame, state: &mut TuiState) {
 
     let terminal_block = Block::bordered().title("Program Output");
 
-    let height = terminal_block.inner(terminal_area).as_size().height as usize;
-    state.program_output.truncate(height);
+    let size = terminal_block.inner(terminal_area).as_size();
+    state.parser.set_size(size.height, size.width);
 
-    let lines = Layout::vertical(vec![Constraint::Max(1); height])
-        .flex(Flex::End)
-        .split(terminal_block.inner(terminal_area));
-    for (i, line) in lines.iter().rev().enumerate() {
-        if let Some(term_line) = state.program_output.get(i) {
-            let term_line = Line::raw(term_line);
-            frame.render_widget(term_line, *line);
-        }
-    }
-    frame.render_widget(terminal_block, terminal_area);
+    let mut cursor = Cursor::default();
+    cursor.hide();
+
+    let terminal = PseudoTerminal::new(state.parser.screen())
+        .cursor(cursor)
+        .block(Block::bordered().title("Program Output"))
+        .style(Style::default().fg(Color::White).bg(Color::Black));
+    frame.render_widget(terminal, terminal_area);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -267,7 +268,7 @@ fn handle_events(tui_state: &mut TuiState) -> io::Result<Control> {
                     let new_time = match tui_state.countdown.cursor_pos {
                         0 => digit * 600 + current_time % 600,
                         1 => digit * 60 + current_time % 60 + (current_time / 600) * 600,
-                        2 => digit * 10 + current_time % 10 + (current_time / 60) * 60,
+                        2 => digit.min(5) * 10 + current_time % 10 + (current_time / 60) * 60,
                         3 => digit + (current_time / 10) * 10,
                         _ => unreachable!(),
                     };
@@ -345,7 +346,7 @@ pub async fn run_field_control_tui(connection: &mut SerialConnection) -> Result<
     let mut tui_state = TuiState {
         current_mode: MatchMode::Disabled,
         focus: Focus::MatchMode(MatchModeFocus::Driver),
-        program_output: VecDeque::new(),
+        parser: vt100::Parser::new(1, 1, 0),
         countdown: CountdownState {
             auto_set_time: Duration::from_secs(15),
             driver_set_time: Duration::from_secs(105),
@@ -374,12 +375,18 @@ pub async fn run_field_control_tui(connection: &mut SerialConnection) -> Result<
         terminal.draw(|frame| draw_tui(frame, &mut tui_state))?;
 
         if let Ok(output) = try_read_terminal(connection).await {
-            let output = std::str::from_utf8(&output).unwrap();
-            for line in output.lines() {
-                tui_state.program_output.push_front(line.to_string());
+            if !output.is_empty() {
+                for byte in output.iter() {
+                    let byte = if *byte == b'\n' {
+                        &[b'\r', b'\n']
+                    } else {
+                        std::slice::from_ref(byte)
+                    };
+                    tui_state.parser.process(byte);
+                }
             }
         }
-        sleep(Duration::from_millis(10)).await;
+        // sleep(Duration::from_millis(10)).await;
     }
     ratatui::restore();
     Ok(())
