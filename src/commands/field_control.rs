@@ -11,7 +11,6 @@ use ratatui::{
     widgets::{Block, Paragraph},
     Frame,
 };
-use tokio::time::sleep;
 use tui_term::{
     vt100,
     widget::{Cursor, PseudoTerminal},
@@ -386,7 +385,6 @@ pub async fn run_field_control_tui(connection: &mut SerialConnection) -> Result<
                 }
             }
         }
-        // sleep(Duration::from_millis(10)).await;
     }
     ratatui::restore();
     Ok(())
