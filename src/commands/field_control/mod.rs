@@ -415,7 +415,7 @@ pub async fn run_field_control_tui(connection: &mut SerialConnection) -> Result<
         if let Control::ChangeMode(mode) = handle_countdown(&mut tui_state) {
             set_match_mode(connection, mode).await?;
         }
-        if event::poll(Duration::from_millis(1))? {
+        while event::poll(Duration::from_millis(1))? {
             match handle_events(&mut tui_state)? {
                 Control::None => {}
                 Control::Exit => break,
