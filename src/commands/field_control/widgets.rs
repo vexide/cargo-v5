@@ -40,30 +40,6 @@ impl DurationInput {
         );
         self.cursor_position = cursor_position;
     }
-    pub fn move_cursor_left(&mut self) {
-        if self.cursor_position > 0 {
-            self.cursor_position -= 1;
-        }
-    }
-    pub fn move_cursor_right(&mut self) {
-        if self.cursor_position < 3 {
-            self.cursor_position += 1;
-        }
-    }
-    pub fn input_digit(&mut self, digit: u8) {
-        assert!((0..=9).contains(&digit), "Digit out of bounds");
-        let digit = digit as u64;
-        let current_duration = self.duration.as_secs();
-        let new_time = match self.cursor_position {
-            0 => digit * 600 + current_duration % 600,
-            1 => digit * 60 + current_duration % 60 + (current_duration / 600) * 600,
-            2 => digit.min(5) * 10 + current_duration % 10 + (current_duration / 60) * 60,
-            3 => digit + (current_duration / 10) * 10,
-            _ => unreachable!(),
-        };
-        self.duration = Duration::from_secs(new_time);
-        self.move_cursor_right();
-    }
 
     pub fn place_cursor(&self, frame: &mut Frame, area: Rect) {
         frame.set_cursor_position(Position::new(
@@ -110,15 +86,6 @@ impl Mode {
     }
     pub fn set_cursor_position(&mut self, cursor_position: usize) {
         self.input.set_cursor_position(cursor_position);
-    }
-    pub fn move_cursor_left(&mut self) {
-        self.input.move_cursor_left();
-    }
-    pub fn move_cursor_right(&mut self) {
-        self.input.move_cursor_right();
-    }
-    pub fn input_digit(&mut self, digit: u8) {
-        self.input.input_digit(digit);
     }
     pub fn place_cursor(&self, frame: &mut Frame, area: Rect) {
         self.input.place_cursor(
