@@ -440,5 +440,6 @@ pub async fn run_field_control_tui(connection: &mut SerialConnection) -> Result<
         }
     }
     ratatui::restore();
+    set_match_mode(connection, MatchMode::Disabled).await?;
     Ok(())
 }
