@@ -411,14 +411,14 @@ pub async fn run_field_control_tui(connection: &mut SerialConnection) -> Result<
     set_match_mode(connection, tui_state.current_mode).await?;
 
     let mut terminal = ratatui::init();
-    loop {
+    'main: loop {
         if let Control::ChangeMode(mode) = handle_countdown(&mut tui_state) {
             set_match_mode(connection, mode).await?;
         }
         while event::poll(Duration::from_millis(1))? {
             match handle_events(&mut tui_state)? {
                 Control::None => {}
-                Control::Exit => break,
+                Control::Exit => break 'main,
                 Control::ChangeMode(mode) => {
                     set_match_mode(connection, mode).await?;
                 }
