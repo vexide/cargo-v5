@@ -8,7 +8,7 @@ use ratatui::{
     layout::{Constraint, Flex, Layout, Rect},
     style::{Color, Style, Stylize},
     symbols::{self, border::Set},
-    widgets::{Block, Borders, Paragraph, Widget},
+    widgets::{Block, Borders, Paragraph},
     Frame,
 };
 use tui_term::{
@@ -155,15 +155,17 @@ fn draw_tui(frame: &mut Frame, state: &mut TuiState) {
     frame.render_widget(countdown, countdown_block.inner(countdown_area));
     frame.render_widget(countdown_block, countdown_area);
 
-    let mode_block = Block::bordered()
+    let mut mode_block = Block::bordered()
         .border_set(Set {
             top_left: symbols::line::NORMAL.vertical_right,
             top_right: symbols::line::NORMAL.vertical_left,
             ..symbols::border::ROUNDED
         })
         .title("Match Mode")
-        .title_bottom("'?': open help")
         .title_style(title_style);
+    if frame.area().height > 4 {
+        mode_block = mode_block.title_bottom("'?': open help");
+    }
 
     let [driver_area, auto_area, disabled_area] =
         Layout::vertical([Constraint::Max(1), Constraint::Max(1), Constraint::Max(1)])
@@ -253,7 +255,7 @@ fn handle_events(tui_state: &mut TuiState) -> io::Result<Control> {
             }
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Control::Exit,
             KeyCode::Char('?') => {
-                if let Focus::Help { .. }  = tui_state.focus {
+                if let Focus::Help { .. } = tui_state.focus {
                     return Ok(Control::None);
                 }
                 let new_focus = Focus::Help {
