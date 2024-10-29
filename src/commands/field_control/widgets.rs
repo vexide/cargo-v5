@@ -2,7 +2,8 @@ use std::time::Duration;
 
 use ratatui::{
     layout::{Position, Rect},
-    widgets::Widget,
+    symbols::border::ROUNDED,
+    widgets::{Block, Clear, Paragraph, Widget, Wrap},
     Frame,
 };
 
@@ -125,5 +126,28 @@ impl Widget for Mode {
             ),
             buf,
         )
+    }
+}
+
+pub struct HelpPopup;
+impl HelpPopup {
+    pub const HELP_TEXT: &'static str = "'q', 'esc' - Quit app or help
+        'h', 'left' - Move cursor left
+        'l', 'right' - Move cursor right
+        'j', 'down' - Move focus down
+        'k', 'up' - Move focus up
+        'space', 'enter' - Select
+        '0'-'9' - Set digit in mode duration input
+        '?' - Show this help";
+    pub const LINES: u16 = 9;
+}
+impl Widget for HelpPopup {
+    fn render(self, area: Rect, buf: &mut ratatui::prelude::Buffer) {
+        Clear.render(area, buf);
+        let block = Block::bordered().border_set(ROUNDED).title("Help");
+        Paragraph::new(Self::HELP_TEXT)
+            .wrap(Wrap { trim: true })
+            .block(block)
+            .render(area, buf);
     }
 }

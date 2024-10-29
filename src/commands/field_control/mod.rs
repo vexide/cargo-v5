@@ -5,10 +5,10 @@ use std::{
 
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{
-    layout::{Constraint, Flex, Layout},
+    layout::{Constraint, Flex, Layout, Rect},
     style::{Color, Style, Stylize},
     symbols::{self, border::Set},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Paragraph, Widget},
     Frame,
 };
 use tui_term::{
@@ -26,7 +26,7 @@ use vex_v5_serial::{
         system::{GetSystemVersionPacket, GetSystemVersionReplyPacket, ProductType},
     },
 };
-use widgets::{set_duration_digit, Mode};
+use widgets::{set_duration_digit, HelpPopup, Mode};
 
 use crate::errors::CliError;
 
@@ -77,10 +77,11 @@ enum MatchModeFocus {
     Disabled,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Focus {
     MatchMode(MatchModeFocus),
     Countdown,
+    Help { return_focus: Box<Focus> },
 }
 
 struct CursorPos(usize);
@@ -161,6 +162,7 @@ fn draw_tui(frame: &mut Frame, state: &mut TuiState) {
             ..symbols::border::ROUNDED
         })
         .title("Match Mode")
+        .title_bottom("'?': open help")
         .title_style(title_style);
 
     let [driver_area, auto_area, disabled_area] =
@@ -218,6 +220,17 @@ fn draw_tui(frame: &mut Frame, state: &mut TuiState) {
         .block(terminal_block)
         .style(Style::default().fg(Color::White).bg(Color::Black));
     frame.render_widget(terminal, terminal_area);
+
+    if let Focus::Help { .. } = state.focus {
+        let area = frame.area();
+        let popup_area = Rect {
+            x: area.width / 4,
+            y: area.height / 6,
+            width: area.width / 2,
+            height: HelpPopup::LINES.min(5 * area.height / 6),
+        };
+        frame.render_widget(HelpPopup, popup_area);
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -230,8 +243,25 @@ enum Control {
 fn handle_events(tui_state: &mut TuiState) -> io::Result<Control> {
     Ok(match event::read()? {
         Event::Key(key) => match key.code {
-            KeyCode::Esc | KeyCode::Char('q') => Control::Exit,
+            KeyCode::Esc | KeyCode::Char('q') => {
+                if let Focus::Help { return_focus } = &tui_state.focus {
+                    tui_state.focus = *return_focus.clone();
+                    Control::None
+                } else {
+                    Control::Exit
+                }
+            }
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Control::Exit,
+            KeyCode::Char('?') => {
+                if let Focus::Help { .. }  = tui_state.focus {
+                    return Ok(Control::None);
+                }
+                let new_focus = Focus::Help {
+                    return_focus: Box::new(tui_state.focus.clone()),
+                };
+                tui_state.focus = new_focus;
+                Control::None
+            }
             KeyCode::Char('j') | KeyCode::Down => {
                 match tui_state.focus {
                     Focus::Countdown => tui_state.focus = Focus::MatchMode(MatchModeFocus::Driver),
@@ -244,6 +274,7 @@ fn handle_events(tui_state: &mut TuiState) -> io::Result<Control> {
                     Focus::MatchMode(MatchModeFocus::Disabled) => {
                         tui_state.focus = Focus::Countdown
                     }
+                    _ => {}
                 }
                 Control::None
             }
@@ -259,6 +290,7 @@ fn handle_events(tui_state: &mut TuiState) -> io::Result<Control> {
                     Focus::MatchMode(MatchModeFocus::Disabled) => {
                         tui_state.focus = Focus::MatchMode(MatchModeFocus::Auto)
                     }
+                    _ => {}
                 }
                 Control::None
             }
@@ -274,6 +306,7 @@ fn handle_events(tui_state: &mut TuiState) -> io::Result<Control> {
                     Focus::MatchMode(MatchModeFocus::Disabled) => {
                         tui_state.current_mode = MatchMode::Disabled;
                     }
+                    _ => {}
                 }
                 Control::ChangeMode(tui_state.current_mode)
             }
