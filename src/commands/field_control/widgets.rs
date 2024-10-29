@@ -144,7 +144,10 @@ impl HelpPopup {
 impl Widget for HelpPopup {
     fn render(self, area: Rect, buf: &mut ratatui::prelude::Buffer) {
         Clear.render(area, buf);
-        let block = Block::bordered().border_set(ROUNDED).title("Help");
+        let block = Block::bordered()
+            .border_set(ROUNDED)
+            .title("Help")
+            .title_style(Style::default().fg(Color::White).bold());
         Paragraph::new(Self::HELP_TEXT)
             .wrap(Wrap { trim: true })
             .block(block)
