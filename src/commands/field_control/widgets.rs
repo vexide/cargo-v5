@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use ratatui::{
     layout::{Position, Rect},
+    style::{Color, Style, Stylize},
     symbols::border::ROUNDED,
     widgets::{Block, Clear, Paragraph, Widget, Wrap},
     Frame,
