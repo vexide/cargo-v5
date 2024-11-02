@@ -1,7 +1,10 @@
 use cargo_metadata::camino::Utf8PathBuf;
 
 use crate::errors::CliError;
-use std::{io, path::{Path, PathBuf}};
+use std::{
+    io,
+    path::{Path, PathBuf},
+};
 
 #[cfg(feature = "fetch-template")]
 async fn fetch_template() -> reqwest::Result<Vec<u8>> {
@@ -40,17 +43,19 @@ fn unpack_template(template: Vec<u8>, dir: &Utf8PathBuf) -> io::Result<()> {
 }
 
 pub async fn new(path: Utf8PathBuf, name: Option<String>) -> Result<(), CliError> {
-    let dir = if let Some(name) = name {
-        let dir = path.join(&name);
-        if std::fs::metadata(&dir).is_ok() {
-            return Err(CliError::ProjectExists(name))
-        }
+    let dir = if let Some(name) = &name {
+        let dir = path.join(name);
         std::fs::create_dir_all(&path).unwrap();
         dir
     } else {
         path
     };
 
+    if std::fs::read_dir(&dir).is_ok_and(|e| e.count() > 0) {
+        return Err(CliError::ProjectDirFull(dir.into_string()));
+    }
+
+    let name = name.unwrap_or_else(|| dir.file_name().unwrap().to_string());
     println!("Creating new project at {:?}", dir);
 
     #[cfg(feature = "fetch-template")]
@@ -59,14 +64,21 @@ pub async fn new(path: Utf8PathBuf, name: Option<String>) -> Result<(), CliError
         Err(_) => {
             println!("Failed to fetch template, using baked-in template.");
             baked_in_template()
-        },
+        }
     };
     #[cfg(not(feature = "fetch-template"))]
     let template = baked_in_template();
 
     println!("Unpacking template...");
     unpack_template(template, &dir)?;
-    println!("Successfully created a new vexide project!");
+    println!("Successfully unpacked vexide-template!");
 
+    println!("Renaming project to {}...", &name);
+    let manifest_path = dir.join("Cargo.toml");
+    let manifest = std::fs::read_to_string(&manifest_path)?;
+    let manifest = manifest.replace("vexide-template", &name);
+    std::fs::write(manifest_path, manifest)?;
+
+    println!("Successfully created new project at {:?}", dir);
     Ok(())
 }

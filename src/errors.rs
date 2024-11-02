@@ -89,10 +89,11 @@ pub enum CliError {
     )]
     BrainConnectionSetMatchMode,
 
-    #[error("Attempted to create a new project with the name `{0}`, but a directory with that name already exists.")]
+    #[error("Attempted to create a new project at {0}, but the directory is not empty.")]
     #[diagnostic(
-        code(cargo_v5::project_exists),
-        help("Choose a different project name, or delete the existing directory.")
+        code(cargo_v5::project_dir_full),
+        help("Try creating the project in a different directory or with a different name.")
     )]
-    ProjectExists(String),
+    ProjectDirFull(String),
+    
 }
