@@ -3,14 +3,13 @@ use std::time::Duration;
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use cargo_v5::{
     commands::{
-        build::{build, objcopy, CargoOpts},
-        field_control::run_field_control_tui,
-        simulator::launch_simulator,
-        upload::{upload_program, AfterUpload, UploadOpts},
+        build::{build, objcopy, CargoOpts}, new::new, simulator::launch_simulator, upload::{upload_program, AfterUpload, UploadOpts}
     },
     errors::CliError,
     metadata::Metadata,
 };
+#[cfg(feature = "field-control")]
+use cargo_v5::commands::field_control::run_field_control_tui;
 use clap::{Parser, Subcommand};
 use inquire::{
     validator::{ErrorMessage, Validation},
@@ -84,8 +83,17 @@ enum Command {
         cargo_opts: CargoOpts,
     },
     /// Run a field control TUI.
+    #[cfg(feature = "field-control")]
     #[clap(visible_aliases = ["fc", "comp-control"])]
     FieldControl,
+    /// Create a new vexide project with a given name.
+    #[clap(visible_alias = "n")]
+    New {
+        /// The name of the project.
+        name: String,
+    },
+    /// Creates a new vexide project in the current directory
+    Init
 }
 
 #[tokio::main]
@@ -133,9 +141,16 @@ async fn main() -> miette::Result<()> {
             )
             .await;
         }
+        #[cfg(feature = "field-control")]
         Command::FieldControl => {
             let mut connection = open_connection().await?;
             run_field_control_tui(&mut connection).await?;
+        }
+        Command::New { name } => {
+            new(path, Some(name)).await?;
+        }
+        Command::Init => {
+            new(path, None).await?;
         }
     }
 

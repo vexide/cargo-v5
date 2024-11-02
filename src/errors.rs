@@ -81,10 +81,18 @@ pub enum CliError {
     )]
     DownloadChannelTimeout,
 
+    #[cfg(feature = "field-control")]
     #[error("Attempted to change the match mode over a direct Brain connection.")]
     #[diagnostic(
         code(cargo_v5::brain_connection_set_match_mode),
         help("Connect to the Brain over a controller connection to change the match mode.")
     )]
     BrainConnectionSetMatchMode,
+
+    #[error("Attempted to create a new project with the name `{0}`, but a directory with that name already exists.")]
+    #[diagnostic(
+        code(cargo_v5::project_exists),
+        help("Choose a different project name, or delete the existing directory.")
+    )]
+    ProjectExists(String),
 }
