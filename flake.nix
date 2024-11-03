@@ -32,27 +32,45 @@
           LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
         };
 
-        packages = rec {
-          cargo-v5 = let
-            naersk' = pkgs.callPackage naersk {
-              cargo = pkgs.rust-bin.stable.latest.default;
-              rustc = pkgs.rust-bin.stable.latest.default;
-            };
-          in naersk'.buildPackage {
-            name = "cargo-v5";
-            pname = "cargo-v5";
-            version = "0.8.1";
-
-            src = ./.;
-
-            nativeBuildInputs = with pkgs; [ pkg-config dbus udev ];
+        packages = let
+          naersk' = pkgs.callPackage naersk {
+            cargo = pkgs.rust-bin.stable.latest.default;
+            rustc = pkgs.rust-bin.stable.latest.default;
           };
+          build-cargo-v5 = { features ? [ ], ... }:
+            pkgs.lib.checkListOfEnum "cargo-v5: features" [
+              "full"
+              "field-control"
+              "fetch-template"
+            ] features naersk'.buildPackage {
+              name = "cargo-v5";
+              pname = "cargo-v5";
+              version = "0.8.1";
 
+              src = ./.;
+
+              passthru = {
+                withFeatures = features: build-cargo-v5 { inherit features; };
+              };
+
+              cargoBuildOptions = opts:
+                opts ++ [
+                  "--features"
+                  ''"${builtins.concatStringsSep " " features}"''
+                ];
+
+              nativeBuildInputs = with pkgs; [ pkg-config dbus udev ];
+            };
+        in rec {
+          cargo-v5 = build-cargo-v5 { };
+          cargo-v5-full = build-cargo-v5 { features = [ "full" ]; };
           default = cargo-v5;
         };
 
         apps = rec {
           cargo-v5 = flake-utils.lib.mkApp { drv = packages.cargo-v5; };
+          cargo-v5-full =
+            flake-utils.lib.mkApp { drv = packages.cargo-v5-full; };
           default = cargo-v5;
         };
       }));

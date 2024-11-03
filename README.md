@@ -4,7 +4,28 @@
 
 cargo-v5 is a command line tool that simplifies working with VEX projects written in Rust (with a focus on the [vexide runtime](https://github.com/vexide/vexide)).
 
-## Install
+## Installation
+
+cargo-v5 comes with 2 optional features that enable extra functionality:
+
+- `field-control`: Adds a field control tui accesible through `cargo v5 field-control` or `cargo v5 fc`.
+- `fetch-template`: With this feature enabled, `cargo v5 new` will attempt to fetch the most recent upstream version of vexide-template instead of a built-in one. The command will always fall back to the built-in template.
+
+If you wish to enable both, you can simply enable the `full` feature.
+
+### All Features
+
+```bash
+cargo install cargo-v5 --features "full"
+```
+
+### Specific Feature
+
+```bash
+cargo install cargo-v5 --features "field-control"
+```
+
+### No Features
 
 ```bash
 cargo install cargo-v5
@@ -52,6 +73,7 @@ compress = true
 `cargo-v5` will also use your project's `package.name` and `package.description` fields for program name/description if nothing is explicitly provided.
 
 For a full list of arguments, check
+
 ```
 cargo v5 help
 ```

@@ -49,6 +49,8 @@ clap = ["dep:clap"]
 field-control = ["dep:ratatui", "dep:crossterm", "dep:tui-term"]
 fetch-template = ["dep:reqwest"]
 
+full = ["field-control", "fetch-template"]
+
 [[bin]]
 name = "cargo-v5"
 required-features = ["clap"]
