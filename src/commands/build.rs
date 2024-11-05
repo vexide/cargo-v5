@@ -68,7 +68,7 @@ pub async fn build(
         .arg("json-render-diagnostics");
 
     if !is_nightly_toolchain().await {
-        eprintln!("ERROR: vexid requires Nightly Rust features, but you're using stable.");
+        eprintln!("ERROR: vexide requires Nightly Rust features, but you're using stable.");
         eprintln!(" hint: this can be fixed by running `rustup override set nightly`");
         exit(1);
     }
@@ -117,6 +117,10 @@ pub async fn build(
                     handle_executable(binary_path);
                 }
             }
+        }
+        let status = out.wait().unwrap();
+        if !status.success() {
+            exit(status.code().unwrap_or(1));
         }
     });
 }
