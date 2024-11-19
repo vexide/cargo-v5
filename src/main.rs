@@ -1,16 +1,21 @@
-use std::time::Duration;
+use std::{env, time::Duration};
 
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
+#[cfg(feature = "field-control")]
+use cargo_v5::commands::field_control::run_field_control_tui;
 use cargo_v5::{
     commands::{
-        build::{build, objcopy, CargoOpts}, new::new, simulator::launch_simulator, upload::{upload_program, AfterUpload, UploadOpts}
+        build::{build, objcopy, CargoOpts},
+        new::new,
+        simulator::launch_simulator,
+        upload::{upload_program, AfterUpload, UploadOpts},
     },
     errors::CliError,
     metadata::Metadata,
 };
-#[cfg(feature = "field-control")]
-use cargo_v5::commands::field_control::run_field_control_tui;
+use chrono::Utc;
 use clap::{Parser, Subcommand};
+use flexi_logger::{AdaptiveFormat, Duplicate, FileSpec, LogfileSelector};
 use inquire::{
     validator::{ErrorMessage, Validation},
     CustomType,
@@ -39,7 +44,7 @@ enum Cargo {
         #[command(subcommand)]
         command: Command,
 
-        #[arg(long, default_value = ".")]
+        #[arg(long, default_value = ".", global = true)]
         path: Utf8PathBuf,
     },
 }
@@ -93,7 +98,7 @@ enum Command {
         name: String,
     },
     /// Creates a new vexide project in the current directory
-    Init
+    Init,
 }
 
 #[tokio::main]
@@ -101,6 +106,35 @@ async fn main() -> miette::Result<()> {
     // Parse CLI arguments
     let Cargo::V5 { command, path } = Cargo::parse();
 
+    let logger = flexi_logger::Logger::try_with_env_or_str("trace")
+        .unwrap()
+        .log_to_file(
+            FileSpec::default()
+                .directory(env::temp_dir())
+                .use_timestamp(false)
+                .basename(format!(
+                    "cargo-v5-{}",
+                    Utc::now().format("%Y-%m-%d_%H-%M-%S")
+                )),
+        )
+        .duplicate_to_stderr(Duplicate::Warn)
+        .adaptive_format_for_stderr(AdaptiveFormat::Default)
+        .start()
+        .unwrap();
+
+    if let Err(err) = app(command, path).await {
+        log::debug!("cargo-v5 is exiting due to an error: {}", err);
+        if let Ok(files) = logger.existing_log_files(&LogfileSelector::default()) {
+            for file in files {
+                eprintln!("A log file is available at {}.", file.display());
+            }
+        }
+        return Err(err);
+    }
+    Ok(())
+}
+
+async fn app(command: Command, path: Utf8PathBuf) -> miette::Result<()> {
     match command {
         Command::Build {
             simulator,
