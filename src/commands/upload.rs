@@ -20,7 +20,10 @@ use vex_v5_serial::{
             RadioChannel, SelectRadioChannelPacket, SelectRadioChannelPayload,
             SelectRadioChannelReplyPacket,
         },
-        system::{GetSystemVersionPacket, GetSystemVersionReplyPacket, ProductFlags},
+        system::{
+            GetSystemFlagsPacket, GetSystemFlagsReplyPacket, GetSystemVersionPacket,
+            GetSystemVersionReplyPacket, ProductFlags,
+        },
     },
 };
 
@@ -120,7 +123,7 @@ pub enum ProgramIcon {
     VexcodeCpp = 926,
 }
 
-async fn controller_connected(connection: &mut SerialConnection) -> Result<bool, CliError> {
+async fn is_connection_wireless(connection: &mut SerialConnection) -> Result<bool, CliError> {
     let version = connection
         .packet_handshake::<GetSystemVersionReplyPacket>(
             Duration::from_millis(500),
@@ -128,11 +131,20 @@ async fn controller_connected(connection: &mut SerialConnection) -> Result<bool,
             GetSystemVersionPacket::new(()),
         )
         .await?;
-    let connected = version
+    let system_flags = connection
+        .packet_handshake::<GetSystemFlagsReplyPacket>(
+            Duration::from_millis(500),
+            1,
+            GetSystemFlagsPacket::new(()),
+        )
+        .await?;
+    let controller = version
         .payload
         .flags
         .contains(ProductFlags::CONNECTED_WIRELESS);
-    Ok(connected)
+
+    let tethered = system_flags.payload.flags & (1 << 23) != 0;
+    Ok(!tethered && controller)
 }
 
 async fn switch_to_download_channel(connection: &mut SerialConnection) -> Result<(), CliError> {
@@ -160,7 +172,7 @@ async fn switch_to_download_channel(connection: &mut SerialConnection) -> Result
                 return Err(CliError::DownloadChannelTimeout)
             }
             _ = async {
-                while !controller_connected(connection).await.unwrap_or(false) {
+                while !is_connection_wireless(connection).await.unwrap_or(false) {
                     sleep(Duration::from_millis(250)).await;
                 }
             } => {
