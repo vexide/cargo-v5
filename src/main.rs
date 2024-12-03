@@ -1,4 +1,7 @@
-use std::{env, time::Duration};
+use core::panic;
+use std::{
+    env, process::exit, time::Duration
+};
 
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 #[cfg(feature = "field-control")]
@@ -15,7 +18,9 @@ use cargo_v5::{
 };
 use chrono::Utc;
 use clap::{Parser, Subcommand};
-use flexi_logger::{AdaptiveFormat, Duplicate, FileSpec, LogfileSelector};
+use flexi_logger::{
+    AdaptiveFormat, Duplicate, FileSpec, LogSpecification, LogfileSelector, LoggerHandle,
+};
 use inquire::{
     validator::{ErrorMessage, Validation},
     CustomType,
@@ -27,9 +32,21 @@ use tokio::{
     task::{block_in_place, spawn_blocking},
     time::sleep,
 };
-use vex_v5_serial::connection::{
-    serial::{self, SerialConnection},
-    Connection,
+use vex_v5_serial::{
+    connection::{
+        serial::{self, SerialConnection},
+        Connection,
+    },
+    packets::{
+        radio::{
+            RadioChannel, SelectRadioChannelPacket, SelectRadioChannelPayload,
+            SelectRadioChannelReplyPacket,
+        },
+        system::{
+            GetSystemFlagsPacket, GetSystemFlagsReplyPacket, GetSystemVersionPacket,
+            GetSystemVersionReplyPacket, ProductFlags,
+        },
+    },
 };
 
 cargo_subcommand_metadata::description!("Manage vexide projects");
@@ -106,7 +123,7 @@ async fn main() -> miette::Result<()> {
     // Parse CLI arguments
     let Cargo::V5 { command, path } = Cargo::parse();
 
-    let logger = flexi_logger::Logger::try_with_env_or_str("trace")
+    let mut logger = flexi_logger::Logger::try_with_env_or_str("trace")
         .unwrap()
         .log_to_file(
             FileSpec::default()
@@ -122,7 +139,7 @@ async fn main() -> miette::Result<()> {
         .start()
         .unwrap();
 
-    if let Err(err) = app(command, path).await {
+    if let Err(err) = app(command, path, &mut logger).await {
         log::debug!("cargo-v5 is exiting due to an error: {}", err);
         if let Ok(files) = logger.existing_log_files(&LogfileSelector::default()) {
             for file in files {
@@ -134,7 +151,7 @@ async fn main() -> miette::Result<()> {
     Ok(())
 }
 
-async fn app(command: Command, path: Utf8PathBuf) -> miette::Result<()> {
+async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> miette::Result<()> {
     match command {
         Command::Build {
             simulator,
@@ -152,13 +169,17 @@ async fn app(command: Command, path: Utf8PathBuf) -> miette::Result<()> {
             .await;
         }
         Command::Upload { upload_opts, after } => {
-            upload(&path, upload_opts, after, false).await?;
+            upload(&path, upload_opts, after, &mut open_connection().await?).await?;
         }
         Command::Run(opts) => {
-            upload(&path, opts, AfterUpload::Run, true).await?;
+            let mut connection = open_connection().await?;
+            upload(&path, opts, AfterUpload::Run, &mut connection).await?;
+            terminal(connection, logger).await;
         }
         Command::Terminal => {
-            terminal(open_connection().await?).await;
+            let mut connection = open_connection().await?;
+            switch_to_download_channel(&mut connection).await?;
+            terminal(connection, logger).await;
         }
         Command::Sim { ui, cargo_opts } => {
             let mut artifact = None;
@@ -207,6 +228,67 @@ async fn open_connection() -> miette::Result<SerialConnection> {
     .unwrap()
 }
 
+async fn is_connection_wireless(connection: &mut SerialConnection) -> Result<bool, CliError> {
+    let version = connection
+        .packet_handshake::<GetSystemVersionReplyPacket>(
+            Duration::from_millis(500),
+            1,
+            GetSystemVersionPacket::new(()),
+        )
+        .await?;
+    let system_flags = connection
+        .packet_handshake::<GetSystemFlagsReplyPacket>(
+            Duration::from_millis(500),
+            1,
+            GetSystemFlagsPacket::new(()),
+        )
+        .await?;
+    let controller = version
+        .payload
+        .flags
+        .contains(ProductFlags::CONNECTED_WIRELESS);
+
+    let tethered = system_flags.payload.flags & (1 << 8) != 0;
+    Ok(!tethered && controller)
+}
+
+pub async fn switch_to_download_channel(connection: &mut SerialConnection) -> Result<(), CliError> {
+    if is_connection_wireless(connection).await? {
+        println!("Switching radio to download channel...");
+
+        // Tell the controller to switch to the download channel.
+        connection
+            .packet_handshake::<SelectRadioChannelReplyPacket>(
+                Duration::from_secs(2),
+                3,
+                SelectRadioChannelPacket::new(SelectRadioChannelPayload {
+                    channel: RadioChannel::Download,
+                }),
+            )
+            .await?;
+
+        // Wait for the radio to switch channels before polling the connection
+        sleep(Duration::from_millis(250)).await;
+
+        // Poll the connection of the controller to ensure the radio has switched channels.
+        let timeout = Duration::from_secs(5);
+        select! {
+            _ = sleep(timeout) => {
+                return Err(CliError::DownloadChannelTimeout)
+            }
+            _ = async {
+                while !is_connection_wireless(connection).await.unwrap_or(false) {
+                    sleep(Duration::from_millis(250)).await;
+                }
+            } => {
+                println!("Radio successfully switched to download channel.");
+            }
+        }
+    }
+
+    Ok(())
+}
+
 async fn upload(
     path: &Utf8Path,
     UploadOpts {
@@ -219,7 +301,7 @@ async fn upload(
         cargo_opts,
     }: UploadOpts,
     after: AfterUpload,
-    then_terminal: bool,
+    connection: &mut SerialConnection,
 ) -> miette::Result<()> {
     // We'll use `cargo-metadata` to parse the output of `cargo metadata` and find valid `Cargo.toml`
     // files in the workspace directory.
@@ -304,11 +386,12 @@ async fn upload(
         Err(CliError::SlotOutOfRange)?;
     }
 
-    let mut connection = open_connection().await?;
+    // Switch the radio to the download channel if the controller is wireless.
+    switch_to_download_channel(connection).await?;
 
     // Pass information to the upload routine.
     upload_program(
-        &mut connection,
+        connection,
         &artifact.ok_or(CliError::NoArtifact)?,
         after,
         slot,
@@ -329,18 +412,15 @@ async fn upload(
     )
     .await?;
 
-    if then_terminal {
-        println!();
-        terminal(connection).await;
-    }
-
     Ok(())
 }
 
-async fn terminal(mut connection: SerialConnection) -> ! {
+async fn terminal(mut connection: SerialConnection, logger: &mut LoggerHandle) -> ! {
+    logger.push_temp_spec(LogSpecification::off());
+
     let mut stdin = stdin();
 
-    loop {
+    'main: loop {
         let mut program_output = [0; 1024];
         let mut program_input = [0; 1024];
         select! {
@@ -354,8 +434,30 @@ async fn terminal(mut connection: SerialConnection) -> ! {
                     connection.write_user(&program_input[..size]).await.unwrap();
                 }
             }
+            res = tokio::signal::ctrl_c() => {
+                // This loop lifetime is required
+                // tokio bug?
+                if res.is_ok() {
+                    break 'main;
+                }
+            }
         }
 
         sleep(Duration::from_millis(10)).await;
     }
+
+    logger.pop_temp_spec();
+
+    // Switch back to the Pit channel
+    _ = connection
+        .packet_handshake::<SelectRadioChannelReplyPacket>(
+            Duration::from_secs(2),
+            1,
+            SelectRadioChannelPacket::new(SelectRadioChannelPayload {
+                channel: RadioChannel::Pit,
+            }),
+        )
+        .await;
+
+    exit(0)
 }
