@@ -143,7 +143,7 @@ async fn is_connection_wireless(connection: &mut SerialConnection) -> Result<boo
         .flags
         .contains(ProductFlags::CONNECTED_WIRELESS);
 
-    let tethered = system_flags.payload.flags & (1 << 23) != 0;
+    let tethered = system_flags.payload.flags & (1 << 8) != 0;
     Ok(!tethered && controller)
 }
 
