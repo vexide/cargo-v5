@@ -148,7 +148,7 @@ async fn is_connection_wireless(connection: &mut SerialConnection) -> Result<boo
 }
 
 async fn switch_to_download_channel(connection: &mut SerialConnection) -> Result<(), CliError> {
-    if connection.connection_type().is_controller() {
+    if is_connection_wireless(connection).await? {
         println!("Switching radio to download channel...");
 
         // Tell the controller to switch to the download channel.
