@@ -1,4 +1,5 @@
 use cargo_metadata::camino::Utf8PathBuf;
+use log::info;
 
 use crate::errors::CliError;
 use std::{
@@ -8,12 +9,12 @@ use std::{
 
 #[cfg(feature = "fetch-template")]
 async fn fetch_template() -> reqwest::Result<Vec<u8>> {
-    println!("Fetching template...");
+    info!("Fetching template...");
     let response =
         reqwest::get("https://github.com/vexide/vexide-template/archive/refs/heads/main.tar.gz")
             .await?;
     let bytes = response.bytes().await?;
-    println!("Successfully fetched template.");
+    info!("Successfully fetched template.");
     Ok(bytes.to_vec())
 }
 
@@ -56,29 +57,29 @@ pub async fn new(path: Utf8PathBuf, name: Option<String>) -> Result<(), CliError
     }
 
     let name = name.unwrap_or_else(|| dir.file_name().unwrap().to_string());
-    println!("Creating new project at {:?}", dir);
+    info!("Creating new project at {:?}", dir);
 
     #[cfg(feature = "fetch-template")]
     let template = match fetch_template().await {
         Ok(bytes) => bytes,
         Err(_) => {
-            println!("Failed to fetch template, using baked-in template.");
+            info!("Failed to fetch template, using baked-in template.");
             baked_in_template()
         }
     };
     #[cfg(not(feature = "fetch-template"))]
     let template = baked_in_template();
 
-    println!("Unpacking template...");
+    info!("Unpacking template...");
     unpack_template(template, &dir)?;
-    println!("Successfully unpacked vexide-template!");
+    info!("Successfully unpacked vexide-template!");
 
-    println!("Renaming project to {}...", &name);
+    info!("Renaming project to {}...", &name);
     let manifest_path = dir.join("Cargo.toml");
     let manifest = std::fs::read_to_string(&manifest_path)?;
     let manifest = manifest.replace("vexide-template", &name);
     std::fs::write(manifest_path, manifest)?;
 
-    println!("Successfully created new project at {:?}", dir);
+    info!("Successfully created new project at {:?}", dir);
     Ok(())
 }

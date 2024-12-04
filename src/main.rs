@@ -25,6 +25,7 @@ use inquire::{
     validator::{ErrorMessage, Validation},
     CustomType,
 };
+use log::info;
 use tokio::{
     io::{stdin, AsyncReadExt},
     runtime::Handle,
@@ -123,7 +124,7 @@ async fn main() -> miette::Result<()> {
     // Parse CLI arguments
     let Cargo::V5 { command, path } = Cargo::parse();
 
-    let mut logger = flexi_logger::Logger::try_with_env_or_str("trace")
+    let mut logger = flexi_logger::Logger::try_with_env_or_str("info")
         .unwrap()
         .log_to_file(
             FileSpec::default()
@@ -134,6 +135,7 @@ async fn main() -> miette::Result<()> {
                     Utc::now().format("%Y-%m-%d_%H-%M-%S")
                 )),
         )
+        .log_to_stdout()
         .duplicate_to_stderr(Duplicate::Warn)
         .adaptive_format_for_stderr(AdaptiveFormat::Default)
         .start()
@@ -254,7 +256,7 @@ async fn is_connection_wireless(connection: &mut SerialConnection) -> Result<boo
 
 pub async fn switch_to_download_channel(connection: &mut SerialConnection) -> Result<(), CliError> {
     if is_connection_wireless(connection).await? {
-        println!("Switching radio to download channel...");
+        info!("Switching radio to download channel...");
 
         // Tell the controller to switch to the download channel.
         connection
@@ -281,7 +283,7 @@ pub async fn switch_to_download_channel(connection: &mut SerialConnection) -> Re
                     sleep(Duration::from_millis(250)).await;
                 }
             } => {
-                println!("Radio successfully switched to download channel.");
+                info!("Radio successfully switched to download channel.");
             }
         }
     }
@@ -416,6 +418,8 @@ async fn upload(
 }
 
 async fn terminal(mut connection: SerialConnection, logger: &mut LoggerHandle) -> ! {
+    info!("Started terminal.");
+
     logger.push_temp_spec(LogSpecification::off());
 
     let mut stdin = stdin();

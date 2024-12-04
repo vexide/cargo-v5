@@ -1,3 +1,4 @@
+use log::info;
 use object::{Object, ObjectSegment};
 use std::process::{exit, Stdio};
 use tokio::{process::Command, task::block_in_place};
@@ -126,7 +127,7 @@ pub async fn build(
 }
 
 pub async fn objcopy(elf: &Utf8Path) -> Result<Utf8PathBuf, CliError> {
-    println!("Creating binary: {}.bin", elf);
+    info!("Creating binary: {}.bin", elf);
     // Read the ELF file built by cargo.
     let data = tokio::fs::read(elf).await?;
 
