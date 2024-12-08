@@ -4,6 +4,8 @@ use std::{env, time::Duration};
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 #[cfg(feature = "field-control")]
 use cargo_v5::commands::field_control::run_field_control_tui;
+#[cfg(feature = "field-control")]
+use vex_v5_serial::connection::serial::SerialDevice;
 use cargo_v5::{
     commands::{
         build::{build, objcopy, CargoOpts},
@@ -33,7 +35,7 @@ use tokio::{
 };
 use vex_v5_serial::{
     connection::{
-        serial::{self, SerialConnection, SerialDevice},
+        serial::{self, SerialConnection},
         Connection,
     },
     packets::{
