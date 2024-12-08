@@ -1,5 +1,5 @@
 use core::panic;
-use std::{env, process::exit, time::Duration};
+use std::{env, time::Duration};
 
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 #[cfg(feature = "field-control")]
@@ -33,7 +33,7 @@ use tokio::{
 };
 use vex_v5_serial::{
     connection::{
-        serial::{self, SerialConnection},
+        serial::{self, SerialConnection, SerialDevice},
         Connection,
     },
     packets::{
@@ -232,7 +232,22 @@ async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> 
         }
         #[cfg(feature = "field-control")]
         Command::FieldControl => {
-            let mut connection = open_connection().await?;
+            // Not using open_connection since we need to filter for controllers only here.
+            let mut connection = {
+                let devices = serial::find_devices().map_err(CliError::SerialError)?;
+
+                spawn_blocking(move || {
+                    Ok(devices
+                        .into_iter()
+                        .find(|device| matches!(device, SerialDevice::Controller { system_port: _ }))
+                        .ok_or(CliError::NoDevice)?
+                        .connect(Duration::from_secs(5))
+                        .map_err(CliError::SerialError)?)
+                })
+                .await
+                .unwrap()
+            };
+
             run_field_control_tui(&mut connection).await?;
         }
         Command::New { name } => {
