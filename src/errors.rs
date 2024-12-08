@@ -74,12 +74,12 @@ pub enum CliError {
     #[diagnostic(code(cargo_v5::elf_parse_error))]
     ElfParseError(#[from] object::Error),
 
-    #[error("Controller never reconnected after switching to download channel.")]
+    #[error("Controller never reconnected after switching radio channels.")]
     #[diagnostic(
-        code(cargo_v5::download_channel_timeout),
+        code(cargo_v5::radio_channel_timeout),
         help("Try running `cargo v5 upload` again. If the problem persists, power cycle your controller and Brain.")
     )]
-    DownloadChannelTimeout,
+    RadioChannelTimeout,
 
     #[cfg(feature = "field-control")]
     #[error("Attempted to change the match mode over a direct Brain connection.")]

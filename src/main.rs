@@ -1,7 +1,5 @@
 use core::panic;
-use std::{
-    env, process::exit, time::Duration
-};
+use std::{env, process::exit, time::Duration};
 
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 #[cfg(feature = "field-control")]
@@ -39,6 +37,10 @@ use vex_v5_serial::{
         Connection,
     },
     packets::{
+        file::{
+            FileLoadAction, FileVendor, LoadFileActionPacket, LoadFileActionPayload,
+            LoadFileActionReplyPacket,
+        },
         radio::{
             RadioChannel, SelectRadioChannelPacket, SelectRadioChannelPayload,
             SelectRadioChannelReplyPacket,
@@ -48,6 +50,7 @@ use vex_v5_serial::{
             GetSystemVersionReplyPacket, ProductFlags,
         },
     },
+    string::FixedLengthString,
 };
 
 cargo_subcommand_metadata::description!("Manage vexide projects");
@@ -175,13 +178,42 @@ async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> 
         }
         Command::Run(opts) => {
             let mut connection = open_connection().await?;
+
             upload(&path, opts, AfterUpload::Run, &mut connection).await?;
-            terminal(connection, logger).await;
+
+            select! {
+                () = terminal(&mut connection, logger) => {}
+                _ = tokio::signal::ctrl_c() => {
+                    // Quit program
+                    _ = connection.packet_handshake::<LoadFileActionReplyPacket>(
+                        Duration::from_secs(2),
+                        1,
+                        LoadFileActionPacket::new(LoadFileActionPayload {
+                            vendor: FileVendor::User,
+                            action: FileLoadAction::Stop,
+                            file_name: FixedLengthString::new(Default::default()).unwrap(),
+                        })
+                    ).await;
+
+                    // Switch back to pit channel
+                    _ = connection
+                        .packet_handshake::<SelectRadioChannelReplyPacket>(
+                            Duration::from_secs(2),
+                            1,
+                            SelectRadioChannelPacket::new(SelectRadioChannelPayload {
+                                channel: RadioChannel::Pit,
+                            }),
+                        )
+                        .await;
+
+                    std::process::exit(0);
+                }
+            }
         }
         Command::Terminal => {
             let mut connection = open_connection().await?;
-            switch_to_download_channel(&mut connection).await?;
-            terminal(connection, logger).await;
+            switch_radio_channel(&mut connection, RadioChannel::Download).await?;
+            terminal(&mut connection, logger).await;
         }
         Command::Sim { ui, cargo_opts } => {
             let mut artifact = None;
@@ -254,18 +286,24 @@ async fn is_connection_wireless(connection: &mut SerialConnection) -> Result<boo
     Ok(!tethered && controller)
 }
 
-pub async fn switch_to_download_channel(connection: &mut SerialConnection) -> Result<(), CliError> {
+pub async fn switch_radio_channel(
+    connection: &mut SerialConnection,
+    channel: RadioChannel,
+) -> Result<(), CliError> {
     if is_connection_wireless(connection).await? {
-        info!("Switching radio to download channel...");
+        let channel_str = match channel {
+            RadioChannel::Download => "download",
+            RadioChannel::Pit => "pit",
+        };
+
+        info!("Switching radio to {channel_str} channel...");
 
         // Tell the controller to switch to the download channel.
         connection
             .packet_handshake::<SelectRadioChannelReplyPacket>(
                 Duration::from_secs(2),
                 3,
-                SelectRadioChannelPacket::new(SelectRadioChannelPayload {
-                    channel: RadioChannel::Download,
-                }),
+                SelectRadioChannelPacket::new(SelectRadioChannelPayload { channel }),
             )
             .await?;
 
@@ -276,14 +314,14 @@ pub async fn switch_to_download_channel(connection: &mut SerialConnection) -> Re
         let timeout = Duration::from_secs(5);
         select! {
             _ = sleep(timeout) => {
-                return Err(CliError::DownloadChannelTimeout)
+                return Err(CliError::RadioChannelTimeout)
             }
             _ = async {
                 while !is_connection_wireless(connection).await.unwrap_or(false) {
                     sleep(Duration::from_millis(250)).await;
                 }
             } => {
-                info!("Radio successfully switched to download channel.");
+                info!("Radio successfully switched to {channel_str} channel.");
             }
         }
     }
@@ -389,7 +427,7 @@ async fn upload(
     }
 
     // Switch the radio to the download channel if the controller is wireless.
-    switch_to_download_channel(connection).await?;
+    switch_radio_channel(connection, RadioChannel::Download).await?;
 
     // Pass information to the upload routine.
     upload_program(
@@ -417,14 +455,14 @@ async fn upload(
     Ok(())
 }
 
-async fn terminal(mut connection: SerialConnection, logger: &mut LoggerHandle) -> ! {
+async fn terminal(connection: &mut SerialConnection, logger: &mut LoggerHandle) -> ! {
     info!("Started terminal.");
 
     logger.push_temp_spec(LogSpecification::off());
 
     let mut stdin = stdin();
 
-    'main: loop {
+    loop {
         let mut program_output = [0; 1024];
         let mut program_input = [0; 1024];
         select! {
@@ -438,30 +476,8 @@ async fn terminal(mut connection: SerialConnection, logger: &mut LoggerHandle) -
                     connection.write_user(&program_input[..size]).await.unwrap();
                 }
             }
-            res = tokio::signal::ctrl_c() => {
-                // This loop lifetime is required
-                // tokio bug?
-                if res.is_ok() {
-                    break 'main;
-                }
-            }
         }
 
         sleep(Duration::from_millis(10)).await;
     }
-
-    logger.pop_temp_spec();
-
-    // Switch back to the Pit channel
-    _ = connection
-        .packet_handshake::<SelectRadioChannelReplyPacket>(
-            Duration::from_secs(2),
-            1,
-            SelectRadioChannelPacket::new(SelectRadioChannelPayload {
-                channel: RadioChannel::Pit,
-            }),
-        )
-        .await;
-
-    exit(0)
 }

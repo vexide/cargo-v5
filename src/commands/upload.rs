@@ -196,7 +196,7 @@ pub async fn upload_program(
                     });
                 }))
             },
-            monolith_callback: {
+            bin_callback: {
                 // Update bin file progressbar. This code is a mess, yeah.
                 let bin_progres_clone = Arc::clone(&bin_progress);
                 let bin_timestamp_clone = Arc::clone(&bin_timestamp);
@@ -218,8 +218,7 @@ pub async fn upload_program(
                     });
                 }))
             },
-            hot_callback: None,
-            cold_callback: None,
+            lib_callback: None,
         })
         .await?;
 
