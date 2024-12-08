@@ -240,7 +240,7 @@ async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> 
                     Ok(devices
                         .into_iter()
                         .find(|device| matches!(device, SerialDevice::Controller { system_port: _ }))
-                        .ok_or(CliError::NoDevice)?
+                        .ok_or(CliError::NoController)?
                         .connect(Duration::from_secs(5))
                         .map_err(CliError::SerialError)?)
                 })

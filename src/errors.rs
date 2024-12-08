@@ -82,10 +82,18 @@ pub enum CliError {
     RadioChannelTimeout,
 
     #[cfg(feature = "field-control")]
+    #[error("No V5 controllers found.")]
+    #[diagnostic(
+        code(cargo_v5::no_controller),
+        help("`cargo v5 fc` can only be ran over a controller connection. Make sure you have a controller plugged into USB, then try again.")
+    )]
+    NoController,
+
+    #[cfg(feature = "field-control")]
     #[error("Attempted to change the match mode over a direct Brain connection.")]
     #[diagnostic(
         code(cargo_v5::brain_connection_set_match_mode),
-        help("Connect to the Brain over a controller connection to change the match mode.")
+        help("This state should not be reachable and is a bug if encountered. Please report it to https://github.com/vexide/cargo-v5")
     )]
     BrainConnectionSetMatchMode,
 
@@ -95,5 +103,4 @@ pub enum CliError {
         help("Try creating the project in a different directory or with a different name.")
     )]
     ProjectDirFull(String),
-    
 }
