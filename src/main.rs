@@ -19,9 +19,9 @@ use clap::{Parser, Subcommand};
 use flexi_logger::{AdaptiveFormat, Duplicate, FileSpec, LogfileSelector, LoggerHandle};
 use tokio::{runtime::Handle, select, task::block_in_place};
 #[cfg(feature = "field-control")]
-use vex_v5_serial::connection::serial::{self, SerialDevice};
+use vex_v5_serial::connection::serial::{self, SerialConnection, SerialDevice};
 use vex_v5_serial::{
-    connection::{serial::SerialConnection, Connection},
+    connection::Connection,
     packets::{
         file::{
             FileLoadAction, FileVendor, LoadFileActionPacket, LoadFileActionPayload,
