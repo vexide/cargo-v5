@@ -1,9 +1,10 @@
 use cargo_metadata::camino::Utf8PathBuf;
+use directories::ProjectDirs;
 use log::info;
 
 use crate::errors::CliError;
 use std::{
-    io,
+    fs, io,
     path::{Path, PathBuf},
 };
 
@@ -18,12 +19,23 @@ async fn fetch_template() -> reqwest::Result<Vec<u8>> {
     Ok(bytes.to_vec())
 }
 
+#[cfg(feature = "fetch-template")]
+fn cached_template_path() -> Option<PathBuf> {
+    ProjectDirs::from("", "vexide", "cargo-v5").and_then(|dirs| {
+        dirs.cache_dir()
+            .canonicalize()
+            .ok()
+            .map(|path| path.with_file_name("vexide-template.tar.gz"))
+    })
+}
+
 fn baked_in_template() -> Vec<u8> {
     include_bytes!("./vexide-template.tar.gz").to_vec()
 }
 
 fn unpack_template(template: Vec<u8>, dir: &Utf8PathBuf) -> io::Result<()> {
-    let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(&template[..]));
+    let mut archive: tar::Archive<flate2::read::GzDecoder<&[u8]>> =
+        tar::Archive::new(flate2::read::GzDecoder::new(&template[..]));
     for entry in archive.entries()? {
         let mut entry = entry?;
 
@@ -60,11 +72,24 @@ pub async fn new(path: Utf8PathBuf, name: Option<String>) -> Result<(), CliError
     info!("Creating new project at {:?}", dir);
 
     #[cfg(feature = "fetch-template")]
-    let template = match fetch_template().await {
-        Ok(bytes) => bytes,
+    let template: Vec<u8> = match fetch_template().await {
+        Ok(bytes) => {
+            if let Some(cache_file) = cached_template_path() {
+                info!("Storing fetched template in cache.");
+                fs::write(cache_file, &bytes).unwrap_or_else(|_| {
+                    info!("Could not cache template.");
+                });
+            }
+            bytes
+        }
         Err(_) => {
-            info!("Failed to fetch template, using baked-in template.");
-            baked_in_template()
+            info!("Failed to fetch template, checking cached template.");
+            cached_template_path()
+                .and_then(|cache_file| fs::read(cache_file).ok())
+                .unwrap_or_else(|| {
+                    info!("Failed to find cached template, using baked-in template.");
+                    baked_in_template()
+                })
         }
     };
     #[cfg(not(feature = "fetch-template"))]
