@@ -34,7 +34,7 @@ pub async fn cat(connection: &mut SerialConnection, file: PathBuf) -> Result<(),
         vendor_from_prefix(parent.to_str().unwrap())
     } else {
         FileVendor::Undefined
-    });
+    };
 
     let file_name = FixedString::from_str(file.file_name().unwrap_or_default().to_str().unwrap())
         .map_err(|err| CliError::SerialError(SerialError::EncodeError(err)))?;
