@@ -6,7 +6,7 @@ pub mod dir;
 pub mod field_control;
 pub mod log;
 pub mod new;
+pub mod rm;
 pub mod screenshot;
 pub mod terminal;
 pub mod upload;
-pub mod rm;

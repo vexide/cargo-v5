@@ -6,7 +6,16 @@ use cargo_metadata::camino::Utf8PathBuf;
 use cargo_v5::{commands::field_control::run_field_control_tui, errors::CliError};
 use cargo_v5::{
     commands::{
-        build::{build, objcopy, CargoOpts}, cat::cat, devices::devices, dir::dir, log::log, new::new, rm::rm, screenshot::screenshot, terminal::terminal, upload::{upload, AfterUpload, UploadOpts}
+        build::{build, objcopy, CargoOpts},
+        cat::cat,
+        devices::devices,
+        dir::dir,
+        log::log,
+        new::new,
+        rm::rm,
+        screenshot::screenshot,
+        terminal::terminal,
+        upload::{upload, AfterUpload, UploadOpts},
     },
     connection::{open_connection, switch_radio_channel},
 };
