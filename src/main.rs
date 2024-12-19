@@ -1,22 +1,18 @@
 use core::panic;
-use std::{env, time::Duration};
+use std::{env, num::NonZeroU32, path::PathBuf, time::Duration};
 
 use cargo_metadata::camino::Utf8PathBuf;
 #[cfg(feature = "field-control")]
 use cargo_v5::{commands::field_control::run_field_control_tui, errors::CliError};
 use cargo_v5::{
     commands::{
-        build::{build, objcopy, CargoOpts},
-        new::new,
-        simulator::launch_simulator,
-        terminal::terminal,
-        upload::{upload, AfterUpload, UploadOpts},
+        build::{build, objcopy, CargoOpts}, cat::cat, devices::devices, dir::dir, log::log, new::new, rm::rm, screenshot::screenshot, terminal::terminal, upload::{upload, AfterUpload, UploadOpts}
     },
     connection::{open_connection, switch_radio_channel},
 };
 use chrono::Utc;
 use clap::{Parser, Subcommand};
-use flexi_logger::{AdaptiveFormat, Duplicate, FileSpec, LogfileSelector, LoggerHandle};
+use flexi_logger::{AdaptiveFormat, FileSpec, LogfileSelector, LoggerHandle};
 use tokio::{runtime::Handle, select, task::block_in_place};
 #[cfg(feature = "field-control")]
 use vex_v5_serial::connection::serial::{self, SerialConnection, SerialDevice};
@@ -32,7 +28,7 @@ use vex_v5_serial::{
             SelectRadioChannelReplyPacket,
         },
     },
-    string::FixedLengthString,
+    string::FixedString,
 };
 
 cargo_subcommand_metadata::description!("Manage vexide projects");
@@ -75,25 +71,12 @@ enum Command {
         #[clap(flatten)]
         upload_opts: UploadOpts,
     },
-    /// Build, upload, and run a program on the V5 brain, showing its output in the terminal.
-    #[clap(visible_alias = "r")]
-    Run(UploadOpts),
     /// Access the brain's remote terminal I/O.
     #[clap(visible_alias = "t")]
     Terminal,
-    /// Build a project and run it in the simulator.
-    Sim {
-        #[arg(long)]
-        ui: Option<String>,
-
-        /// Arguments forwarded to `cargo`.
-        #[clap(flatten)]
-        cargo_opts: CargoOpts,
-    },
-    /// Run a field control TUI.
-    #[cfg(feature = "field-control")]
-    #[clap(visible_aliases = ["fc", "comp-control"])]
-    FieldControl,
+    /// Build, upload, and run a program on the V5 brain, showing its output in the terminal.
+    #[clap(visible_alias = "r")]
+    Run(UploadOpts),
     /// Create a new vexide project with a given name.
     #[clap(visible_alias = "n")]
     New {
@@ -102,6 +85,28 @@ enum Command {
     },
     /// Creates a new vexide project in the current directory
     Init,
+    /// List files on flash.
+    #[clap(visible_alias = "ls")]
+    Dir,
+    /// Read a file from flash, then write its contents to stdout.
+    Cat { file: PathBuf },
+    /// Erase a file from flash.
+    Rm { file: PathBuf },
+    /// Read event log.
+    Log {
+        #[arg(long, short, default_value = "1")]
+        page: NonZeroU32,
+    },
+    /// List devices connected to a brain.
+    #[clap(visible_alias = "lsdev")]
+    Devices,
+    /// Take a screen capture of the brain, saving the file to the current directory.
+    #[clap(visible_alias = "sc")]
+    Screenshot,
+    /// Run a field control TUI.
+    #[cfg(feature = "field-control")]
+    #[clap(visible_aliases = ["fc", "comp-control"])]
+    FieldControl,
 }
 
 #[tokio::main]
@@ -120,8 +125,7 @@ async fn main() -> miette::Result<()> {
                     Utc::now().format("%Y-%m-%d_%H-%M-%S")
                 )),
         )
-        .log_to_stdout()
-        .duplicate_to_stderr(Duplicate::Warn)
+        .log_to_stderr()
         .adaptive_format_for_stderr(AdaptiveFormat::Default)
         .start()
         .unwrap();
@@ -158,6 +162,24 @@ async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> 
         Command::Upload { upload_opts, after } => {
             upload(&path, upload_opts, after, &mut open_connection().await?).await?;
         }
+        Command::Dir => {
+            dir(&mut open_connection().await?).await?;
+        }
+        Command::Devices => {
+            devices(&mut open_connection().await?).await?;
+        }
+        Command::Cat { file } => {
+            cat(&mut open_connection().await?, file).await?;
+        }
+        Command::Rm { file } => {
+            rm(&mut open_connection().await?, file).await?;
+        }
+        Command::Log { page } => {
+            log(&mut open_connection().await?, page).await?;
+        }
+        Command::Screenshot => {
+            screenshot(&mut open_connection().await?).await?;
+        }
         Command::Run(opts) => {
             let mut connection = open_connection().await?;
 
@@ -173,7 +195,7 @@ async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> 
                         LoadFileActionPacket::new(LoadFileActionPayload {
                             vendor: FileVendor::User,
                             action: FileLoadAction::Stop,
-                            file_name: FixedLengthString::new(Default::default()).unwrap(),
+                            file_name: FixedString::new(Default::default()).unwrap(),
                         })
                     ).await;
 
@@ -196,21 +218,6 @@ async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> 
             let mut connection = open_connection().await?;
             switch_radio_channel(&mut connection, RadioChannel::Download).await?;
             terminal(&mut connection, logger).await;
-        }
-        Command::Sim { ui, cargo_opts } => {
-            let mut artifact = None;
-            build(&path, cargo_opts, true, |new_artifact| {
-                artifact = Some(new_artifact);
-            })
-            .await;
-            launch_simulator(
-                ui.clone(),
-                path.as_ref(),
-                artifact
-                    .expect("Binary target not found (is this a library?)")
-                    .as_ref(),
-            )
-            .await;
         }
         #[cfg(feature = "field-control")]
         Command::FieldControl => {

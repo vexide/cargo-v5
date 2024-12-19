@@ -111,7 +111,7 @@ pub enum ProgramIcon {
     VexcodeCpp = 926,
 }
 
-const PROGRESS_CHARS: &str = "⣿⣦⣀";
+pub const PROGRESS_CHARS: &str = "⣿⣦⣀";
 
 /// Upload a program to the brain.
 pub async fn upload_program(
