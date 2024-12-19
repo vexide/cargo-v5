@@ -30,10 +30,10 @@ pub fn vendor_from_prefix(prefix: &str) -> FileVendor {
 }
 
 pub async fn cat(connection: &mut SerialConnection, file: PathBuf) -> Result<(), CliError> {
-    let vendor = vendor_from_prefix(if let Some(parent) = file.parent() {
-        parent.to_str().unwrap()
+    let vendor = if let Some(parent) = file.parent() {
+        vendor_from_prefix(parent.to_str().unwrap())
     } else {
-        ""
+        FileVendor::Undefined
     });
 
     let file_name = FixedString::from_str(file.file_name().unwrap_or_default().to_str().unwrap())
