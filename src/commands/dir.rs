@@ -102,7 +102,7 @@ pub async fn dir(connection: &mut SerialConnection) -> Result<(), CliError> {
                     if entry.load_address == u32::MAX {
                         "-".to_string()
                     } else {
-                        format!("{:#x}", entry.crc)
+                        format!("{:#x}", entry.load_address)
                     },
                     vid,
                     entry

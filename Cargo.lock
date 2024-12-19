@@ -218,7 +218,7 @@ checksum = "a33d3b80a8db16c4ad7676653766a8e59b5f95443c8823cb7cff587b90cb91ba"
 
 [[package]]
 name = "cargo-v5"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "cargo-subcommand-metadata",
  "cargo_metadata",
