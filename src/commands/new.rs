@@ -1,6 +1,6 @@
 use cargo_metadata::camino::Utf8PathBuf;
 use directories::ProjectDirs;
-use log::info;
+use log::{debug, error, info};
 
 use crate::errors::CliError;
 use std::{
@@ -15,7 +15,7 @@ async fn fetch_template() -> reqwest::Result<Vec<u8>> {
         reqwest::get("https://github.com/vexide/vexide-template/archive/refs/heads/main.tar.gz")
             .await?;
     let bytes = response.bytes().await?;
-    info!("Successfully fetched template.");
+    debug!("Successfully fetched template.");
     Ok(bytes.to_vec())
 }
 
@@ -75,19 +75,19 @@ pub async fn new(path: Utf8PathBuf, name: Option<String>) -> Result<(), CliError
     let template: Vec<u8> = match fetch_template().await {
         Ok(bytes) => {
             if let Some(cache_file) = cached_template_path() {
-                info!("Storing fetched template in cache.");
+                debug!("Storing fetched template in cache.");
                 fs::write(cache_file, &bytes).unwrap_or_else(|_| {
-                    info!("Could not cache template.");
+                    error!("Could not cache template.");
                 });
             }
             bytes
         }
         Err(_) => {
-            info!("Failed to fetch template, checking cached template.");
+            error!("Failed to fetch template, checking cached template.");
             cached_template_path()
                 .and_then(|cache_file| fs::read(cache_file).ok())
                 .unwrap_or_else(|| {
-                    info!("Failed to find cached template, using baked-in template.");
+                    error!("Failed to find cached template, using baked-in template.");
                     baked_in_template()
                 })
         }
@@ -95,11 +95,11 @@ pub async fn new(path: Utf8PathBuf, name: Option<String>) -> Result<(), CliError
     #[cfg(not(feature = "fetch-template"))]
     let template = baked_in_template();
 
-    info!("Unpacking template...");
+    debug!("Unpacking template...");
     unpack_template(template, &dir)?;
-    info!("Successfully unpacked vexide-template!");
+    debug!("Successfully unpacked vexide-template!");
 
-    info!("Renaming project to {}...", &name);
+    debug!("Renaming project to {}...", &name);
     let manifest_path = dir.join("Cargo.toml");
     let manifest = std::fs::read_to_string(&manifest_path)?;
     let manifest = manifest.replace("vexide-template", &name);
