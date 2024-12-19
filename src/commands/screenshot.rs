@@ -5,6 +5,7 @@ use std::{
 };
 
 use fs_err::PathExt;
+use image::GenericImageView;
 use indicatif::{ProgressBar, ProgressStyle};
 use log::info;
 use tokio::sync::Mutex;
@@ -94,7 +95,8 @@ pub async fn screenshot(connection: &mut SerialConnection) -> Result<(), CliErro
     let image = image::RgbImage::from_vec(512, 272, colors).unwrap();
 
     let path = Path::new("./screen.png");
-    image.save(path)?;
+    GenericImageView::view(&image, 0, 0, 480, 272).to_image().save(path)?;
+    
     info!(
         "Saved screenshot to {}",
         path.fs_err_canonicalize()?.display()
