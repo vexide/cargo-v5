@@ -111,7 +111,7 @@ pub enum ProgramIcon {
     VexcodeCpp = 926,
 }
 
-const PROGRESS_CHARS: &str = "⣿⣦⣀";
+pub const PROGRESS_CHARS: &str = "⣿⣦⣀";
 
 /// Upload a program to the brain.
 pub async fn upload_program(
@@ -173,49 +173,39 @@ pub async fn upload_program(
             data,
             after_upload: after.into(),
             ini_callback: {
-                // Update ini file progressbar. This code is a mess, yeah.
-                let ini_progres_clone = Arc::clone(&ini_progress);
-                let ini_timestamp_clone = Arc::clone(&ini_timestamp);
-                Some(Box::new(move |percent| {
-                    let ini_progres_clone = Arc::clone(&ini_progres_clone);
-                    let ini_timestamp_clone = Arc::clone(&ini_timestamp_clone);
+                Some({
+                    let ini_progres = ini_progress.clone();
+                    let ini_timestamp = ini_timestamp.clone();
 
-                    block_in_place(move || {
-                        Handle::current().block_on(async move {
-                            let progress = ini_progres_clone.lock().await;
-                            let mut timestamp = ini_timestamp_clone.lock().await;
+                    Box::new(move |percent| {
+                        let progress = ini_progres.try_lock().unwrap();
+                        let mut timestamp = ini_timestamp.try_lock().unwrap();
 
-                            if timestamp.is_none() {
-                                *timestamp = Some(Instant::now());
-                            }
+                        if timestamp.is_none() {
+                            *timestamp = Some(Instant::now());
+                        }
 
-                            progress.set_prefix(format!("{:.2?}", timestamp.unwrap().elapsed()));
-                            progress.set_position((percent * 100.0) as u64);
-                        });
-                    });
-                }))
+                        progress.set_prefix(format!("{:.2?}", timestamp.unwrap().elapsed()));
+                        progress.set_position((percent * 100.0) as u64);
+                    })
+                })
             },
             bin_callback: {
-                // Update bin file progressbar. This code is a mess, yeah.
-                let bin_progres_clone = Arc::clone(&bin_progress);
-                let bin_timestamp_clone = Arc::clone(&bin_timestamp);
-                Some(Box::new(move |percent| {
-                    let bin_progres_clone = Arc::clone(&bin_progres_clone);
-                    let bin_timestamp_clone = Arc::clone(&bin_timestamp_clone);
+                Some({
+                    let bin_progress = bin_progress.clone();
+                    let bin_timestamp = bin_timestamp.clone();
+                    
+                    Box::new(move |percent| {
+                        let progress = bin_progress.try_lock().unwrap();
+                        let mut timestamp = bin_timestamp.try_lock().unwrap();
 
-                    block_in_place(move || {
-                        Handle::current().block_on(async move {
-                            let progress = bin_progres_clone.lock().await;
-                            let mut timestamp = bin_timestamp_clone.lock().await;
-
-                            if timestamp.is_none() {
-                                *timestamp = Some(Instant::now());
-                            }
-                            progress.set_prefix(format!("{:.2?}", timestamp.unwrap().elapsed()));
-                            progress.set_position((percent * 100.0) as u64);
-                        });
-                    });
-                }))
+                        if timestamp.is_none() {
+                            *timestamp = Some(Instant::now());
+                        }
+                        progress.set_prefix(format!("{:.2?}", timestamp.unwrap().elapsed()));
+                        progress.set_position((percent * 100.0) as u64);
+                    })
+                })
             },
             lib_callback: None,
         })

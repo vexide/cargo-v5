@@ -64,7 +64,7 @@ async fn try_read_terminal(connection: &mut SerialConnection) -> Result<Vec<u8>,
 
     let mut data = Vec::new();
     if let Some(read) = read.data {
-        data.extend(read.0.as_bytes());
+        data.extend(read.as_bytes());
     }
 
     Ok(data)
