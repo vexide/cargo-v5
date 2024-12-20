@@ -47,7 +47,7 @@ chrono = "0.4.38"
 directories = "5.0.1"
 
 [features]
-default = ["clap", "fetch-template"]
+default = ["clap"]
 clap = ["dep:clap"]
 
 field-control = ["dep:ratatui", "dep:crossterm", "dep:tui-term"]

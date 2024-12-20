@@ -99,9 +99,19 @@ enum Command {
     New {
         /// The name of the project.
         name: String,
+
+        /// Whether or not to fetch the latest template online.
+        #[cfg_attr(feature = "fetch-template", arg(long, default_value = "true"))]
+        #[cfg_attr(not(feature = "fetch-template"), arg(skip = true))]
+        use_internet: bool,
     },
     /// Creates a new vexide project in the current directory
-    Init,
+    Init {
+        /// Whether or not to fetch the latest template online.
+        #[cfg_attr(feature = "fetch-template", arg(long, default_value = "true"))]
+        #[cfg_attr(not(feature = "fetch-template"), arg(skip = true))]
+        use_internet: bool,
+    },
 }
 
 #[tokio::main]
@@ -234,11 +244,11 @@ async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> 
 
             run_field_control_tui(&mut connection).await?;
         }
-        Command::New { name } => {
-            new(path, Some(name)).await?;
+        Command::New { name , use_internet} => {
+            new(path, Some(name), use_internet).await?;
         }
-        Command::Init => {
-            new(path, None).await?;
+        Command::Init { use_internet } => {
+            new(path, None, use_internet).await?;
         }
     }
 

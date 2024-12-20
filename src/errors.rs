@@ -16,6 +16,11 @@ pub enum CliError {
     #[diagnostic(code(cargo_v5::cdc2_nack))]
     Nack(#[from] Cdc2Ack),
 
+    #[cfg(feature = "fetch-template")]
+    #[error(transparent)]
+    #[diagnostic(code(cargo_v5::bad_response))]
+    BadResponse(#[from] reqwest::Error),
+
     // TODO: Add source spans.
     #[error("Incorrect type for field `{field}` (expected {expected}, found {found}).")]
     #[diagnostic(
