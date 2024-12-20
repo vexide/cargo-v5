@@ -1,3 +1,4 @@
+use image::ImageError;
 use miette::Diagnostic;
 use thiserror::Error;
 use vex_v5_serial::packets::cdc2::Cdc2Ack;
@@ -20,6 +21,10 @@ pub enum CliError {
     #[error(transparent)]
     #[diagnostic(code(cargo_v5::bad_response))]
     BadResponse(#[from] reqwest::Error),
+
+    #[error(transparent)]
+    #[diagnostic(code(cargo_v5::image_error))]
+    ImageError(#[from] ImageError),
 
     // TODO: Add source spans.
     #[error("Incorrect type for field `{field}` (expected {expected}, found {found}).")]
