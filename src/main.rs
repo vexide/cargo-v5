@@ -20,7 +20,7 @@ use cargo_v5::{
     connection::{open_connection, switch_radio_channel},
 };
 use chrono::Utc;
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use flexi_logger::{AdaptiveFormat, FileSpec, LogfileSelector, LoggerHandle};
 use tokio::{runtime::Handle, select, task::block_in_place};
 #[cfg(feature = "field-control")]
@@ -92,17 +92,13 @@ enum Command {
         /// The name of the project.
         name: String,
 
-        /// Whether or not to fetch the latest template online.
-        #[cfg_attr(feature = "fetch-template", arg(long, default_value = "true"))]
-        #[cfg_attr(not(feature = "fetch-template"), arg(skip = true))]
-        use_internet: bool,
+        #[clap(flatten)]
+        download_opts: DownloadOpts,
     },
     /// Creates a new vexide project in the current directory
     Init {
-        /// Whether or not to fetch the latest template online.
-        #[cfg_attr(feature = "fetch-template", arg(long, default_value = "true"))]
-        #[cfg_attr(not(feature = "fetch-template"), arg(skip = true))]
-        use_internet: bool,
+        #[clap(flatten)]
+        download_opts: DownloadOpts,
     },    
     /// List files on flash.
     #[clap(visible_alias = "ls")]
@@ -126,6 +122,14 @@ enum Command {
     #[cfg(feature = "field-control")]
     #[clap(visible_aliases = ["fc", "comp-control"])]
     FieldControl,
+}
+
+#[derive(Args, Debug)]
+struct DownloadOpts {
+    /// Whether or not to download the latest template online.
+    #[cfg_attr(feature = "fetch-template", arg(long, default_value = "true"))]
+    #[cfg_attr(not(feature = "fetch-template"), arg(skip = true))]
+    download_template: bool,
 }
 
 #[tokio::main]
@@ -260,11 +264,11 @@ async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> 
 
             run_field_control_tui(&mut connection).await?;
         }
-        Command::New { name , use_internet} => {
-            new(path, Some(name), use_internet).await?;
+        Command::New { name , download_opts} => {
+            new(path, Some(name), download_opts.download_template).await?;
         }
-        Command::Init { use_internet } => {
-            new(path, None, use_internet).await?;
+        Command::Init { download_opts } => {
+            new(path, None, download_opts.download_template).await?;
         }
     }
 

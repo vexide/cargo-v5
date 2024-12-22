@@ -20,7 +20,7 @@ pub enum CliError {
     #[cfg(feature = "fetch-template")]
     #[error(transparent)]
     #[diagnostic(code(cargo_v5::bad_response))]
-    BadResponse(#[from] reqwest::Error),
+    ReqwestError(#[from] reqwest::Error),
 
     #[error(transparent)]
     #[diagnostic(code(cargo_v5::image_error))]

@@ -56,7 +56,7 @@ humansize = "2.1.3"
 image = { version = "0.25.1", default-features = false, features = ["png"] }
 
 [features]
-default = ["clap"]
+default = ["clap", "fetch-template"]
 clap = ["dep:clap"]
 
 field-control = ["dep:ratatui", "dep:crossterm", "dep:tui-term"]

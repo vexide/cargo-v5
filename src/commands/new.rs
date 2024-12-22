@@ -23,7 +23,7 @@ async fn get_current_sha() -> Result<String, CliError> {
             .await;
     let response = match response {
         Ok(response) => response,
-        Err(err) => return Err(CliError::BadResponse(err)),
+        Err(err) => return Err(CliError::ReqwestError(err)),
     };
     let response_text = response.text().await.ok().unwrap_or("{}".to_string());
     match &serde_json::from_str::<Value>(&response_text).unwrap_or_default()["sha"] {
@@ -40,7 +40,7 @@ async fn fetch_template() -> Result<Template, CliError> {
             .await;
     let response = match response {
         Ok(response) => response,
-        Err(err) => return Err(CliError::BadResponse(err)),
+        Err(err) => return Err(CliError::ReqwestError(err)),
     };
     let bytes = response.bytes().await?;
 
@@ -97,7 +97,7 @@ fn unpack_template(template: Vec<u8>, dir: &Utf8PathBuf) -> io::Result<()> {
     Ok(())
 }
 
-pub async fn new(path: Utf8PathBuf, name: Option<String>, use_internet: bool) -> Result<(), CliError> {
+pub async fn new(path: Utf8PathBuf, name: Option<String>, download_template: bool) -> Result<(), CliError> {
     let dir = if let Some(name) = &name {
         let dir = path.join(name);
         std::fs::create_dir_all(&path).unwrap();
@@ -121,26 +121,23 @@ pub async fn new(path: Utf8PathBuf, name: Option<String>, use_internet: bool) ->
         template.clone().and_then(|t| t.sha),
         get_current_sha().await,
     ) {
+        _ if !download_template => template,
         (Some(cached_sha), Ok(current_sha)) if cached_sha == current_sha => {
             debug!("Cached template is current, skipping download.");
             template
         }
         _ => {
-            if use_internet {
             let fetched_template = fetch_template().await.ok();
             fetched_template.or_else(|| {
                 warn!("Could not fetch template, falling back to cache.");
                 template
             })
-            } else {
-                template
-            }
         }
     };
 
     #[cfg(feature = "fetch-template")]
     let template = template.unwrap_or_else(|| {
-        warn!("No emplate found in cache, using builtin template.");
+        debug!("No template found in cache, using builtin template.");
         baked_in_template()
     });
 
