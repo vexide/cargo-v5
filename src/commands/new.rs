@@ -18,9 +18,12 @@ struct Template {
 
 #[cfg(feature = "fetch-template")]
 async fn get_current_sha() -> Result<String, CliError> {
-    let response =
-        reqwest::get("https://api.github.com/repos/vexide/vexide-template/commits/main?per-page=1")
-            .await;
+    let client = reqwest::Client::new();
+    let response = client
+        .get("https://api.github.com/repos/vexide/vexide-template/commits/main?per-page=1")
+        .header("User-Agent", "vexide/cargo-v5")
+        .send()
+        .await;
     let response = match response {
         Ok(response) => response,
         Err(err) => return Err(CliError::ReqwestError(err)),
@@ -49,18 +52,35 @@ async fn fetch_template() -> Result<Template, CliError> {
         data: bytes.to_vec(),
         sha: get_current_sha().await.ok(),
     };
+    store_cached_template(template.clone());
     Ok(template)
 }
 
 #[cfg(feature = "fetch-template")]
-fn cached_template() -> Option<Template> {
+fn get_cached_template() -> Option<Template> {
     let sha = cached_template_dir()
         .and_then(|path| fs::read_to_string(path.with_file_name("cache-id.txt")).ok());
     cached_template_dir()
         .map(|path| path.with_file_name("vexide-template.tar.gz"))
         .and_then(|cache_file| fs::read(cache_file).ok())
         .map(|data: Vec<u8>| Template { data, sha })
+        .inspect(|template| {log::debug!("Found cached template with sha: {:?}", template.sha)})
 }
+
+#[cfg(feature = "fetch-template")]
+fn store_cached_template(template: Template) -> () {
+    cached_template_dir()
+        .map(|path| path.with_file_name("vexide-template.tar.gz"))
+        .map(|cache_file| fs::write(cache_file, &template.data));
+    cached_template_dir()
+        .map(|path| path.with_file_name("cache-id.txt"))
+        .map(|sha_file| {
+            if let Some(sha) = template.sha {
+                fs::write(sha_file, sha);
+            }
+        });
+    
+    }
 
 #[cfg(feature = "fetch-template")]
 fn cached_template_dir() -> Option<PathBuf> {
@@ -97,7 +117,11 @@ fn unpack_template(template: Vec<u8>, dir: &Utf8PathBuf) -> io::Result<()> {
     Ok(())
 }
 
-pub async fn new(path: Utf8PathBuf, name: Option<String>, download_template: bool) -> Result<(), CliError> {
+pub async fn new(
+    path: Utf8PathBuf,
+    name: Option<String>,
+    download_template: bool,
+) -> Result<(), CliError> {
     let dir = if let Some(name) = &name {
         let dir = path.join(name);
         std::fs::create_dir_all(&path).unwrap();
@@ -114,7 +138,7 @@ pub async fn new(path: Utf8PathBuf, name: Option<String>, download_template: boo
     info!("Creating new project at {:?}", dir);
 
     #[cfg(feature = "fetch-template")]
-    let template = cached_template();
+    let template = get_cached_template();
 
     #[cfg(feature = "fetch-template")]
     let template = match (
@@ -127,6 +151,7 @@ pub async fn new(path: Utf8PathBuf, name: Option<String>, download_template: boo
             template
         }
         _ => {
+            debug!("Cached template is out of date.");
             let fetched_template = fetch_template().await.ok();
             fetched_template.or_else(|| {
                 warn!("Could not fetch template, falling back to cache.");

@@ -126,10 +126,10 @@ enum Command {
 
 #[derive(Args, Debug)]
 struct DownloadOpts {
-    /// Whether or not to download the latest template online.
-    #[cfg_attr(feature = "fetch-template", arg(long, default_value = "true"))]
-    #[cfg_attr(not(feature = "fetch-template"), arg(skip = true))]
-    download_template: bool,
+    /// Do not download the latest template online.
+    #[cfg_attr(feature = "fetch-template", arg(long, default_value = "false"))]
+    #[cfg_attr(not(feature = "fetch-template"), arg(skip = false))]
+    no_download_template: bool,
 }
 
 #[tokio::main]
@@ -265,10 +265,10 @@ async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> 
             run_field_control_tui(&mut connection).await?;
         }
         Command::New { name , download_opts} => {
-            new(path, Some(name), download_opts.download_template).await?;
+            new(path, Some(name), !download_opts.no_download_template).await?;
         }
         Command::Init { download_opts } => {
-            new(path, None, download_opts.download_template).await?;
+            new(path, None, !download_opts.no_download_template).await?;
         }
     }
 
