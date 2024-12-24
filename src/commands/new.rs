@@ -76,7 +76,7 @@ fn store_cached_template(template: Template) -> () {
         .map(|path| path.with_file_name("cache-id.txt"))
         .map(|sha_file| {
             if let Some(sha) = template.sha {
-                fs::write(sha_file, sha);
+                let _ = fs::write(sha_file, sha);
             }
         });
     
