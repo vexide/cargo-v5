@@ -13,7 +13,7 @@ use vex_v5_serial::{
         },
         system::{
             GetSystemFlagsPacket, GetSystemFlagsReplyPacket, GetSystemVersionPacket,
-            GetSystemVersionReplyPacket, ProductFlags,
+            GetSystemVersionReplyPacket, ProductFlags, ProductType,
         },
     },
 };
@@ -51,10 +51,7 @@ async fn is_connection_wireless(connection: &mut SerialConnection) -> Result<boo
             GetSystemFlagsPacket::new(()),
         )
         .await?;
-    let controller = version
-        .payload
-        .flags
-        .contains(ProductFlags::CONNECTED_WIRELESS);
+    let controller = matches!(version.payload.product_type, ProductType::Controller);
 
     let tethered = system_flags.payload.flags & (1 << 8) != 0;
     Ok(!tethered && controller)
