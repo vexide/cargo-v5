@@ -98,7 +98,11 @@ enum Command {
     #[clap(visible_alias = "ls")]
     Dir,
     /// Read a file from flash, then write its contents to stdout.
-    Cat { file: PathBuf },
+    Cat {
+        file: PathBuf,
+        #[arg(long, default_value = "false")]
+        meow: bool,
+    },
     /// Erase a file from flash.
     Rm { file: PathBuf },
     /// Read event log.
@@ -177,7 +181,10 @@ async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> 
         Command::Devices => {
             devices(&mut open_connection().await?).await?;
         }
-        Command::Cat { file } => {
+        Command::Cat { file, meow } => {
+            if meow {
+                _ = open::that("https://cat.vexide.dev");
+            }
             cat(&mut open_connection().await?, file).await?;
         }
         Command::Rm { file } => {

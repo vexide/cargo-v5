@@ -54,6 +54,7 @@ chrono = "0.4.38"
 tabwriter = { version = "1.4.0", features = ["ansi_formatting"] }
 humansize = "2.1.3"
 image = { version = "0.25.1", default-features = false, features = ["png"] }
+open = "5.3.1"
 
 [features]
 default = ["clap", "fetch-template"]
