@@ -311,7 +311,7 @@ pub async fn upload(
         .ok_or(CliError::NoSlot)?;
 
     // Ensure [1, 8] range bounds for slot number
-    if !(1..8).contains(&slot) {
+    if !(1..=8).contains(&slot) {
         Err(CliError::SlotOutOfRange)?;
     }
 
