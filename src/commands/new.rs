@@ -1,5 +1,4 @@
 use cargo_metadata::camino::Utf8PathBuf;
-use directories::ProjectDirs;
 use log::{debug, error, info};
 
 use crate::errors::CliError;
@@ -21,6 +20,7 @@ async fn fetch_template() -> reqwest::Result<Vec<u8>> {
 
 #[cfg(feature = "fetch-template")]
 fn cached_template_path() -> Option<PathBuf> {
+    use directories::ProjectDirs;
     ProjectDirs::from("", "vexide", "cargo-v5").and_then(|dirs| {
         dirs.cache_dir()
             .canonicalize()
