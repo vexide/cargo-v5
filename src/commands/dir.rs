@@ -107,7 +107,8 @@ pub async fn dir(connection: &mut SerialConnection) -> Result<(), CliError> {
                     vid,
                     entry
                         .metadata
-                        .as_ref().map(|m| match m.extension_type {
+                        .as_ref()
+                        .map(|m| match m.extension_type {
                             ExtensionType::Binary => "binary",
                             ExtensionType::EncryptedBinary => "encrypted",
                             ExtensionType::Vm => "vm",
@@ -115,16 +116,17 @@ pub async fn dir(connection: &mut SerialConnection) -> Result<(), CliError> {
                         .unwrap_or("system"),
                     entry
                         .metadata
-                        .as_ref().map(|m| Utc.timestamp_millis_opt(
-                                (J2000_EPOCH as i64 + m.timestamp as i64) * 1000
-                            )
+                        .as_ref()
+                        .map(|m| Utc
+                            .timestamp_millis_opt((J2000_EPOCH as i64 + m.timestamp as i64) * 1000)
                             .unwrap()
                             .format("%Y-%m-%d %H:%M:%S")
                             .to_string())
                         .unwrap_or("-".to_string()),
                     entry
                         .metadata
-                        .as_ref().map(|m| format!(
+                        .as_ref()
+                        .map(|m| format!(
                             "{}.{}.{}.b{}",
                             m.version.major, m.version.minor, m.version.build, m.version.beta
                         ))
