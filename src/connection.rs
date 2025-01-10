@@ -13,7 +13,7 @@ use vex_v5_serial::{
         },
         system::{
             GetSystemFlagsPacket, GetSystemFlagsReplyPacket, GetSystemVersionPacket,
-            GetSystemVersionReplyPacket, ProductFlags, ProductType,
+            GetSystemVersionReplyPacket, ProductType,
         },
     },
 };

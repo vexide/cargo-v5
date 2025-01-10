@@ -93,9 +93,9 @@ pub async fn dir(connection: &mut SerialConnection) -> Result<(), CliError> {
                 .await?
                 .payload
             {
-                write!(
+                writeln!(
                     &mut tw,
-                    "{}{}\t{}\t{}\t{:?}\t{}\t{}\t{}\t{}\n",
+                    "{}{}\t{}\t{}\t{:?}\t{}\t{}\t{}\t{}",
                     vendor_prefix(vid),
                     entry.file_name,
                     format_size(entry.size, BINARY),
@@ -107,32 +107,27 @@ pub async fn dir(connection: &mut SerialConnection) -> Result<(), CliError> {
                     vid,
                     entry
                         .metadata
-                        .as_ref()
-                        .and_then(|m| Some(match m.extension_type {
+                        .as_ref().map(|m| match m.extension_type {
                             ExtensionType::Binary => "binary",
                             ExtensionType::EncryptedBinary => "encrypted",
                             ExtensionType::Vm => "vm",
-                        }))
+                        })
                         .unwrap_or("system"),
                     entry
                         .metadata
-                        .as_ref()
-                        .and_then(|m| Some(
-                            Utc.timestamp_millis_opt(
+                        .as_ref().map(|m| Utc.timestamp_millis_opt(
                                 (J2000_EPOCH as i64 + m.timestamp as i64) * 1000
                             )
                             .unwrap()
                             .format("%Y-%m-%d %H:%M:%S")
-                            .to_string()
-                        ))
+                            .to_string())
                         .unwrap_or("-".to_string()),
                     entry
                         .metadata
-                        .as_ref()
-                        .and_then(|m| Some(format!(
+                        .as_ref().map(|m| format!(
                             "{}.{}.{}.b{}",
                             m.version.major, m.version.minor, m.version.build, m.version.beta
-                        )))
+                        ))
                         .unwrap_or("-".to_string()),
                     if entry.crc == u32::MAX {
                         "-".to_string()

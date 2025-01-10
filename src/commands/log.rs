@@ -43,7 +43,7 @@ pub async fn log(connection: &mut SerialConnection, page: NonZeroU32) -> Result<
             time % 60
         )?;
 
-        if matches!(log.log_type, 10 | 0xb | 0xc) {
+        if matches!(log.log_type, 10..=0xc) {
             write!(&mut tw, "\x1B[1m")?; // Bold white
         } else if (128..u8::MAX).contains(&log.log_type) {
             write!(&mut tw, "\x1B[33m")?; // Yellow (warning)
