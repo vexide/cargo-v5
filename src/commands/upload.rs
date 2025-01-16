@@ -1,5 +1,6 @@
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use clap::{Args, ValueEnum};
+use flate2::{Compression, GzBuilder};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use inquire::{
     validator::{ErrorMessage, Validation},
@@ -7,12 +8,28 @@ use inquire::{
 };
 use tokio::{runtime::Handle, sync::Mutex, task::block_in_place, time::Instant};
 
-use std::sync::Arc;
+use std::{fs::exists, io::Write, sync::Arc, time::Duration};
 
 use vex_v5_serial::{
-    commands::file::{ProgramData, UploadProgram},
-    connection::{serial::SerialConnection, Connection},
-    packets::{file::FileExitAction, radio::RadioChannel},
+    commands::file::{
+        LinkedFile, Program, ProgramData, ProgramIniConfig, Project, UploadFile, UploadProgram,
+        USER_PROGRAM_LOAD_ADDR,
+    },
+    connection::{
+        serial::{SerialConnection, SerialError},
+        Connection,
+    },
+    packets::{
+        cdc2::Cdc2Ack,
+        file::{
+            ExtensionType, FileExitAction, FileMetadata, FileVendor, GetFileMetadataPacket,
+            GetFileMetadataPayload, GetFileMetadataReplyPacket,
+        },
+        radio::RadioChannel,
+    },
+    string::FixedString,
+    timestamp::j2000_timestamp,
+    version::Version,
 };
 
 use crate::{connection::switch_radio_channel, errors::CliError, metadata::Metadata};
@@ -46,13 +63,32 @@ pub struct UploadOpts {
     #[arg(long)]
     pub file: Option<Utf8PathBuf>,
 
+    /// Method to use when uploading binaries.
+    #[arg(long)]
+    pub upload_strategy: Option<UploadStrategy>,
+
+    /// Reupload entire base binary if patch uploading.
+    #[arg(long)]
+    pub cold: bool,
+
     /// Arguments forwarded to `cargo`.
     #[clap(flatten)]
     pub cargo_opts: CargoOpts,
 }
 
+/// Method used for uploading binaries
+#[derive(ValueEnum, Debug, Clone, Copy, Default, Eq, PartialEq)]
+pub enum UploadStrategy {
+    /// Full binary is uploaded each time
+    #[default]
+    Monolith,
+
+    /// Binary patch upload (vexide only)
+    Patch,
+}
+
 /// An action to perform after uploading a program.
-#[derive(ValueEnum, Debug, Clone, Copy, Default)]
+#[derive(ValueEnum, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum AfterUpload {
     /// Do nothing.
     #[default]
@@ -124,98 +160,373 @@ pub async fn upload_program(
     icon: ProgramIcon,
     program_type: String,
     compress: bool,
+    cold: bool,
+    upload_strategy: UploadStrategy,
 ) -> Result<(), CliError> {
     let multi_progress = MultiProgress::new();
 
-    // indicatif is a little dumb with timestamp handling, so we're going to do this all custom,
-    // which unfortunately requires us to juggle timestamps across threads.
-    let ini_timestamp = Arc::new(Mutex::new(None));
-    let bin_timestamp = Arc::new(Mutex::new(None));
+    let slot_file_name = format!("slot_{}.bin", slot - 1);
+    let ini_file_name = format!("slot_{}.ini", slot - 1);
 
-    // Progress bars
-    let ini_progress = Arc::new(Mutex::new(
-        multi_progress
-            .add(ProgressBar::new(10000))
-            .with_style(
-                ProgressStyle::with_template(
-                    "{msg:4} {percent_precise:>7}% {bar:40.green} {prefix}",
+    match upload_strategy {
+        UploadStrategy::Monolith => {
+            // indicatif is a little dumb with timestamp handling, so we're going to do this all custom,
+            // which unfortunately requires us to juggle timestamps across threads.
+            let ini_timestamp = Arc::new(Mutex::new(None));
+            let bin_timestamp = Arc::new(Mutex::new(None));
+
+            // Progress bars
+            let ini_progress = Arc::new(Mutex::new(
+                multi_progress
+                    .add(ProgressBar::new(10000))
+                    .with_style(
+                        ProgressStyle::with_template(
+                            "   \x1b[1;96mUploading\x1b[0m {msg:10} {percent_precise:>7}% {bar:40.green} {prefix}",
+                        )
+                        .unwrap() // Okay to unwrap, since this just validates style formatting.
+                        .progress_chars(PROGRESS_CHARS),
+                    )
+                    .with_message(ini_file_name),
+            ));
+            let bin_progress = Arc::new(Mutex::new(
+                multi_progress
+                    .add(ProgressBar::new(10000))
+                    .with_style(
+                        ProgressStyle::with_template(
+                            "   \x1b[1;96mUploading\x1b[0m {msg:10} {percent_precise:>7}% {bar:40.red} {prefix}",
+                        )
+                        .unwrap() // Okay to unwrap, since this just validates style formatting.
+                        .progress_chars(PROGRESS_CHARS),
+                    )
+                    .with_message(slot_file_name.clone()),
+            ));
+
+            // Read our program file into a buffer.
+            //
+            // We're uploading a monolith (single-bin, no hot/cold linking).
+            let data = ProgramData::Monolith(tokio::fs::read(path).await?);
+
+            // Upload the program.
+            connection
+                .execute_command(UploadProgram {
+                    name,
+                    description,
+                    icon: format!("USER{:03}x.bmp", icon as u16),
+                    program_type,
+                    slot: slot - 1,
+                    compress_program: compress,
+                    data,
+                    after_upload: after.into(),
+                    ini_callback: Some(build_progress_callback(
+                        ini_progress.clone(),
+                        ini_timestamp.clone(),
+                    )),
+                    bin_callback: Some(build_progress_callback(
+                        bin_progress.clone(),
+                        bin_timestamp.clone(),
+                    )),
+                    lib_callback: None,
+                })
+                .await?;
+
+            // Tell the progressbars that we're done once uploading is complete, allowing further messages to be printed to stdout.
+            ini_progress.lock().await.finish();
+            bin_progress.lock().await.finish();
+        }
+        UploadStrategy::Patch => {
+            let base_file_name = format!("slot_{}.base.bin", slot - 1);
+
+            if exists(path.with_extension("base.bin"))?
+                && brain_file_exists(
+                    connection,
+                    FixedString::new(slot_file_name.clone()).unwrap(),
+                    FileVendor::User,
                 )
-                .unwrap() // Okay to unwrap, since this just validates style formatting.
-                .progress_chars(PROGRESS_CHARS),
-            )
-            .with_message("INI"),
-    ));
-    let bin_progress = Arc::new(Mutex::new(
-        multi_progress
-            .add(ProgressBar::new(10000))
-            .with_style(
-                ProgressStyle::with_template("{msg:4} {percent_precise:>7}% {bar:40.red} {prefix}")
-                    .unwrap() // Okay to unwrap, since this just validates style formatting.
-                    .progress_chars(PROGRESS_CHARS),
-            )
-            .with_message("BIN"),
-    ));
+                .await?
+                && !cold
+            {
+                let patch_timestamp = Arc::new(Mutex::new(None));
+                let patch_progress = Arc::new(Mutex::new(
+                    multi_progress
+                        .add(ProgressBar::new(10000))
+                        .with_style(
+                            ProgressStyle::with_template(
+                                "    \x1b[1;96mPatching\x1b[0m {msg:10} {percent_precise:>7}% {bar:40.red} {prefix}",
+                            )
+                            .unwrap() // Okay to unwrap, since this just validates style formatting.
+                            .progress_chars(PROGRESS_CHARS),
+                        )
+                        .with_message(slot_file_name.clone()),
+                ));
 
-    // Read our program file into a buffer.
-    //
-    // We're uploading a monolith (single-bin, no hot/cold linking).
-    let data = ProgramData::Monolith(tokio::fs::read(path).await?);
+                let old = tokio::fs::read(path.with_extension("base.bin")).await?;
+                let new = tokio::fs::read(path).await?;
+                let mut patch = Vec::new();
 
-    // Upload the program.
-    connection
-        .execute_command(UploadProgram {
-            name,
-            description,
-            icon: format!("USER{:03}x.bmp", icon as u16),
-            program_type,
-            slot: slot - 1,
-            compress_program: compress,
-            data,
-            after_upload: after.into(),
-            ini_callback: {
-                Some({
-                    let ini_progres = ini_progress.clone();
-                    let ini_timestamp = ini_timestamp.clone();
+                bidiff::simple_diff(old.as_slice(), new.as_slice(), &mut patch).unwrap();
 
-                    Box::new(move |percent| {
-                        let progress = ini_progres.try_lock().unwrap();
-                        let mut timestamp = ini_timestamp.try_lock().unwrap();
+                // Insert important metadata for the patcher to use when constructing a new binary
+                patch.reserve(12);
+                patch.splice(8..8, ((patch.len() + 12) as u32).to_le_bytes());
+                patch.splice(12..12, (old.len() as u32).to_le_bytes());
+                patch.splice(16..16, (new.len() as u32).to_le_bytes());
 
-                        if timestamp.is_none() {
-                            *timestamp = Some(Instant::now());
-                        }
+                gzip_compress(&mut patch);
 
-                        progress.set_prefix(format!("{:.2?}", timestamp.unwrap().elapsed()));
-                        progress.set_position((percent * 100.0) as u64);
+                log::debug!(
+                    "old: {}, new: {}, patch: {}",
+                    old.len(),
+                    new.len(),
+                    patch.len()
+                );
+
+                connection
+                    .execute_command(UploadFile {
+                        filename: FixedString::new(slot_file_name.clone()).unwrap(),
+                        metadata: FileMetadata {
+                            extension: FixedString::new("bin".to_string()).unwrap(),
+                            extension_type: ExtensionType::default(),
+                            timestamp: j2000_timestamp(),
+                            version: Version {
+                                major: 1,
+                                minor: 0,
+                                build: 0,
+                                beta: 0,
+                            },
+                        },
+                        vendor: Some(FileVendor::User),
+                        data: patch,
+                        target: None,
+                        load_addr: 0x07A00000,
+                        linked_file: Some(LinkedFile {
+                            filename: FixedString::new(base_file_name.clone()).unwrap(),
+                            vendor: Some(FileVendor::User),
+                        }),
+                        after_upload: match after {
+                            AfterUpload::None => FileExitAction::DoNothing,
+                            AfterUpload::ShowScreen => FileExitAction::ShowRunScreen,
+                            AfterUpload::Run => FileExitAction::RunProgram,
+                        },
+                        progress_callback: Some(build_progress_callback(
+                            patch_progress.clone(),
+                            patch_timestamp.clone(),
+                        )),
                     })
-                })
-            },
-            bin_callback: {
-                Some({
-                    let bin_progress = bin_progress.clone();
-                    let bin_timestamp = bin_timestamp.clone();
+                    .await?;
 
-                    Box::new(move |percent| {
-                        let progress = bin_progress.try_lock().unwrap();
-                        let mut timestamp = bin_timestamp.try_lock().unwrap();
+                patch_progress.lock().await.finish();
+            } else {
+                // indicatif is a little dumb with timestamp handling, so we're going to do this all custom,
+                // which unfortunately requires us to juggle timestamps across threads.
+                let ini_timestamp = Arc::new(Mutex::new(None));
+                let base_timestamp = Arc::new(Mutex::new(None));
 
-                        if timestamp.is_none() {
-                            *timestamp = Some(Instant::now());
-                        }
-                        progress.set_prefix(format!("{:.2?}", timestamp.unwrap().elapsed()));
-                        progress.set_position((percent * 100.0) as u64);
+                let ini_progress = Arc::new(Mutex::new(
+                    multi_progress
+                        .add(ProgressBar::new(10000))
+                        .with_style(
+                            ProgressStyle::with_template(
+                                "   \x1b[1;96mUploading\x1b[0m {msg:15} {percent_precise:>7}% {bar:40.green} {prefix}",
+                            )
+                            .unwrap() // Okay to unwrap, since this just validates style formatting.
+                            .progress_chars(PROGRESS_CHARS),
+                        )
+                        .with_message(ini_file_name.clone()),
+                ));
+                let base_progress = Arc::new(Mutex::new(
+                    multi_progress
+                        .add(ProgressBar::new(10000))
+                        .with_style(
+                            ProgressStyle::with_template(
+                                "   \x1b[1;96mUploading\x1b[0m {msg:15} {percent_precise:>7}% {bar:40.blue} {prefix}",
+                            )
+                            .unwrap() // Okay to unwrap, since this just validates style formatting.
+                            .progress_chars(PROGRESS_CHARS),
+                        )
+                        .with_message(base_file_name.clone()),
+                ));
+                let patch_timestamp = Arc::new(Mutex::new(None));
+                let patch_progress = Arc::new(Mutex::new(
+                    multi_progress
+                        .add(ProgressBar::new(10000))
+                        .with_style(
+                            ProgressStyle::with_template(
+                                "    \x1b[1;96mPatching\x1b[0m {msg:15} {percent_precise:>7}% {bar:40.red} {prefix}",
+                            )
+                            .unwrap() // Okay to unwrap, since this just validates style formatting.
+                            .progress_chars(PROGRESS_CHARS),
+                        )
+                        .with_message(slot_file_name.clone()),
+                ));
+
+                // Create a new base.bin file with the current binary.
+                tokio::fs::copy(path, path.with_extension("base.bin")).await?;
+
+                connection
+                    .execute_command(UploadFile {
+                        filename: FixedString::new(ini_file_name).unwrap(),
+                        metadata: FileMetadata {
+                            extension: FixedString::new("ini".to_string()).unwrap(),
+                            extension_type: ExtensionType::default(),
+                            timestamp: j2000_timestamp(),
+                            version: Version {
+                                major: 1,
+                                minor: 0,
+                                build: 0,
+                                beta: 0,
+                            },
+                        },
+                        vendor: None,
+                        data: serde_ini::to_vec(&ProgramIniConfig {
+                            program: Program {
+                                description,
+                                icon: format!("USER{:03}x.bmp", icon as u16),
+                                iconalt: String::new(),
+                                slot: slot - 1,
+                                name,
+                            },
+                            project: Project { ide: program_type },
+                        })
+                        .unwrap(),
+                        target: None,
+                        load_addr: USER_PROGRAM_LOAD_ADDR,
+                        linked_file: None,
+                        after_upload: FileExitAction::DoNothing,
+                        progress_callback: Some(build_progress_callback(
+                            ini_progress.clone(),
+                            ini_timestamp.clone(),
+                        )),
                     })
-                })
-            },
-            lib_callback: None,
-        })
-        .await?;
+                    .await?;
+                ini_progress.lock().await.finish();
 
-    // Tell the progressbars that we're done once uploading is complete, allowing further messages to be printed to stdout.
-    ini_progress.lock().await.finish();
-    bin_progress.lock().await.finish();
+                connection
+                    .execute_command(UploadFile {
+                        filename: FixedString::new(base_file_name.clone()).unwrap(),
+                        metadata: FileMetadata {
+                            extension: FixedString::new("bin".to_string()).unwrap(),
+                            extension_type: ExtensionType::default(),
+                            timestamp: j2000_timestamp(),
+                            version: Version {
+                                major: 1,
+                                minor: 0,
+                                build: 0,
+                                beta: 0,
+                            },
+                        },
+                        vendor: Some(FileVendor::User),
+                        data: {
+                            let mut base_data =
+                                tokio::fs::read(path.with_extension("base.bin")).await?;
+                            if compress {
+                                gzip_compress(&mut base_data);
+                            }
+
+                            base_data
+                        },
+                        target: None,
+                        load_addr: USER_PROGRAM_LOAD_ADDR,
+                        linked_file: None,
+                        after_upload: FileExitAction::DoNothing,
+                        progress_callback: Some(build_progress_callback(
+                            base_progress.clone(),
+                            base_timestamp.clone(),
+                        )),
+                    })
+                    .await?;
+                base_progress.lock().await.finish();
+
+                connection
+                    .execute_command(UploadFile {
+                        filename: FixedString::new(slot_file_name.clone()).unwrap(),
+                        metadata: FileMetadata {
+                            extension: FixedString::new("bin".to_string()).unwrap(),
+                            extension_type: ExtensionType::default(),
+                            timestamp: j2000_timestamp(),
+                            version: Version {
+                                major: 1,
+                                minor: 0,
+                                build: 0,
+                                beta: 0,
+                            },
+                        },
+                        vendor: Some(FileVendor::User),
+                        data: u32::to_le_bytes(0xB2DF).to_vec(),
+                        target: None,
+                        load_addr: 0x07A00000,
+                        linked_file: Some(LinkedFile {
+                            filename: FixedString::new(base_file_name).unwrap(),
+                            vendor: Some(FileVendor::User),
+                        }),
+                        after_upload: match after {
+                            AfterUpload::None => FileExitAction::DoNothing,
+                            AfterUpload::ShowScreen => FileExitAction::ShowRunScreen,
+                            AfterUpload::Run => FileExitAction::RunProgram,
+                        },
+                        progress_callback: Some(build_progress_callback(
+                            patch_progress.clone(),
+                            patch_timestamp.clone(),
+                        )),
+                    })
+                    .await?;
+
+                patch_progress.lock().await.finish();
+            };
+        }
+    }
+
+    if after == AfterUpload::Run {
+        println!("     \x1b[1;92mRunning\x1b[0m `{}`", slot_file_name);
+    }
 
     Ok(())
+}
+
+async fn brain_file_exists(
+    connection: &mut SerialConnection,
+    file_name: FixedString<23>,
+    vendor: FileVendor,
+) -> Result<bool, SerialError> {
+    match connection
+        .packet_handshake::<GetFileMetadataReplyPacket>(
+            Duration::from_millis(500),
+            1,
+            GetFileMetadataPacket::new(GetFileMetadataPayload {
+                vendor,
+                option: 0,
+                file_name,
+            }),
+        )
+        .await?
+        .ack
+    {
+        Cdc2Ack::NackProgramFile => Ok(false),
+        Cdc2Ack::Ack => Ok(true),
+        nack => Err(SerialError::Nack(nack)),
+    }
+}
+
+fn build_progress_callback(
+    progress: Arc<Mutex<ProgressBar>>,
+    timestamp: Arc<Mutex<Option<Instant>>>,
+) -> Box<dyn FnMut(f32) + Send> {
+    Box::new(move |percent| {
+        let progress = progress.try_lock().unwrap();
+        let mut timestamp = timestamp.try_lock().unwrap();
+
+        if timestamp.is_none() {
+            *timestamp = Some(Instant::now());
+        }
+        progress.set_prefix(format!("{:.2?}", timestamp.unwrap().elapsed()));
+        progress.set_position((percent * 100.0) as u64);
+    })
+}
+
+/// Apply gzip compression to the given data
+fn gzip_compress(data: &mut Vec<u8>) {
+    let mut encoder = GzBuilder::new().write(Vec::new(), Compression::default());
+    encoder.write_all(data).unwrap();
+    *data = encoder.finish().unwrap();
 }
 
 pub async fn upload(
@@ -228,6 +539,8 @@ pub async fn upload(
         icon,
         uncompressed,
         cargo_opts,
+        upload_strategy,
+        cold,
     }: UploadOpts,
     after: AfterUpload,
     connection: &mut SerialConnection,
@@ -338,6 +651,10 @@ pub async fn upload(
                 .and_then(|metadata| metadata.compress)
                 .unwrap_or(true),
         },
+        cold,
+        upload_strategy
+            .or(metadata.and_then(|metadata| metadata.upload_strategy))
+            .unwrap_or_default(),
     )
     .await?;
 

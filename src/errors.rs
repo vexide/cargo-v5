@@ -54,6 +54,13 @@ pub enum CliError {
     )]
     InvalidIcon(String),
 
+    #[error("{0} is not a valid upload strategy.")]
+    #[diagnostic(
+        code(cargo_v5::invalid_upload_strategy),
+        help("See `cargo v5 upload --help` for a list of valid upload strategies.")
+    )]
+    InvalidUploadStrategy(String),
+
     #[error("No slot number was provided.")]
     #[diagnostic(
         code(cargo_v5::no_slot),

@@ -123,7 +123,7 @@ async fn main() -> miette::Result<()> {
     // Parse CLI arguments
     let Cargo::V5 { command, path } = Cargo::parse();
 
-    let mut logger = flexi_logger::Logger::try_with_env_or_str("info")
+    let mut logger = flexi_logger::Logger::try_with_env()
         .unwrap()
         .log_to_file(
             FileSpec::default()
