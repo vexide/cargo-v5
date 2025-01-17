@@ -181,7 +181,7 @@ pub async fn upload_program(
                     .add(ProgressBar::new(10000))
                     .with_style(
                         ProgressStyle::with_template(
-                            "   \x1b[1;96mUploading\x1b[0m {msg:10} {percent_precise:>7}% {bar:40.green} {prefix}",
+                            "   \x1b[1;96mUploading\x1b[0m {percent_precise:>7}% {bar:40.green} {msg} ({prefix})",
                         )
                         .unwrap() // Okay to unwrap, since this just validates style formatting.
                         .progress_chars(PROGRESS_CHARS),
@@ -193,7 +193,7 @@ pub async fn upload_program(
                     .add(ProgressBar::new(10000))
                     .with_style(
                         ProgressStyle::with_template(
-                            "   \x1b[1;96mUploading\x1b[0m {msg:10} {percent_precise:>7}% {bar:40.red} {prefix}",
+                            "   \x1b[1;96mUploading\x1b[0m {percent_precise:>7}% {bar:40.red} {msg} ({prefix})",
                         )
                         .unwrap() // Okay to unwrap, since this just validates style formatting.
                         .progress_chars(PROGRESS_CHARS),
@@ -251,7 +251,7 @@ pub async fn upload_program(
                         .add(ProgressBar::new(10000))
                         .with_style(
                             ProgressStyle::with_template(
-                                "    \x1b[1;96mPatching\x1b[0m {msg:10} {percent_precise:>7}% {bar:40.red} {prefix}",
+                                "    \x1b[1;96mPatching\x1b[0m {percent_precise:>7}% {bar:40.red} {msg} ({prefix})",
                             )
                             .unwrap() // Okay to unwrap, since this just validates style formatting.
                             .progress_chars(PROGRESS_CHARS),
@@ -261,17 +261,8 @@ pub async fn upload_program(
 
                 let old = tokio::fs::read(path.with_extension("base.bin")).await?;
                 let new = tokio::fs::read(path).await?;
-                let mut patch = Vec::new();
 
-                bidiff::simple_diff(old.as_slice(), new.as_slice(), &mut patch).unwrap();
-
-                // Insert important metadata for the patcher to use when constructing a new binary
-                patch.reserve(12);
-                patch.splice(8..8, ((patch.len() + 12) as u32).to_le_bytes());
-                patch.splice(12..12, (old.len() as u32).to_le_bytes());
-                patch.splice(16..16, (new.len() as u32).to_le_bytes());
-
-                gzip_compress(&mut patch);
+                let patch = build_patch(&old, &new);
 
                 log::debug!(
                     "old: {}, new: {}, patch: {}",
@@ -326,7 +317,7 @@ pub async fn upload_program(
                         .add(ProgressBar::new(10000))
                         .with_style(
                             ProgressStyle::with_template(
-                                "   \x1b[1;96mUploading\x1b[0m {msg:15} {percent_precise:>7}% {bar:40.green} {prefix}",
+                                "   \x1b[1;96mUploading\x1b[0m {percent_precise:>7}% {bar:40.green} {msg} ({prefix})",
                             )
                             .unwrap() // Okay to unwrap, since this just validates style formatting.
                             .progress_chars(PROGRESS_CHARS),
@@ -338,7 +329,7 @@ pub async fn upload_program(
                         .add(ProgressBar::new(10000))
                         .with_style(
                             ProgressStyle::with_template(
-                                "   \x1b[1;96mUploading\x1b[0m {msg:15} {percent_precise:>7}% {bar:40.blue} {prefix}",
+                                "   \x1b[1;96mUploading\x1b[0m {percent_precise:>7}% {bar:40.blue} {msg} ({prefix})",
                             )
                             .unwrap() // Okay to unwrap, since this just validates style formatting.
                             .progress_chars(PROGRESS_CHARS),
@@ -351,7 +342,7 @@ pub async fn upload_program(
                         .add(ProgressBar::new(10000))
                         .with_style(
                             ProgressStyle::with_template(
-                                "    \x1b[1;96mPatching\x1b[0m {msg:15} {percent_precise:>7}% {bar:40.red} {prefix}",
+                                "    \x1b[1;96mPatching\x1b[0m {percent_precise:>7}% {bar:40.red} {msg} ({prefix})",
                             )
                             .unwrap() // Okay to unwrap, since this just validates style formatting.
                             .progress_chars(PROGRESS_CHARS),
@@ -480,6 +471,22 @@ pub async fn upload_program(
     }
 
     Ok(())
+}
+
+fn build_patch(old: &[u8], new: &[u8]) -> Vec<u8> {
+    let mut patch = Vec::new();
+
+    bidiff::simple_diff(old, new, &mut patch).unwrap();
+
+    // Insert important metadata for the patcher to use when constructing a new binary
+    patch.reserve(12);
+    patch.splice(8..8, ((patch.len() + 12) as u32).to_le_bytes());
+    patch.splice(12..12, (old.len() as u32).to_le_bytes());
+    patch.splice(16..16, (new.len() as u32).to_le_bytes());
+
+    gzip_compress(&mut patch);
+
+    patch
 }
 
 async fn brain_file_exists(
