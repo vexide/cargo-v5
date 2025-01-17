@@ -264,7 +264,7 @@ pub async fn upload_program(
 
                 let patch = build_patch(&old, &new);
 
-                log::debug!(
+                log::info!(
                     "old: {}, new: {}, patch: {}",
                     old.len(),
                     new.len(),
@@ -496,8 +496,8 @@ async fn brain_file_exists(
 ) -> Result<bool, SerialError> {
     match connection
         .packet_handshake::<GetFileMetadataReplyPacket>(
-            Duration::from_millis(500),
-            1,
+            Duration::from_millis(1000),
+            2,
             GetFileMetadataPacket::new(GetFileMetadataPayload {
                 vendor,
                 option: 0,
