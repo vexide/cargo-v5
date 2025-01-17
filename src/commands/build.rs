@@ -127,7 +127,6 @@ pub async fn build(
 }
 
 pub async fn objcopy(elf: &Utf8Path) -> Result<Utf8PathBuf, CliError> {
-    info!("Creating binary: {}.bin", elf);
     // Read the ELF file built by cargo.
     let data = tokio::fs::read(elf).await?;
 
@@ -162,6 +161,7 @@ pub async fn objcopy(elf: &Utf8Path) -> Result<Utf8PathBuf, CliError> {
     // Write the binary to a file.
     let bin = elf.with_extension("bin");
     tokio::fs::write(&bin, bytes).await?;
+    println!("     \x1b[1;92mObjcopy\x1b[0m {}", bin);
 
     Ok(bin)
 }
