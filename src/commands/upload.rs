@@ -239,7 +239,7 @@ pub async fn upload_program(
             if exists(path.with_extension("base.bin"))?
                 && brain_file_exists(
                     connection,
-                    FixedString::new(slot_file_name.clone()).unwrap(),
+                    FixedString::new(base_file_name.clone()).unwrap(),
                     FileVendor::User,
                 )
                 .await?
