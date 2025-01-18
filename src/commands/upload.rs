@@ -67,7 +67,7 @@ pub struct UploadOpts {
     #[arg(long)]
     pub upload_strategy: Option<UploadStrategy>,
 
-    /// Reupload entire base binary if patch uploading.
+    /// Reupload entire base binary if differential uploading.
     #[arg(long)]
     pub cold: bool,
 
@@ -83,8 +83,8 @@ pub enum UploadStrategy {
     #[default]
     Monolith,
 
-    /// Binary patch upload (vexide only)
-    Patch,
+    /// Differential uploads (vexide only)
+    Differential,
 }
 
 /// An action to perform after uploading a program.
@@ -233,7 +233,7 @@ pub async fn upload_program(
             ini_progress.lock().await.finish();
             bin_progress.lock().await.finish();
         }
-        UploadStrategy::Patch => {
+        UploadStrategy::Differential => {
             let base_file_name = format!("slot_{}.base.bin", slot - 1);
 
             if exists(path.with_extension("base.bin"))?
