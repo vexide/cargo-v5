@@ -6,9 +6,7 @@ use inquire::{
     validator::{ErrorMessage, Validation},
     CustomType,
 };
-use tokio::{
-    fs::File, io::AsyncWriteExt, spawn, sync::Mutex, task::block_in_place, time::Instant
-};
+use tokio::{fs::File, io::AsyncWriteExt, spawn, sync::Mutex, task::block_in_place, time::Instant};
 
 use std::{
     io::{ErrorKind, Write},
@@ -39,7 +37,11 @@ use vex_v5_serial::{
     version::Version,
 };
 
-use crate::{connection::{open_connection, switch_radio_channel}, errors::CliError, metadata::Metadata};
+use crate::{
+    connection::{open_connection, switch_radio_channel},
+    errors::CliError,
+    metadata::Metadata,
+};
 
 use super::build::{build, objcopy, CargoOpts};
 
@@ -172,8 +174,8 @@ pub async fn upload_program(
 ) -> Result<(), CliError> {
     let multi_progress = MultiProgress::new();
 
-    let slot_file_name = format!("slot_{}.bin", slot - 1);
-    let ini_file_name = format!("slot_{}.ini", slot - 1);
+    let slot_file_name = format!("slot_{}.bin", slot);
+    let ini_file_name = format!("slot_{}.ini", slot);
 
     match upload_strategy {
         UploadStrategy::Monolith => {
@@ -220,7 +222,7 @@ pub async fn upload_program(
                     description,
                     icon: format!("USER{:03}x.bmp", icon as u16),
                     program_type,
-                    slot: slot - 1,
+                    slot,
                     compress_program: compress,
                     data,
                     after_upload: after.into(),
@@ -241,7 +243,7 @@ pub async fn upload_program(
             bin_progress.lock().await.finish();
         }
         UploadStrategy::Differential => {
-            let base_file_name = format!("slot_{}.base.bin", slot - 1);
+            let base_file_name = format!("slot_{}.base.bin", slot);
 
             let mut base = match tokio::fs::read(&path.with_file_name(&base_file_name)).await {
                 Ok(contents) => Some(contents),
@@ -632,13 +634,19 @@ pub async fn upload(
             Some(file)
         } else {
             // If a BIN file wasn't provided, we'll attempt to objcopy it as if it were an ELF.
-            let binary = objcopy(&tokio::fs::read(&file).await.map_err(|e| CliError::IoError(e))?)?;
+            let binary = objcopy(
+                &tokio::fs::read(&file)
+                    .await
+                    .map_err(|e| CliError::IoError(e))?,
+            )?;
             let binary_path = file.with_extension("bin");
 
             // Write the binary to a file.
-            tokio::fs::write(&binary_path, binary).await.map_err(|e| CliError::IoError(e))?;
+            tokio::fs::write(&binary_path, binary)
+                .await
+                .map_err(|e| CliError::IoError(e))?;
             println!("     \x1b[1;92mObjcopy\x1b[0m {}", binary_path);
-            
+
             Some(binary_path)
         }
     } else {

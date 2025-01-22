@@ -2,7 +2,10 @@ use object::{Object, ObjectSegment};
 use std::process::{exit, Stdio};
 use tokio::{process::Command, task::block_in_place};
 
-use cargo_metadata::{camino::{Utf8Path, Utf8PathBuf}, Message};
+use cargo_metadata::{
+    camino::{Utf8Path, Utf8PathBuf},
+    Message,
+};
 use clap::Args;
 use fs_err::tokio as fs;
 
@@ -50,7 +53,11 @@ async fn has_wasm_target() -> bool {
     rustup.contains("wasm32-unknown-unknown")
 }
 
-pub async fn build(path: &Utf8Path, opts: CargoOpts, for_simulator: bool) -> miette::Result<Option<Utf8PathBuf>> {
+pub async fn build(
+    path: &Utf8Path,
+    opts: CargoOpts,
+    for_simulator: bool,
+) -> miette::Result<Option<Utf8PathBuf>> {
     let target_path = path.join(TARGET_PATH);
     let mut build_cmd = std::process::Command::new(cargo_bin());
     build_cmd
@@ -100,34 +107,36 @@ pub async fn build(path: &Utf8Path, opts: CargoOpts, for_simulator: bool) -> mie
 
     build_cmd.args(opts.args);
 
-    Ok(block_in_place::<_, Result<Option<Utf8PathBuf>, CliError>>(|| {
-        let mut out = build_cmd.spawn()?;
-        let reader = std::io::BufReader::new(out.stdout.take().unwrap());
+    Ok(block_in_place::<_, Result<Option<Utf8PathBuf>, CliError>>(
+        || {
+            let mut out = build_cmd.spawn()?;
+            let reader = std::io::BufReader::new(out.stdout.take().unwrap());
 
-        let mut binary_path_opt = None;
+            let mut binary_path_opt = None;
 
-        for message in Message::parse_stream(reader) {
-            if let Message::CompilerArtifact(artifact) = message? {
-                if let Some(elf_artifact_path) = artifact.executable {
-                    let binary = objcopy(&std::fs::read(&elf_artifact_path)?)?;
-                    let binary_path = elf_artifact_path.with_extension("bin");
+            for message in Message::parse_stream(reader) {
+                if let Message::CompilerArtifact(artifact) = message? {
+                    if let Some(elf_artifact_path) = artifact.executable {
+                        let binary = objcopy(&std::fs::read(&elf_artifact_path)?)?;
+                        let binary_path = elf_artifact_path.with_extension("bin");
 
-                    // Write the binary to a file.
-                    std::fs::write(&binary_path, binary)?;
-                    println!("     \x1b[1;92mObjcopy\x1b[0m {}", binary_path);
+                        // Write the binary to a file.
+                        std::fs::write(&binary_path, binary)?;
+                        println!("     \x1b[1;92mObjcopy\x1b[0m {}", binary_path);
 
-                    binary_path_opt = Some(binary_path)
+                        binary_path_opt = Some(binary_path)
+                    }
                 }
             }
-        }
 
-        let status = out.wait()?;
-        if !status.success() {
-            exit(status.code().unwrap_or(1));
-        }
+            let status = out.wait()?;
+            if !status.success() {
+                exit(status.code().unwrap_or(1));
+            }
 
-        Ok(binary_path_opt.clone())
-    })?)
+            Ok(binary_path_opt.clone())
+        },
+    )?)
 }
 
 pub fn objcopy(elf: &[u8]) -> Result<Vec<u8>, CliError> {
