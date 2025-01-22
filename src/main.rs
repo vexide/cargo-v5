@@ -129,7 +129,7 @@ struct DownloadOpts {
     /// Do not download the latest template online.
     #[cfg_attr(feature = "fetch-template", arg(long, default_value = "false"))]
     #[cfg_attr(not(feature = "fetch-template"), arg(skip = false))]
-    no_download_template: bool,
+    offline: bool,
 }
 
 #[tokio::main]
@@ -265,10 +265,10 @@ async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> 
             run_field_control_tui(&mut connection).await?;
         }
         Command::New { name , download_opts} => {
-            new(path, Some(name), !download_opts.no_download_template).await?;
+            new(path, Some(name), !download_opts.offline).await?;
         }
         Command::Init { download_opts } => {
-            new(path, None, !download_opts.no_download_template).await?;
+            new(path, None, !download_opts.offline).await?;
         }
     }
 
