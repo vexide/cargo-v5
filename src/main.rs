@@ -196,17 +196,6 @@ async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> 
                         })
                     ).await;
 
-                    // Switch back to pit channel
-                    _ = connection
-                        .packet_handshake::<SelectRadioChannelReplyPacket>(
-                            Duration::from_secs(2),
-                            1,
-                            SelectRadioChannelPacket::new(SelectRadioChannelPayload {
-                                channel: RadioChannel::Pit,
-                            }),
-                        )
-                        .await;
-
                     std::process::exit(0);
                 }
             }

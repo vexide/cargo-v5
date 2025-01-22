@@ -511,9 +511,7 @@ fn build_patch(old: &[u8], new: &[u8]) -> Vec<u8> {
     patch.splice(12..12, (old.len() as u32).to_le_bytes());
     patch.splice(16..16, (new.len() as u32).to_le_bytes());
 
-    println!("{}", patch.len());
     gzip_compress(&mut patch);
-    println!("{}", patch.len());
 
     patch
 }
