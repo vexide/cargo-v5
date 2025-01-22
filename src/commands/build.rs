@@ -1,4 +1,3 @@
-use log::info;
 use object::{Object, ObjectSegment};
 use std::process::{exit, Stdio};
 use tokio::{process::Command, task::block_in_place};

@@ -6,9 +6,15 @@ use inquire::{
     validator::{ErrorMessage, Validation},
     CustomType,
 };
-use tokio::{runtime::Handle, sync::Mutex, task::block_in_place, time::Instant};
+use tokio::{
+    fs::File, io::AsyncWriteExt, runtime::Handle, sync::Mutex, task::block_in_place, time::Instant,
+};
 
-use std::{fs::exists, io::Write, sync::Arc, time::Duration};
+use std::{
+    io::{ErrorKind, Write},
+    sync::Arc,
+    time::Duration,
+};
 
 use vex_v5_serial::{
     commands::file::{
@@ -19,11 +25,12 @@ use vex_v5_serial::{
         serial::{SerialConnection, SerialError},
         Connection,
     },
+    crc::VEX_CRC32,
     packets::{
         cdc2::Cdc2Ack,
         file::{
             ExtensionType, FileExitAction, FileMetadata, FileVendor, GetFileMetadataPacket,
-            GetFileMetadataPayload, GetFileMetadataReplyPacket,
+            GetFileMetadataPayload, GetFileMetadataReplyPacket, GetFileMetadataReplyPayload,
         },
         radio::RadioChannel,
     },
@@ -236,15 +243,40 @@ pub async fn upload_program(
         UploadStrategy::Differential => {
             let base_file_name = format!("slot_{}.base.bin", slot - 1);
 
-            if exists(path.with_extension("base.bin"))?
-                && brain_file_exists(
-                    connection,
-                    FixedString::new(base_file_name.clone()).unwrap(),
-                    FileVendor::User,
-                )
-                .await?
-                && !cold
-            {
+            let mut base = match tokio::fs::read(&path.with_file_name(&base_file_name)).await {
+                Ok(contents) => Some(contents),
+                Err(e) if e.kind() == ErrorKind::NotFound => None,
+                _ => None,
+            };
+
+            let needs_cold_upload = cold
+                || if let Some(base) = base.as_mut() {
+                    if let Some(brain_metadata) = brain_file_metadata(
+                        connection,
+                        FixedString::new(base_file_name.clone()).unwrap(),
+                        FileVendor::User,
+                    )
+                    .await?
+                    {
+                        if base.len() >= 4 {
+                            let crc_metadata = u32::from_le_bytes(
+                                base.split_off(base.len() - 4).try_into().unwrap(),
+                            );
+
+                            // last four bytes of base file contain the crc32 at time of upload
+                            brain_metadata.crc32 != crc_metadata
+                        } else {
+                            true
+                        }
+                    } else {
+                        true
+                    }
+                } else {
+                    true
+                };
+
+            if !needs_cold_upload {
+                let base = base.unwrap();
                 let patch_timestamp = Arc::new(Mutex::new(None));
                 let patch_progress = Arc::new(Mutex::new(
                     multi_progress
@@ -259,14 +291,13 @@ pub async fn upload_program(
                         .with_message(slot_file_name.clone()),
                 ));
 
-                let old = tokio::fs::read(path.with_extension("base.bin")).await?;
                 let new = tokio::fs::read(path).await?;
 
-                let patch = build_patch(&old, &new);
+                let patch = build_patch(&base, &new);
 
                 log::info!(
                     "old: {}, new: {}, patch: {}",
-                    old.len(),
+                    base.len(),
                     new.len(),
                     patch.len()
                 );
@@ -350,9 +381,6 @@ pub async fn upload_program(
                         .with_message(slot_file_name.clone()),
                 ));
 
-                // Create a new base.bin file with the current binary.
-                tokio::fs::copy(path, path.with_extension("base.bin")).await?;
-
                 connection
                     .execute_command(UploadFile {
                         filename: FixedString::new(ini_file_name).unwrap(),
@@ -391,6 +419,8 @@ pub async fn upload_program(
                     .await?;
                 ini_progress.lock().await.finish();
 
+                let mut base_data = tokio::fs::read(path).await?;
+
                 connection
                     .execute_command(UploadFile {
                         filename: FixedString::new(base_file_name.clone()).unwrap(),
@@ -407,11 +437,17 @@ pub async fn upload_program(
                         },
                         vendor: Some(FileVendor::User),
                         data: {
-                            let mut base_data =
-                                tokio::fs::read(path.with_extension("base.bin")).await?;
                             if compress {
                                 gzip_compress(&mut base_data);
                             }
+
+                            // Save base
+                            let mut base_file =
+                                File::create(path.with_file_name(&base_file_name)).await?;
+                            base_file.write_all(&base_data).await?;
+                            base_file
+                                .write_all(&VEX_CRC32.checksum(&base_data).to_le_bytes())
+                                .await?;
 
                             base_data
                         },
@@ -489,12 +525,12 @@ fn build_patch(old: &[u8], new: &[u8]) -> Vec<u8> {
     patch
 }
 
-async fn brain_file_exists(
+async fn brain_file_metadata(
     connection: &mut SerialConnection,
     file_name: FixedString<23>,
     vendor: FileVendor,
-) -> Result<bool, SerialError> {
-    match connection
+) -> Result<Option<GetFileMetadataReplyPayload>, SerialError> {
+    let reply = connection
         .packet_handshake::<GetFileMetadataReplyPacket>(
             Duration::from_millis(1000),
             2,
@@ -504,11 +540,14 @@ async fn brain_file_exists(
                 file_name,
             }),
         )
-        .await?
-        .ack
-    {
-        Cdc2Ack::NackProgramFile => Ok(false),
-        Cdc2Ack::Ack => Ok(true),
+        .await?;
+    match reply.ack {
+        Cdc2Ack::NackProgramFile => Ok(None),
+        Cdc2Ack::Ack => Ok(Some(if let Some(data) = reply.try_into_inner()? {
+            data
+        } else {
+            return Ok(None);
+        })),
         nack => Err(SerialError::Nack(nack)),
     }
 }
