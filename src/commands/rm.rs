@@ -5,7 +5,10 @@ use vex_v5_serial::{
         serial::{SerialConnection, SerialError},
         Connection,
     },
-    packets::file::{EraseFilePacket, EraseFilePayload, EraseFileReplyPacket, ExitFileTransferPacket, ExitFileTransferReplyPacket, FileExitAction},
+    packets::file::{
+        EraseFilePacket, EraseFilePayload, EraseFileReplyPacket, ExitFileTransferPacket,
+        ExitFileTransferReplyPacket, FileExitAction,
+    },
     string::FixedString,
 };
 
