@@ -5,7 +5,7 @@ use vex_v5_serial::{
         serial::{SerialConnection, SerialError},
         Connection,
     },
-    packets::file::{EraseFilePacket, EraseFilePayload, EraseFileReplyPacket},
+    packets::file::{EraseFilePacket, EraseFilePayload, EraseFileReplyPacket, ExitFileTransferPacket, ExitFileTransferReplyPacket, FileExitAction},
     string::FixedString,
 };
 
@@ -29,11 +29,21 @@ pub async fn rm(connection: &mut SerialConnection, file: PathBuf) -> Result<(), 
             1,
             EraseFilePacket::new(EraseFilePayload {
                 vendor,
-                option: 128,
+                option: 0,
                 file_name,
             }),
         )
-        .await?;
+        .await?
+        .try_into_inner()?;
+
+    connection
+        .packet_handshake::<ExitFileTransferReplyPacket>(
+            Duration::from_millis(500),
+            1,
+            ExitFileTransferPacket::new(FileExitAction::DoNothing),
+        )
+        .await?
+        .try_into_inner()?;
 
     Ok(())
 }
