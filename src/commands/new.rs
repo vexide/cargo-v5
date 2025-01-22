@@ -31,7 +31,7 @@ async fn get_current_sha() -> Result<String, CliError> {
     let response_text = response.text().await.ok().unwrap_or("{}".to_string());
     match &serde_json::from_str::<Value>(&response_text).unwrap_or_default()["sha"] {
         Value::String(str) => Ok(str.clone()),
-        _ => unreachable!("Internal error: GitHub API broken"),
+        _ => Err(CliError::MalformedResponse),
     }
 }
 
@@ -52,34 +52,36 @@ async fn fetch_template() -> Result<Template, CliError> {
         data: bytes.to_vec(),
         sha: get_current_sha().await.ok(),
     };
-    store_cached_template(template.clone());
+    store_cached_template(template.clone()).await;
     Ok(template)
 }
 
 #[cfg(feature = "fetch-template")]
-fn get_cached_template() -> Option<Template> {
-    let sha = cached_template_dir()
-        .and_then(|path| fs::read_to_string(path.with_file_name("cache-id.txt")).ok());
-    cached_template_dir()
-        .map(|path| path.with_file_name("vexide-template.tar.gz"))
-        .and_then(|cache_file| fs::read(cache_file).ok())
-        .map(|data: Vec<u8>| Template { data, sha })
-        .inspect(|template| {log::debug!("Found cached template with sha: {:?}", template.sha)})
+async fn get_cached_template() -> Option<Template> {
+    match cached_template_dir() {
+        Some(dir) => {
+            let cache_file = dir.with_file_name("vexide-template.tar.gz");
+            let sha_file = dir.with_file_name("cache-id.txt");
+            let sha = tokio::fs::read_to_string(sha_file).await.ok();
+            let data = tokio::fs::read(cache_file).await.ok();
+            data.map(|data| Template {data, sha})
+        }
+        None => {
+            None
+        }
+    }
 }
 
 #[cfg(feature = "fetch-template")]
-fn store_cached_template(template: Template) -> () {
-    cached_template_dir()
-        .map(|path| path.with_file_name("vexide-template.tar.gz"))
-        .map(|cache_file| fs::write(cache_file, &template.data));
-    cached_template_dir()
-        .map(|path| path.with_file_name("cache-id.txt"))
-        .map(|sha_file| {
-            if let Some(sha) = template.sha {
-                let _ = fs::write(sha_file, sha);
-            }
-        });
-    
+async fn store_cached_template(template: Template) -> () {
+    if let Some(dir) = cached_template_dir() {
+        let cache_file = dir.with_file_name("vexide-template.tar.gz");
+        let sha_file = dir.with_file_name("cache-id.txt");
+        let _ = tokio::fs::write(cache_file, &template.data).await;
+        if let Some(sha) = template.sha {
+            let _ = tokio::fs::write(sha_file, sha).await;
+        }  
+    }
     }
 
 #[cfg(feature = "fetch-template")]
@@ -138,7 +140,7 @@ pub async fn new(
     info!("Creating new project at {:?}", dir);
 
     #[cfg(feature = "fetch-template")]
-    let template = get_cached_template();
+    let template = get_cached_template().await;
 
     #[cfg(feature = "fetch-template")]
     let template = match (
@@ -175,9 +177,9 @@ pub async fn new(
 
     debug!("Renaming project to {}...", &name);
     let manifest_path = dir.join("Cargo.toml");
-    let manifest = std::fs::read_to_string(&manifest_path)?;
+    let manifest = tokio::fs::read_to_string(&manifest_path).await?;
     let manifest = manifest.replace("vexide-template", &name);
-    std::fs::write(manifest_path, manifest)?;
+    tokio::fs::write(manifest_path, manifest).await?;
 
     info!("Successfully created new project at {:?}", dir);
     Ok(())
