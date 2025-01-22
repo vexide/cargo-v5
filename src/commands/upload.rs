@@ -7,7 +7,7 @@ use inquire::{
     CustomType,
 };
 use tokio::{
-    fs::File, io::AsyncWriteExt, runtime::Handle, sync::Mutex, task::block_in_place, time::Instant,
+    fs::File, io::AsyncWriteExt, spawn, sync::Mutex, task::block_in_place, time::Instant
 };
 
 use std::{
@@ -39,7 +39,7 @@ use vex_v5_serial::{
     version::Version,
 };
 
-use crate::{connection::switch_radio_channel, errors::CliError, metadata::Metadata};
+use crate::{connection::{open_connection, switch_radio_channel}, errors::CliError, metadata::Metadata};
 
 use super::build::{build, objcopy, CargoOpts};
 
@@ -589,8 +589,7 @@ pub async fn upload(
         cold,
     }: UploadOpts,
     after: AfterUpload,
-    connection: &mut SerialConnection,
-) -> miette::Result<()> {
+) -> miette::Result<SerialConnection> {
     // We'll use `cargo-metadata` to parse the output of `cargo metadata` and find valid `Cargo.toml`
     // files in the workspace directory.
     let cargo_metadata =
@@ -621,32 +620,34 @@ pub async fn upload(
         None
     };
 
+    // Try to open a serialport in the background while we build.
+    let connection_task = spawn(open_connection());
+
     // Get the build artifact we'll be uploading with.
     //
     // The user either directly passed an file through the `--file` argument, or they didn't and we need to run
     // `cargo build`.
-    let mut artifact = None;
-    if let Some(file) = file {
+    let artifact = if let Some(file) = file {
         if file.extension() == Some("bin") {
-            artifact = Some(file);
+            Some(file)
         } else {
             // If a BIN file wasn't provided, we'll attempt to objcopy it as if it were an ELF.
-            artifact = Some(objcopy(&file).await?);
+            let binary = objcopy(&tokio::fs::read(&file).await.map_err(|e| CliError::IoError(e))?)?;
+            let binary_path = file.with_extension("bin");
+
+            // Write the binary to a file.
+            tokio::fs::write(&binary_path, binary).await.map_err(|e| CliError::IoError(e))?;
+            println!("     \x1b[1;92mObjcopy\x1b[0m {}", binary_path);
+            
+            Some(binary_path)
         }
     } else {
         // Run cargo build, then objcopy.
-        build(path, cargo_opts, false, |new_artifact| {
-            let mut bin_path = new_artifact.clone();
-            bin_path.set_extension("bin");
-            block_in_place(|| {
-                Handle::current().block_on(async move {
-                    objcopy(&new_artifact).await.unwrap();
-                });
-            });
-            artifact = Some(bin_path);
-        })
-        .await;
-    }
+        build(path, cargo_opts, false).await?
+    };
+
+    // Wait for the serial port to finish opening.
+    let mut connection = connection_task.await.unwrap()?;
 
     // The program's slot number is absolutely required for uploading. If the slot argument isn't directly provided:
     //
@@ -675,11 +676,11 @@ pub async fn upload(
     }
 
     // Switch the radio to the download channel if the controller is wireless.
-    switch_radio_channel(connection, RadioChannel::Download).await?;
+    switch_radio_channel(&mut connection, RadioChannel::Download).await?;
 
     // Pass information to the upload routine.
     upload_program(
-        connection,
+        &mut connection,
         &artifact.ok_or(CliError::NoArtifact)?,
         after,
         slot,
@@ -704,5 +705,5 @@ pub async fn upload(
     )
     .await?;
 
-    Ok(())
+    Ok(connection)
 }

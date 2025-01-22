@@ -6,7 +6,7 @@ use cargo_metadata::camino::Utf8PathBuf;
 use cargo_v5::{commands::field_control::run_field_control_tui, errors::CliError};
 use cargo_v5::{
     commands::{
-        build::{build, objcopy, CargoOpts},
+        build::{build, CargoOpts},
         cat::cat,
         devices::devices,
         dir::dir,
@@ -22,7 +22,6 @@ use cargo_v5::{
 use chrono::Utc;
 use clap::{Parser, Subcommand};
 use flexi_logger::{AdaptiveFormat, FileSpec, LogfileSelector, LoggerHandle};
-use tokio::{runtime::Handle, select, task::block_in_place};
 #[cfg(feature = "field-control")]
 use vex_v5_serial::connection::serial::{self, SerialConnection, SerialDevice};
 use vex_v5_serial::{
@@ -157,19 +156,10 @@ async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> 
             simulator,
             cargo_opts,
         } => {
-            build(&path, cargo_opts, simulator, |path| {
-                if !simulator {
-                    block_in_place(|| {
-                        Handle::current().block_on(async move {
-                            objcopy(&path).await.unwrap();
-                        });
-                    });
-                }
-            })
-            .await;
+            build(&path, cargo_opts, simulator).await?;
         }
         Command::Upload { upload_opts, after } => {
-            upload(&path, upload_opts, after, &mut open_connection().await?).await?;
+            upload(&path, upload_opts, after).await?;
         }
         Command::Dir => {
             dir(&mut open_connection().await?).await?;
@@ -190,11 +180,9 @@ async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> 
             screenshot(&mut open_connection().await?).await?;
         }
         Command::Run(opts) => {
-            let mut connection = open_connection().await?;
+            let mut connection = upload(&path, opts, AfterUpload::Run).await?;
 
-            upload(&path, opts, AfterUpload::Run, &mut connection).await?;
-
-            select! {
+            tokio::select! {
                 () = terminal(&mut connection, logger) => {}
                 _ = tokio::signal::ctrl_c() => {
                     // Quit program
