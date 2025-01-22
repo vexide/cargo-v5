@@ -433,14 +433,14 @@ pub async fn upload_program(
                         },
                         vendor: Some(FileVendor::User),
                         data: {
+                            let mut base_file =
+                                File::create(path.with_file_name(&base_file_name)).await?;
+                            base_file.write_all(&base_data).await?;
+
                             if compress {
                                 gzip_compress(&mut base_data);
                             }
 
-                            // Save base
-                            let mut base_file =
-                                File::create(path.with_file_name(&base_file_name)).await?;
-                            base_file.write_all(&base_data).await?;
                             base_file
                                 .write_all(&VEX_CRC32.checksum(&base_data).to_le_bytes())
                                 .await?;
@@ -511,7 +511,9 @@ fn build_patch(old: &[u8], new: &[u8]) -> Vec<u8> {
     patch.splice(12..12, (old.len() as u32).to_le_bytes());
     patch.splice(16..16, (new.len() as u32).to_le_bytes());
 
+    println!("{}", patch.len());
     gzip_compress(&mut patch);
+    println!("{}", patch.len());
 
     patch
 }
