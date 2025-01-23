@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::errors::CliError;
 use std::{
-    fs, io,
+    io,
     path::{Path, PathBuf},
 };
 
@@ -23,12 +23,12 @@ async fn get_current_sha() -> Result<String, CliError> {
         .get("https://api.github.com/repos/vexide/vexide-template/commits/main?per-page=1")
         .header("User-Agent", "vexide/cargo-v5")
         .send()
-        .await;
-    let response = match response {
-        Ok(response) => response,
-        Err(err) => return Err(CliError::ReqwestError(err)),
-    };
-    let response_text = response.text().await.ok().unwrap_or("{}".to_string());
+        .await
+        .map_err(|err| CliError::ReqwestError(err))?;
+    let response_text = response
+        .text()
+        .await
+        .map_err(|err| CliError::ReqwestError(err))?;
     match &serde_json::from_str::<Value>(&response_text).unwrap_or_default()["sha"] {
         Value::String(str) => Ok(str.clone()),
         _ => Err(CliError::MalformedResponse),
@@ -64,11 +64,9 @@ async fn get_cached_template() -> Option<Template> {
             let sha_file = dir.with_file_name("cache-id.txt");
             let sha = tokio::fs::read_to_string(sha_file).await.ok();
             let data = tokio::fs::read(cache_file).await.ok();
-            data.map(|data| Template {data, sha})
+            data.map(|data| Template { data, sha })
         }
-        None => {
-            None
-        }
+        None => None,
     }
 }
 
@@ -80,9 +78,9 @@ async fn store_cached_template(template: Template) -> () {
         let _ = tokio::fs::write(cache_file, &template.data).await;
         if let Some(sha) = template.sha {
             let _ = tokio::fs::write(sha_file, sha).await;
-        }  
+        }
     }
-    }
+}
 
 #[cfg(feature = "fetch-template")]
 fn cached_template_dir() -> Option<PathBuf> {
@@ -140,30 +138,24 @@ pub async fn new(
     info!("Creating new project at {:?}", dir);
 
     #[cfg(feature = "fetch-template")]
-    let template = get_cached_template().await;
-
-    #[cfg(feature = "fetch-template")]
-    let template = match (
-        template.clone().and_then(|t| t.sha),
-        get_current_sha().await,
-    ) {
-        _ if !download_template => template,
-        (Some(cached_sha), Ok(current_sha)) if cached_sha == current_sha => {
+    let template = match (get_cached_template().await, get_current_sha().await) {
+        (cached_template, ..) if !download_template => cached_template,
+        (Some(cached_template), Ok(current_sha))
+            if cached_template.sha == Some(current_sha.clone()) =>
+        {
             debug!("Cached template is current, skipping download.");
-            template
+            Some(cached_template)
         }
-        _ => {
+        (cached_template, ..) => {
             debug!("Cached template is out of date.");
             let fetched_template = fetch_template().await.ok();
             fetched_template.or_else(|| {
                 warn!("Could not fetch template, falling back to cache.");
-                template
+                cached_template
             })
         }
-    };
-
-    #[cfg(feature = "fetch-template")]
-    let template = template.unwrap_or_else(|| {
+    }
+    .unwrap_or_else(|| {
         debug!("No template found in cache, using builtin template.");
         baked_in_template()
     });
