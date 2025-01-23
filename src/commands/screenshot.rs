@@ -95,8 +95,10 @@ pub async fn screenshot(connection: &mut SerialConnection) -> Result<(), CliErro
     let image = image::RgbImage::from_vec(512, 272, colors).unwrap();
 
     let path = Path::new("./screen.png");
-    GenericImageView::view(&image, 0, 0, 480, 272).to_image().save(path)?;
-    
+    GenericImageView::view(&image, 0, 0, 480, 272)
+        .to_image()
+        .save(path)?;
+
     info!(
         "Saved screenshot to {}",
         path.fs_err_canonicalize()?.display()

@@ -19,27 +19,27 @@ pub async fn devices(connection: &mut SerialConnection) -> Result<(), CliError> 
         )
         .await?
         .try_into_inner()?;
-    write!(
+    writeln!(
         &mut tw,
-        "\x1B[1mPort\tType\tStatus\tFirmware\tBootloader\x1B[0m\n"
+        "\x1B[1mPort\tType\tStatus\tFirmware\tBootloader\x1B[0m"
     )
     .unwrap();
 
     for device in status.devices {
-        write!(
+        writeln!(
             &mut tw,
-            "{}\t{:?}\t{:#x}\t{}\t{}\n",
+            "{}\t{:?}\t{:#x}\t{}\t{}",
             device.port,
             device.device_type,
             device.status,
-            format!(
+            format_args!(
                 "{}.{}.{}.b{}",
                 (u32::from(device.version) >> 14) as u8,
                 ((u32::from(device.version) << 18) >> 26) as u8,
                 (device.version & 0xff) as u8,
                 device.beta_version
             ),
-            format!(
+            format_args!(
                 "{}.{}.{}",
                 (u32::from(device.boot_version) >> 14) as u8,
                 ((u32::from(device.boot_version) << 18) >> 26) as u8,

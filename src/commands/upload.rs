@@ -194,7 +194,7 @@ pub async fn upload_program(
                 Some({
                     let bin_progress = bin_progress.clone();
                     let bin_timestamp = bin_timestamp.clone();
-                    
+
                     Box::new(move |percent| {
                         let progress = bin_progress.try_lock().unwrap();
                         let mut timestamp = bin_timestamp.try_lock().unwrap();
@@ -311,7 +311,7 @@ pub async fn upload(
         .ok_or(CliError::NoSlot)?;
 
     // Ensure [1, 8] range bounds for slot number
-    if !(1..8).contains(&slot) {
+    if !(1..=8).contains(&slot) {
         Err(CliError::SlotOutOfRange)?;
     }
 

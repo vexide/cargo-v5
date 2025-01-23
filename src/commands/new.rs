@@ -1,6 +1,4 @@
 use cargo_metadata::camino::Utf8PathBuf;
-#[cfg(feature = "fetch-template")]
-use directories::ProjectDirs;
 use log::{debug, info, warn};
 use serde_json::Value;
 
@@ -87,6 +85,7 @@ async fn store_cached_template(template: Template) -> () {
 
 #[cfg(feature = "fetch-template")]
 fn cached_template_dir() -> Option<PathBuf> {
+    use directories::ProjectDirs;
     ProjectDirs::from("", "vexide", "cargo-v5")
         .and_then(|dirs| dirs.cache_dir().canonicalize().ok())
 }
