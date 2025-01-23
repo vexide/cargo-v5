@@ -3,6 +3,7 @@ use miette::Diagnostic;
 use thiserror::Error;
 use vex_v5_serial::packets::cdc2::Cdc2Ack;
 
+#[non_exhaustive]
 #[derive(Error, Diagnostic, Debug)]
 pub enum CliError {
     #[error(transparent)]
