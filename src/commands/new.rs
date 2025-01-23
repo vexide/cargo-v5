@@ -1,36 +1,100 @@
 use cargo_metadata::camino::Utf8PathBuf;
-use log::{debug, error, info};
+use log::{debug, info, warn};
+use serde_json::Value;
 
 use crate::errors::CliError;
 use std::{
-    fs, io,
+    io,
     path::{Path, PathBuf},
 };
 
+#[derive(Debug, Clone)]
+struct Template {
+    pub data: Vec<u8>,
+    pub sha: Option<String>,
+}
+
+const TEMPLATE_FILE_NAME: &str = "vexide-template.tar.gz";
+const SHA_FILE_NAME: &str = "cache-id.txt";
+
 #[cfg(feature = "fetch-template")]
-async fn fetch_template() -> reqwest::Result<Vec<u8>> {
-    info!("Fetching template...");
+async fn get_current_sha() -> Result<String, CliError> {
+    let client = reqwest::Client::new();
+    let response = client
+        .get("https://api.github.com/repos/vexide/vexide-template/commits/main?per-page=1")
+        .header("User-Agent", "vexide/cargo-v5")
+        .send()
+        .await
+        .map_err(|err| CliError::ReqwestError(err))?;
+    let response_text = response
+        .text()
+        .await
+        .map_err(|err| CliError::ReqwestError(err))?;
+    match &serde_json::from_str::<Value>(&response_text).unwrap_or_default()["sha"] {
+        Value::String(str) => Ok(str.clone()),
+        _ => Err(CliError::MalformedResponse),
+    }
+}
+
+#[cfg(feature = "fetch-template")]
+async fn fetch_template() -> Result<Template, CliError> {
+    debug!("Fetching template...");
     let response =
         reqwest::get("https://github.com/vexide/vexide-template/archive/refs/heads/main.tar.gz")
-            .await?;
+            .await;
+    let response = match response {
+        Ok(response) => response,
+        Err(err) => return Err(CliError::ReqwestError(err)),
+    };
     let bytes = response.bytes().await?;
+
     debug!("Successfully fetched template.");
-    Ok(bytes.to_vec())
+    let template = Template {
+        data: bytes.to_vec(),
+        sha: get_current_sha().await.ok(),
+    };
+    store_cached_template(template.clone()).await;
+    Ok(template)
 }
 
 #[cfg(feature = "fetch-template")]
-fn cached_template_path() -> Option<PathBuf> {
-    use directories::ProjectDirs;
-    ProjectDirs::from("", "vexide", "cargo-v5").and_then(|dirs| {
-        dirs.cache_dir()
-            .canonicalize()
-            .ok()
-            .map(|path| path.with_file_name("vexide-template.tar.gz"))
-    })
+async fn get_cached_template() -> Option<Template> {
+    match cached_template_dir() {
+        Some(dir) => {
+            let cache_file = dir.with_file_name(TEMPLATE_FILE_NAME);
+            let sha_file = dir.with_file_name(SHA_FILE_NAME);
+            let sha = tokio::fs::read_to_string(sha_file).await.ok();
+            let data = tokio::fs::read(cache_file).await.ok();
+            data.map(|data| Template { data, sha })
+        }
+        None => None,
+    }
 }
 
-fn baked_in_template() -> Vec<u8> {
-    include_bytes!("./vexide-template.tar.gz").to_vec()
+#[cfg(feature = "fetch-template")]
+async fn store_cached_template(template: Template) -> () {
+    if let Some(dir) = cached_template_dir() {
+        let cache_file = dir.with_file_name(TEMPLATE_FILE_NAME);
+        let sha_file = dir.with_file_name(SHA_FILE_NAME);
+        let _ = tokio::fs::write(cache_file, &template.data).await;
+        if let Some(sha) = template.sha {
+            let _ = tokio::fs::write(sha_file, sha).await;
+        }
+    }
+}
+
+#[cfg(feature = "fetch-template")]
+fn cached_template_dir() -> Option<PathBuf> {
+    use directories::ProjectDirs;
+    ProjectDirs::from("", "vexide", "cargo-v5")
+        .and_then(|dirs| dirs.cache_dir().canonicalize().ok())
+}
+
+fn baked_in_template() -> Template {
+    Template {
+        data: include_bytes!("./vexide-template.tar.gz").to_vec(),
+        sha: None,
+    }
 }
 
 fn unpack_template(template: Vec<u8>, dir: &Utf8PathBuf) -> io::Result<()> {
@@ -55,7 +119,11 @@ fn unpack_template(template: Vec<u8>, dir: &Utf8PathBuf) -> io::Result<()> {
     Ok(())
 }
 
-pub async fn new(path: Utf8PathBuf, name: Option<String>) -> Result<(), CliError> {
+pub async fn new(
+    path: Utf8PathBuf,
+    name: Option<String>,
+    download_template: bool,
+) -> Result<(), CliError> {
     let dir = if let Some(name) = &name {
         let dir = path.join(name);
         std::fs::create_dir_all(&path).unwrap();
@@ -72,38 +140,40 @@ pub async fn new(path: Utf8PathBuf, name: Option<String>) -> Result<(), CliError
     info!("Creating new project at {:?}", dir);
 
     #[cfg(feature = "fetch-template")]
-    let template: Vec<u8> = match fetch_template().await {
-        Ok(bytes) => {
-            if let Some(cache_file) = cached_template_path() {
-                debug!("Storing fetched template in cache.");
-                fs::write(cache_file, &bytes).unwrap_or_else(|_| {
-                    error!("Could not cache template.");
-                });
-            }
-            bytes
+    let template = match (get_cached_template().await, get_current_sha().await) {
+        (cached_template, ..) if !download_template => cached_template,
+        (Some(cached_template), Ok(current_sha))
+            if cached_template.sha == Some(current_sha.clone()) =>
+        {
+            debug!("Cached template is current, skipping download.");
+            Some(cached_template)
         }
-        Err(_) => {
-            error!("Failed to fetch template, checking cached template.");
-            cached_template_path()
-                .and_then(|cache_file| fs::read(cache_file).ok())
-                .unwrap_or_else(|| {
-                    error!("Failed to find cached template, using baked-in template.");
-                    baked_in_template()
-                })
+        (cached_template, ..) => {
+            debug!("Cached template is out of date.");
+            let fetched_template = fetch_template().await.ok();
+            fetched_template.or_else(|| {
+                warn!("Could not fetch template, falling back to cache.");
+                cached_template
+            })
         }
-    };
+    }
+    .unwrap_or_else(|| {
+        debug!("No template found in cache, using builtin template.");
+        baked_in_template()
+    });
+
     #[cfg(not(feature = "fetch-template"))]
     let template = baked_in_template();
 
     debug!("Unpacking template...");
-    unpack_template(template, &dir)?;
+    unpack_template(template.data, &dir)?;
     debug!("Successfully unpacked vexide-template!");
 
     debug!("Renaming project to {}...", &name);
     let manifest_path = dir.join("Cargo.toml");
-    let manifest = std::fs::read_to_string(&manifest_path)?;
+    let manifest = tokio::fs::read_to_string(&manifest_path).await?;
     let manifest = manifest.replace("vexide-template", &name);
-    std::fs::write(manifest_path, manifest)?;
+    tokio::fs::write(manifest_path, manifest).await?;
 
     info!("Successfully created new project at {:?}", dir);
     Ok(())

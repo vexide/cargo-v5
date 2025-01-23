@@ -20,7 +20,7 @@ use cargo_v5::{
     connection::{open_connection, switch_radio_channel},
 };
 use chrono::Utc;
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use flexi_logger::{AdaptiveFormat, FileSpec, LogfileSelector, LoggerHandle};
 use tokio::{runtime::Handle, select, task::block_in_place};
 #[cfg(feature = "field-control")]
@@ -91,9 +91,15 @@ enum Command {
     New {
         /// The name of the project.
         name: String,
+
+        #[clap(flatten)]
+        download_opts: DownloadOpts,
     },
     /// Creates a new vexide project in the current directory
-    Init,
+    Init {
+        #[clap(flatten)]
+        download_opts: DownloadOpts,
+    },    
     /// List files on flash.
     #[clap(visible_alias = "ls")]
     Dir,
@@ -116,6 +122,14 @@ enum Command {
     #[cfg(feature = "field-control")]
     #[clap(visible_aliases = ["fc", "comp-control"])]
     FieldControl,
+}
+
+#[derive(Args, Debug)]
+struct DownloadOpts {
+    /// Do not download the latest template online.
+    #[cfg_attr(feature = "fetch-template", arg(long, default_value = "false"))]
+    #[cfg_attr(not(feature = "fetch-template"), arg(skip = false))]
+    offline: bool,
 }
 
 #[tokio::main]
@@ -250,11 +264,11 @@ async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> 
 
             run_field_control_tui(&mut connection).await?;
         }
-        Command::New { name } => {
-            new(path, Some(name)).await?;
+        Command::New { name , download_opts} => {
+            new(path, Some(name), !download_opts.offline).await?;
         }
-        Command::Init => {
-            new(path, None).await?;
+        Command::Init { download_opts } => {
+            new(path, None, !download_opts.offline).await?;
         }
     }
 

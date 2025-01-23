@@ -3,6 +3,7 @@ use miette::Diagnostic;
 use thiserror::Error;
 use vex_v5_serial::packets::cdc2::Cdc2Ack;
 
+#[non_exhaustive]
 #[derive(Error, Diagnostic, Debug)]
 pub enum CliError {
     #[error(transparent)]
@@ -16,6 +17,16 @@ pub enum CliError {
     #[error(transparent)]
     #[diagnostic(code(cargo_v5::cdc2_nack))]
     Nack(#[from] Cdc2Ack),
+
+    #[cfg(feature = "fetch-template")]
+    #[error(transparent)]
+    #[diagnostic(code(cargo_v5::bad_response))]
+    ReqwestError(#[from] reqwest::Error),
+
+    #[cfg(feature = "fetch-template")]
+    #[error("Recieved a malformed HTTP response")]
+    #[diagnostic(code(cargo_v5::malformed_response))]
+    MalformedResponse,
 
     #[error(transparent)]
     #[diagnostic(code(cargo_v5::image_error))]
