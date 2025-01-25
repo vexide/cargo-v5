@@ -46,7 +46,7 @@ async fn is_connection_wireless(connection: &mut SerialConnection) -> Result<boo
         .await?;
     let system_flags = connection
         .packet_handshake::<GetSystemFlagsReplyPacket>(
-            Duration::from_millis(500),
+            Duration::from_millis(5000),
             1,
             GetSystemFlagsPacket::new(()),
         )
@@ -82,7 +82,7 @@ pub async fn switch_radio_channel(
         sleep(Duration::from_millis(250)).await;
 
         // Poll the connection of the controller to ensure the radio has switched channels.
-        let timeout = Duration::from_secs(5);
+        let timeout = Duration::from_secs(8);
         select! {
             _ = sleep(timeout) => {
                 return Err(CliError::RadioChannelTimeout)

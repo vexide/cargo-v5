@@ -2,7 +2,10 @@ use cargo_metadata::Package;
 use clap::ValueEnum;
 use serde_json::Value;
 
-use crate::{commands::upload::ProgramIcon, errors::CliError};
+use crate::{
+    commands::upload::{ProgramIcon, UploadStrategy},
+    errors::CliError,
+};
 
 fn field_type(field: &Value) -> &'static str {
     match field {
@@ -20,6 +23,7 @@ pub struct Metadata {
     pub slot: Option<u8>,
     pub icon: Option<ProgramIcon>,
     pub compress: Option<bool>,
+    pub upload_strategy: Option<UploadStrategy>,
 }
 
 impl Metadata {
@@ -60,6 +64,23 @@ impl Metadata {
                         })?;
 
                         Some(compress)
+                    } else {
+                        None
+                    },
+                    upload_strategy: if let Some(upload_strategy) =
+                        v5_metadata.get("upload-strategy")
+                    {
+                        let strategy = upload_strategy.as_str().ok_or(CliError::BadFieldType {
+                            field: "compress".to_string(),
+                            expected: "bool".to_string(),
+                            found: field_type(upload_strategy).to_string(),
+                        })?;
+
+                        Some(
+                            UploadStrategy::from_str(strategy, false).map_err(|_| {
+                                CliError::InvalidUploadStrategy(strategy.to_string())
+                            })?,
+                        )
                     } else {
                         None
                     },

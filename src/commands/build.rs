@@ -1,4 +1,3 @@
-use log::info;
 use object::{Object, ObjectSegment};
 use std::process::{exit, Stdio};
 use tokio::{process::Command, task::block_in_place};
@@ -58,8 +57,7 @@ pub async fn build(
     path: &Utf8Path,
     opts: CargoOpts,
     for_simulator: bool,
-    mut handle_executable: impl FnMut(Utf8PathBuf),
-) {
+) -> miette::Result<Option<Utf8PathBuf>> {
     let target_path = path.join(TARGET_PATH);
     let mut build_cmd = std::process::Command::new(cargo_bin());
     build_cmd
@@ -109,30 +107,41 @@ pub async fn build(
 
     build_cmd.args(opts.args);
 
-    block_in_place(|| {
-        let mut out = build_cmd.spawn().unwrap();
-        let reader = std::io::BufReader::new(out.stdout.take().unwrap());
-        for message in Message::parse_stream(reader) {
-            if let Message::CompilerArtifact(artifact) = message.unwrap() {
-                if let Some(binary_path) = artifact.executable {
-                    handle_executable(binary_path);
+    Ok(block_in_place::<_, Result<Option<Utf8PathBuf>, CliError>>(
+        || {
+            let mut out = build_cmd.spawn()?;
+            let reader = std::io::BufReader::new(out.stdout.take().unwrap());
+
+            let mut binary_path_opt = None;
+
+            for message in Message::parse_stream(reader) {
+                if let Message::CompilerArtifact(artifact) = message? {
+                    if let Some(elf_artifact_path) = artifact.executable {
+                        let binary = objcopy(&std::fs::read(&elf_artifact_path)?)?;
+                        let binary_path = elf_artifact_path.with_extension("bin");
+
+                        // Write the binary to a file.
+                        std::fs::write(&binary_path, binary)?;
+                        println!("     \x1b[1;92mObjcopy\x1b[0m {}", binary_path);
+
+                        binary_path_opt = Some(binary_path)
+                    }
                 }
             }
-        }
-        let status = out.wait().unwrap();
-        if !status.success() {
-            exit(status.code().unwrap_or(1));
-        }
-    });
+
+            let status = out.wait()?;
+            if !status.success() {
+                exit(status.code().unwrap_or(1));
+            }
+
+            Ok(binary_path_opt.clone())
+        },
+    )?)
 }
 
-pub async fn objcopy(elf: &Utf8Path) -> Result<Utf8PathBuf, CliError> {
-    info!("Creating binary: {}.bin", elf);
-    // Read the ELF file built by cargo.
-    let data = tokio::fs::read(elf).await?;
-
+pub fn objcopy(elf: &[u8]) -> Result<Vec<u8>, CliError> {
     // Parse the ELF file.
-    let elf_data = object::File::parse(data.as_slice())?;
+    let elf_data = object::File::parse(elf)?;
 
     // Get the loadable segments (program data) and sort them by virtual address.
     let mut program_segments: Vec<_> = elf_data.segments().collect();
@@ -159,9 +168,5 @@ pub async fn objcopy(elf: &Utf8Path) -> Result<Utf8PathBuf, CliError> {
         last_addr = segment.address() + data.len() as u64;
     }
 
-    // Write the binary to a file.
-    let bin = elf.with_extension("bin");
-    tokio::fs::write(&bin, bytes).await?;
-
-    Ok(bin)
+    Ok(bytes)
 }

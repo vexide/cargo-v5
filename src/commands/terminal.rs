@@ -3,7 +3,7 @@ use std::time::Duration;
 use flexi_logger::{LogSpecification, LoggerHandle};
 use log::info;
 use tokio::{
-    io::{stdin, AsyncReadExt},
+    io::{stdin, stdout, AsyncReadExt, AsyncWriteExt},
     select,
     time::sleep,
 };
@@ -22,7 +22,7 @@ pub async fn terminal(connection: &mut SerialConnection, logger: &mut LoggerHand
         select! {
             read = connection.read_user(&mut program_output) => {
                 if let Ok(size) = read {
-                    print!("{}", std::str::from_utf8(&program_output[..size]).unwrap());
+                    stdout().write_all(&program_output[..size]).await.unwrap();
                 }
             },
             read = stdin.read(&mut program_input) => {
