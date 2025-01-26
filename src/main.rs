@@ -31,10 +31,7 @@ use vex_v5_serial::{
             FileLoadAction, FileVendor, LoadFileActionPacket, LoadFileActionPayload,
             LoadFileActionReplyPacket,
         },
-        radio::{
-            RadioChannel, SelectRadioChannelPacket, SelectRadioChannelPayload,
-            SelectRadioChannelReplyPacket,
-        },
+        radio::RadioChannel,
     },
     string::FixedString,
 };
@@ -98,7 +95,7 @@ enum Command {
     Init {
         #[clap(flatten)]
         download_opts: DownloadOpts,
-    },    
+    },
     /// List files on flash.
     #[clap(visible_alias = "ls")]
     Dir,
@@ -241,7 +238,10 @@ async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> 
 
             run_field_control_tui(&mut connection).await?;
         }
-        Command::New { name , download_opts} => {
+        Command::New {
+            name,
+            download_opts,
+        } => {
             new(path, Some(name), !download_opts.offline).await?;
         }
         Command::Init { download_opts } => {

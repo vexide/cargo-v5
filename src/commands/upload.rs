@@ -581,36 +581,6 @@ pub async fn upload(
     }: UploadOpts,
     after: AfterUpload,
 ) -> miette::Result<SerialConnection> {
-    // We'll use `cargo-metadata` to parse the output of `cargo metadata` and find valid `Cargo.toml`
-    // files in the workspace directory.
-    let cargo_metadata =
-        block_in_place(|| cargo_metadata::MetadataCommand::new().no_deps().exec()).ok();
-
-    // Locate packages with valid v5 metadata fields.
-    let package = cargo_metadata.and_then(|metadata| {
-        metadata
-            .packages
-            .iter()
-            .find(|p| {
-                if let Some(v5_metadata) = p.metadata.get("v5") {
-                    v5_metadata.is_object()
-                } else {
-                    false
-                }
-            })
-            .cloned()
-            .or(metadata.packages.first().cloned())
-    });
-
-    // Uploading has the option to use the `package.metadata.v5` table for default configuration options.
-    // Attempt to serialize `package.metadata.v5` into a [`Metadata`] struct. This will just Default::default to
-    // all `None`s if it can't find a specific field, or error if the field is malformed.
-    let metadata = if let Some(ref package) = package {
-        Some(Metadata::new(package)?)
-    } else {
-        None
-    };
-
     // Try to open a serialport in the background while we build.
     let connection_task = spawn(open_connection());
 
@@ -618,9 +588,9 @@ pub async fn upload(
     //
     // The user either directly passed an file through the `--file` argument, or they didn't and we need to run
     // `cargo build`.
-    let artifact = if let Some(file) = file {
+    let (artifact, package_id) = if let Some(file) = file {
         if file.extension() == Some("bin") {
-            Some(file)
+            (file, None)
         } else {
             // If a BIN file wasn't provided, we'll attempt to objcopy it as if it were an ELF.
             let binary = objcopy(
@@ -636,11 +606,44 @@ pub async fn upload(
                 .map_err(|e| CliError::IoError(e))?;
             println!("     \x1b[1;92mObjcopy\x1b[0m {}", binary_path);
 
-            Some(binary_path)
+            (binary_path, None)
         }
     } else {
         // Run cargo build, then objcopy.
-        build(path, cargo_opts, false).await?
+        build(path, cargo_opts, false)
+            .await?
+            .map(|output| (output.bin_artifact, Some(output.package_id)))
+            .ok_or(CliError::NoArtifact)?
+    };
+
+    // We'll use `cargo-metadata` to parse the output of `cargo metadata` and find valid `Cargo.toml`
+    // files in the workspace directory.
+    let cargo_metadata =
+        block_in_place(|| cargo_metadata::MetadataCommand::new().no_deps().exec()).ok();
+
+    // Find which package we're being built from, if we're being built from a package at all.
+    let package = cargo_metadata.and_then(|metadata| {
+        metadata
+            .packages
+            .iter()
+            .find(|p| {
+                if let Some(package_id) = package_id.as_ref() {
+                    &p.id == package_id
+                } else {
+                    false
+                }
+            })
+            .cloned()
+            .or(metadata.packages.first().cloned())
+    });
+
+    // Uploading has the option to use the `package.metadata.v5` table for default configuration options.
+    // Attempt to serialize `package.metadata.v5` into a [`Metadata`] struct. This will just Default::default to
+    // all `None`s if it can't find a specific field, or error if the field is malformed.
+    let metadata = if let Some(ref package) = package {
+        Some(Metadata::new(package)?)
+    } else {
+        None
     };
 
     // Wait for the serial port to finish opening.
@@ -678,7 +681,7 @@ pub async fn upload(
     // Pass information to the upload routine.
     upload_program(
         &mut connection,
-        &artifact.ok_or(CliError::NoArtifact)?,
+        &artifact,
         after,
         slot,
         name.or(package.as_ref().map(|pkg| pkg.name.clone()))
