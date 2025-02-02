@@ -44,7 +44,8 @@ pub async fn screenshot(connection: &mut SerialConnection) -> Result<(), CliErro
             5,
             ScreenCapturePacket::new(()),
         )
-        .await?;
+        .await?
+        .try_into_inner()?;
 
     // Grab the image data
     let cap = connection

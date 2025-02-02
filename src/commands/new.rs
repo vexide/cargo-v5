@@ -86,8 +86,7 @@ async fn store_cached_template(template: Template) -> () {
 #[cfg(feature = "fetch-template")]
 fn cached_template_dir() -> Option<PathBuf> {
     use directories::ProjectDirs;
-    ProjectDirs::from("", "vexide", "cargo-v5")
-        .map(|dirs| dirs.cache_dir().to_owned())
+    ProjectDirs::from("", "vexide", "cargo-v5").map(|dirs| dirs.cache_dir().to_owned())
 }
 
 fn baked_in_template() -> Template {
