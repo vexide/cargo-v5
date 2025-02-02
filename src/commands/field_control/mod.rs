@@ -45,7 +45,8 @@ async fn set_match_mode(
                 match_time: 0,
             }),
         )
-        .await?;
+        .await?
+        .try_into_inner()?;
     Ok(())
 }
 
@@ -421,8 +422,9 @@ pub async fn run_field_control_tui(connection: &mut SerialConnection) -> Result<
             5,
             GetSystemVersionPacket::new(()),
         )
-        .await?;
-    if let ProductType::Brain = response.payload.product_type {
+        .await
+        .try_into_inner()?;
+    if let ProductType::Brain = response.product_type {
         return Err(CliError::BrainConnectionSetMatchMode);
     }
 
