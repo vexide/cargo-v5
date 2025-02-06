@@ -45,7 +45,7 @@
             ] features naersk'.buildPackage {
               name = "cargo-v5";
               pname = "cargo-v5";
-              version = "0.8.2";
+              version = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).package.version;
 
               src = ./.;
 
