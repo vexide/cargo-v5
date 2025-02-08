@@ -126,7 +126,7 @@ pub async fn build(
                         if let Some(elf_artifact_path) = artifact.executable {
                             let binary = objcopy(&std::fs::read(&elf_artifact_path)?)?;
                             let binary_path = elf_artifact_path.with_extension("bin");
-        
+
                             // Write the binary to a file.
                             std::fs::write(&binary_path, binary)?;
                             println!("     \x1b[1;92mObjcopy\x1b[0m {}", binary_path);
