@@ -45,7 +45,7 @@
             ] features naersk'.buildPackage {
               name = "cargo-v5";
               pname = "cargo-v5";
-              version = "0.8.2";
+              version = "0.10.2";
 
               src = ./.;
 
