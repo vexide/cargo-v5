@@ -422,8 +422,7 @@ pub async fn run_field_control_tui(connection: &mut SerialConnection) -> Result<
             5,
             GetSystemVersionPacket::new(()),
         )
-        .await
-        .try_into_inner()?;
+        .await?;
     if let ProductType::Brain = response.product_type {
         return Err(CliError::BrainConnectionSetMatchMode);
     }
