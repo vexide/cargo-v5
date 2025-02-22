@@ -17,6 +17,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y libudev-sys libssl-dev
+
       - name: Cache
         uses: actions/cache@v4
         with:
