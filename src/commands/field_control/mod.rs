@@ -422,7 +422,7 @@ pub async fn run_field_control_tui(connection: &mut SerialConnection) -> Result<
             5,
             GetSystemVersionPacket::new(()),
         )
-        .await?;
+        .await?.payload;
     if let ProductType::Brain = response.product_type {
         return Err(CliError::BrainConnectionSetMatchMode);
     }
@@ -466,7 +466,7 @@ pub async fn run_field_control_tui(connection: &mut SerialConnection) -> Result<
             if !output.is_empty() {
                 for byte in output.iter() {
                     let byte = if *byte == b'\n' {
-                        &[b'\r', b'\n']
+                        b"\r\n"
                     } else {
                         std::slice::from_ref(byte)
                     };
