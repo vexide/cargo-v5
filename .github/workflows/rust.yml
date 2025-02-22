@@ -19,8 +19,8 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          sudo apt update
-          sudo apt install -y libudev-sys libssl-dev
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev libssl-dev
 
       - name: Cache
         uses: actions/cache@v4
