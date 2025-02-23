@@ -79,6 +79,10 @@ pub struct UploadOpts {
     #[arg(long)]
     pub cold: bool,
 
+    /// Set the file type to Python. Will not upload the Python VM if it does not already exist on the Brain.
+    #[arg(short, long)]
+    pub python: bool,
+
     /// Arguments forwarded to `cargo`.
     #[clap(flatten)]
     pub cargo_opts: CargoOpts,
@@ -170,6 +174,7 @@ pub async fn upload_program(
     compress: bool,
     cold: bool,
     upload_strategy: UploadStrategy,
+    monolith_bin_extension_type: ExtensionType,
 ) -> Result<(), CliError> {
     let multi_progress = MultiProgress::new();
 
@@ -271,7 +276,7 @@ pub async fn upload_program(
                     filename: FixedString::new(slot_file_name.clone()).unwrap(),
                     metadata: FileMetadata {
                         extension: FixedString::new("bin".to_string()).unwrap(),
-                        extension_type: ExtensionType::default(),
+                        extension_type: monolith_bin_extension_type,
                         timestamp: j2000_timestamp(),
                         version: Version {
                             major: 1,
@@ -578,6 +583,7 @@ pub async fn upload(
         cargo_opts,
         upload_strategy,
         cold,
+        python,
     }: UploadOpts,
     after: AfterUpload,
 ) -> miette::Result<SerialConnection> {
@@ -646,6 +652,16 @@ pub async fn upload(
         None
     };
 
+    let upload_strategy = upload_strategy
+        .or(metadata.and_then(|metadata| metadata.upload_strategy))
+        .unwrap_or_default();
+
+    if python && !matches!(upload_strategy, UploadStrategy::Monolith) {
+        // If a Python program is being uploaded, it must be uploaded as a monolith.
+        // Only vexide programs which are always binary support differential uploading.
+        Err(CliError::DiffUploadPython)?;
+    }
+
     // Wait for the serial port to finish opening.
     let mut connection = connection_task.await.unwrap()?;
 
@@ -691,7 +707,9 @@ pub async fn upload(
             .unwrap_or("Uploaded with cargo-v5.".to_string()),
         icon.or(metadata.and_then(|metadata| metadata.icon))
             .unwrap_or_default(),
-        "Rust".to_string(), // `program_type` hardcoded for now, maybe configurable in the future.
+        // `program_type` hardcoded depending on the upload type for now, maybe
+        // configurable in the future.
+        if python { "Python" } else { "Rust" }.to_string(),
         match uncompressed {
             Some(val) => !val,
             None => metadata
@@ -699,9 +717,12 @@ pub async fn upload(
                 .unwrap_or(true),
         },
         cold,
-        upload_strategy
-            .or(metadata.and_then(|metadata| metadata.upload_strategy))
-            .unwrap_or_default(),
+        upload_strategy,
+        if python {
+            ExtensionType::Vm
+        } else {
+            ExtensionType::default()
+        },
     )
     .await?;
 

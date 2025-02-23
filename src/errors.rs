@@ -133,4 +133,11 @@ pub enum CliError {
         help("Try creating the project in a different directory or with a different name.")
     )]
     ProjectDirFull(String),
+
+    #[error("Attempted to upload a Python file using the differential upload strategy.")]
+    #[diagnostic(
+        code(cargo_v5::diff_upload_python),
+        help("Differential upload is only supported for binary files with a patcher. Try using the `monolith` upload strategy instead.")
+    )]
+    DiffUploadPython,
 }
