@@ -1,3 +1,4 @@
+use humansize::{format_size, BINARY};
 use image::ImageError;
 use miette::Diagnostic;
 use thiserror::Error;
@@ -133,4 +134,18 @@ pub enum CliError {
         help("Try creating the project in a different directory or with a different name.")
     )]
     ProjectDirFull(String),
+
+    #[error("Program exceeded the maximum differential upload size of 2MiB (program was {}).", format_size(*.0, BINARY))]
+    #[diagnostic(
+        code(cargo_v5::program_too_large),
+        help("This size limitation may change in the future. To upload larger binaries, switch to a monolith upload by specifying `--upload-strategy=monolith`.")
+    )]
+    ProgramTooLarge(usize),
+
+    #[error("Patch exceeded the maximum size of 2MiB (patch was {}).", format_size(*.0, BINARY))]
+    #[diagnostic(
+        code(cargo_v5::patch_too_large),
+        help("Try running a cold upload using `cargo v5 upload --cold`.")
+    )]
+    PatchTooLarge(usize),
 }

@@ -157,6 +157,8 @@ pub enum ProgramIcon {
 
 pub const PROGRESS_CHARS: &str = "⣿⣦⣀";
 
+const DIFFERENTIAL_UPLOAD_MAX_SIZE: usize = 0x200000;
+
 /// Upload a program to the brain.
 pub async fn upload_program(
     connection: &mut SerialConnection,
@@ -353,14 +355,19 @@ pub async fn upload_program(
 
                 let new = tokio::fs::read(path).await?;
 
-                let patch = build_patch(&base, &new);
+                if base.len() > DIFFERENTIAL_UPLOAD_MAX_SIZE {
+                    return Err(CliError::ProgramTooLarge(base.len()));
+                } else if new.len() > DIFFERENTIAL_UPLOAD_MAX_SIZE {
+                    return Err(CliError::ProgramTooLarge(new.len()));
+                }
 
-                log::info!(
-                    "old: {}, new: {}, patch: {}",
-                    base.len(),
-                    new.len(),
-                    patch.len()
-                );
+                let mut patch = build_patch(&base, &new);
+
+                if patch.len() > DIFFERENTIAL_UPLOAD_MAX_SIZE {
+                    return Err(CliError::PatchTooLarge(base.len()));
+                }
+
+                gzip_compress(&mut patch);
 
                 connection
                     .execute_command(UploadFile {
@@ -416,6 +423,10 @@ pub async fn upload_program(
                 ));
 
                 let mut base_data = tokio::fs::read(path).await?;
+
+                if base_data.len() > DIFFERENTIAL_UPLOAD_MAX_SIZE {
+                    return Err(CliError::ProgramTooLarge(base_data.len()));
+                }
 
                 connection
                     .execute_command(UploadFile {
@@ -511,8 +522,6 @@ fn build_patch(old: &[u8], new: &[u8]) -> Vec<u8> {
     patch.splice(12..12, (old.len() as u32).to_le_bytes());
     patch.splice(16..16, (new.len() as u32).to_le_bytes());
 
-    gzip_compress(&mut patch);
-
     patch
 }
 
@@ -561,7 +570,7 @@ fn build_progress_callback(
 
 /// Apply gzip compression to the given data
 fn gzip_compress(data: &mut Vec<u8>) {
-    let mut encoder = GzBuilder::new().write(Vec::new(), Compression::default());
+    let mut encoder = GzBuilder::new().write(Vec::new(), Compression::best());
     encoder.write_all(data).unwrap();
     *data = encoder.finish().unwrap();
 }
