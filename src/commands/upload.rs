@@ -364,7 +364,7 @@ pub async fn upload_program(
                 let mut patch = build_patch(&base, &new);
 
                 if patch.len() > DIFFERENTIAL_UPLOAD_MAX_SIZE {
-                    return Err(CliError::PatchTooLarge(base.len()));
+                    return Err(CliError::PatchTooLarge(patch.len()));
                 }
 
                 gzip_compress(&mut patch);
