@@ -1,4 +1,4 @@
-use object::{Object, ObjectSegment};
+use object::{Object, ObjectSection, ObjectSegment};
 use std::process::{exit, Stdio};
 use tokio::{process::Command, task::block_in_place};
 
@@ -152,34 +152,63 @@ pub async fn build(
     )?)
 }
 
+/// Implementation of `objcopy -O binary`.
 pub fn objcopy(elf: &[u8]) -> Result<Vec<u8>, CliError> {
-    // Parse the ELF file.
-    let elf_data = object::File::parse(elf)?;
+    let elf = object::File::parse(elf)?; // parse ELF file
 
-    // Get the loadable segments (program data) and sort them by virtual address.
-    let mut program_segments: Vec<_> = elf_data.segments().collect();
-    program_segments.sort_by_key(|seg| seg.address());
+    // First we need to find the loadable sections of the program
+    // (the parts of the ELF that will be actually loaded into memory)
+    let mut loadable_sections = elf
+        .sections() // all sections regardless of if they lie in a PT_LOAD segment
+        .filter(|section| {
+            let Some((section_offset, section_size)) = section.file_range() else {
+                // No file range = don't include as loadable section
+                return false;
+            };
+            
+            // To determine if a section is loadable, we'll check if this section lies
+            // within the file range of a PT_LOAD segment by comparing file ranges.
+            for segment in elf.segments() {
+                let (segment_offset, segment_size) = segment.file_range();
 
-    // used to fill gaps between segments with zeros
-    let mut last_addr = program_segments.first().unwrap().address();
-    // final binary
-    let mut bytes = Vec::new();
+                if segment_offset <= section_offset && segment_offset + segment_size >= section_offset + section_size {
+                    return true;
+                }
+            }
 
-    // Concatenate all the segments into a single binary.
-    for segment in program_segments {
-        // Fill gaps between segments with zeros.
-        let gap = segment.address() - last_addr;
-        if gap > 0 {
-            bytes.extend(vec![0; gap as usize]);
-        }
+            false
+        })
+        .collect::<Vec<_>>();
 
-        // Push the segment data to the binary.
-        let data = segment.data()?;
-        bytes.extend_from_slice(data);
-
-        // data.len() can be different from segment.size() so we use the actual data length
-        last_addr = segment.address() + data.len() as u64;
+    // No loadable sections implies that there's nothing in the binary.
+    if loadable_sections.is_empty() {
+        return Ok(Vec::new());
     }
 
-    Ok(bytes)
+    loadable_sections.sort_by_key(|section| section.address()); // TODO: verify this is necessary
+
+    // Start/end address of where the binary will be loaded into memory.
+    // Used to calculate the total binary size and section offset.
+    let start_address = loadable_sections.first().unwrap().address();
+    let end_address = {
+        let last_section = loadable_sections.last().unwrap();
+        last_section.address() + last_section.size()
+    };
+
+    // Pre-fill the binary with zeroes for the specified binary length
+    // (determined by start address of first and end address of last loadable
+    // sections respectively).
+    let mut binary = vec![0; (end_address - start_address) as usize];
+
+    for section in loadable_sections {
+        let address = section.address();
+        let start = address - start_address;
+        let end = (address - start_address) + section.size();
+
+        // Copy the loadable section's data into the output binary.
+        binary[(start as usize)..(end as usize)]
+            .copy_from_slice(section.data()?);
+    }
+
+    Ok(binary)
 }
