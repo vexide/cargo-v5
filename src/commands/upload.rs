@@ -283,7 +283,15 @@ pub async fn upload_program(
                         },
                     },
                     vendor: Some(FileVendor::User),
-                    data: tokio::fs::read(path).await?,
+                    data: {
+                        let mut data = tokio::fs::read(path).await?;
+
+                        if compress {
+                            gzip_compress(&mut data);
+                        }
+
+                        data
+                    },
                     target: None,
                     load_addr: USER_PROGRAM_LOAD_ADDR,
                     linked_file: None,
