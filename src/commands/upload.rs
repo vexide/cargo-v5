@@ -485,7 +485,7 @@ pub async fn upload_program(
                             },
                         },
                         vendor: Some(FileVendor::User),
-                        data: u32::to_le_bytes(0xB2DF).to_vec(),
+                        data: u32::to_le_bytes(0xB1DF).to_vec(),
                         target: None,
                         load_addr: 0x07A00000,
                         linked_file: Some(LinkedFile {
