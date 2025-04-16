@@ -108,6 +108,7 @@ pub async fn build(
 
         build_cmd
             .arg("-Zbuild-std=core,alloc,compiler_builtins")
+            .arg("-Zbuild-std-features=compiler-builtins-mem")
             .stdout(Stdio::piped());
     }
 
