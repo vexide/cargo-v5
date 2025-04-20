@@ -135,8 +135,17 @@ pub async fn new(
         return Err(CliError::ProjectDirFull(dir.into_string()));
     }
 
-    let name = name.unwrap_or_else(|| dir.file_name().unwrap().to_string());
-    info!("Creating new project at {:?}", dir);
+    let name = name
+        .or_else(|| {
+            Some(
+                std::fs::canonicalize(&dir)
+                    .ok()?
+                    .file_name()?
+                    .to_str()?
+                    .to_string(),
+            )
+        })
+        .unwrap_or("vexide project".to_string());
 
     #[cfg(feature = "fetch-template")]
     let template = match (get_cached_template().await, get_current_sha().await) {
