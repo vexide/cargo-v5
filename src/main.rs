@@ -59,10 +59,6 @@ enum Command {
     /// Build a project for the V5 brain.
     #[clap(visible_alias = "b")]
     Build {
-        /// Build a binary for the WASM simulator instead of the native V5 target.
-        #[arg(long, short)]
-        simulator: bool,
-
         /// Arguments forwarded to `cargo`.
         #[clap(flatten)]
         cargo_opts: CargoOpts,
@@ -163,33 +159,14 @@ async fn main() -> miette::Result<()> {
 
 async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> miette::Result<()> {
     match command {
-        Command::Build {
-            simulator,
-            cargo_opts,
-        } => {
-            build(&path, cargo_opts, simulator).await?;
-        }
-        Command::Upload { upload_opts, after } => {
-            upload(&path, upload_opts, after).await?;
-        }
-        Command::Dir => {
-            dir(&mut open_connection().await?).await?;
-        }
-        Command::Devices => {
-            devices(&mut open_connection().await?).await?;
-        }
-        Command::Cat { file } => {
-            cat(&mut open_connection().await?, file).await?;
-        }
-        Command::Rm { file } => {
-            rm(&mut open_connection().await?, file).await?;
-        }
-        Command::Log { page } => {
-            log(&mut open_connection().await?, page).await?;
-        }
-        Command::Screenshot => {
-            screenshot(&mut open_connection().await?).await?;
-        }
+        Command::Build { cargo_opts } => build(&path, cargo_opts).await?,
+        Command::Upload { upload_opts, after } => upload(&path, upload_opts, after).await?,
+        Command::Dir => dir(&mut open_connection().await?).await?,
+        Command::Devices => devices(&mut open_connection().await?).await?,
+        Command::Cat { file } => cat(&mut open_connection().await?, file).await?,
+        Command::Rm { file } => rm(&mut open_connection().await?, file).await?,
+        Command::Log { page } => log(&mut open_connection().await?, page).await?,
+        Command::Screenshot => screenshot(&mut open_connection().await?).await?,
         Command::Run(opts) => {
             let mut connection = upload(&path, opts, AfterUpload::Run).await?;
 

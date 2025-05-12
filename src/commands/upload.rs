@@ -627,7 +627,7 @@ pub async fn upload(
         }
     } else {
         // Run cargo build, then objcopy.
-        build(path, cargo_opts, false)
+        build(path, cargo_opts)
             .await?
             .map(|output| (output.bin_artifact, Some(output.package_id)))
             .ok_or(CliError::NoArtifact)?

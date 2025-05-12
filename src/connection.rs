@@ -70,8 +70,9 @@ pub async fn switch_radio_channel(
         )
         .await?
         .try_into_inner()?;
-
+    
     // Return early if already in download channel.
+    // TODO: Make this also detect the bluetooth radio channel
     if (radio_status.channel == 5 && channel == RadioChannel::Download)
         || (radio_status.channel == 31 && channel == RadioChannel::Pit)
     {

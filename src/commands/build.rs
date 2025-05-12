@@ -62,7 +62,6 @@ pub struct BuildOutput {
 pub async fn build(
     path: &Utf8Path,
     opts: CargoOpts,
-    for_simulator: bool,
 ) -> miette::Result<Option<BuildOutput>> {
     let target_path = path.join(TARGET_PATH);
     let mut build_cmd = std::process::Command::new(cargo_bin());
@@ -78,39 +77,21 @@ pub async fn build(
         exit(1);
     }
 
-    if for_simulator {
-        if !has_wasm_target().await {
-            eprintln!(
-                "ERROR: simulation requires the wasm32-unknown-unknown target to be installed"
-            );
-            eprintln!(
-                " hint: this can be fixed by running `rustup target add wasm32-unknown-unknown`"
-            );
-            exit(1);
-        }
-
-        build_cmd
-            .arg("--target")
-            .arg("wasm32-unknown-unknown")
-            .arg("-Zbuild-std=std,panic_abort")
-            .arg("--config=build.rustflags=['-Ctarget-feature=+atomics,+bulk-memory,+mutable-globals','-Clink-arg=--shared-memory','-Clink-arg=--export-table']")
-            .stdout(Stdio::piped());
-    } else {
-        let target = include_str!("../targets/armv7a-vex-v5.json");
-        if !target_path.exists() {
-            fs::create_dir_all(target_path.parent().unwrap())
-                .await
-                .unwrap();
-        }
-        fs::write(&target_path, target).await.unwrap();
-        build_cmd.arg("--target");
-        build_cmd.arg(&target_path);
-
-        build_cmd
-            .arg("-Zbuild-std=core,alloc,compiler_builtins")
-            .arg("-Zbuild-std-features=compiler-builtins-mem")
-            .stdout(Stdio::piped());
+    if !target_path.exists() {
+        fs::create_dir_all(target_path.parent().unwrap())
+            .await
+            .unwrap();
     }
+    fs::write(&target_path, include_str!("../targets/armv7a-vex-v5.json"))
+        .await
+        .unwrap();
+
+    build_cmd
+        .arg("--target")
+        .arg(&target_path)
+        .arg("-Zbuild-std=core,alloc,compiler_builtins")
+        .arg("-Zbuild-std-features=compiler-builtins-mem")
+        .stdout(Stdio::piped());
 
     build_cmd.args(opts.args);
 
@@ -166,13 +147,15 @@ pub fn objcopy(elf: &[u8]) -> Result<Vec<u8>, CliError> {
                 // No file range = don't include as loadable section
                 return false;
             };
-            
+
             // To determine if a section is loadable, we'll check if this section lies
             // within the file range of a PT_LOAD segment by comparing file ranges.
             for segment in elf.segments() {
                 let (segment_offset, segment_size) = segment.file_range();
 
-                if segment_offset <= section_offset && segment_offset + segment_size >= section_offset + section_size {
+                if segment_offset <= section_offset
+                    && segment_offset + segment_size >= section_offset + section_size
+                {
                     return true;
                 }
             }
@@ -207,8 +190,7 @@ pub fn objcopy(elf: &[u8]) -> Result<Vec<u8>, CliError> {
         let end = (address - start_address) + section.size();
 
         // Copy the loadable section's data into the output binary.
-        binary[(start as usize)..(end as usize)]
-            .copy_from_slice(section.data()?);
+        binary[(start as usize)..(end as usize)].copy_from_slice(section.data()?);
     }
 
     Ok(binary)
