@@ -173,10 +173,11 @@ async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> 
             tokio::select! {
                 () = terminal(&mut connection, logger) => {}
                 _ = tokio::signal::ctrl_c() => {
-                    // Quit program
-                    _ = connection.packet_handshake::<LoadFileActionReplyPacket>(
-                        Duration::from_secs(2),
-                        1,
+                    // Try to quit program.
+                    //
+                    // Don't bother waiting for a response, since the brain could
+                    // be locked up and prevent the program from exiting.
+                    _ = connection.send_packet(
                         LoadFileActionPacket::new(LoadFileActionPayload {
                             vendor: FileVendor::User,
                             action: FileLoadAction::Stop,
