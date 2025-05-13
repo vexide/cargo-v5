@@ -1,5 +1,7 @@
 use core::panic;
 use std::{env, num::NonZeroU32, path::PathBuf};
+#[cfg(feature = "field-control")]
+use std::time::Duration;
 
 use cargo_metadata::camino::Utf8PathBuf;
 #[cfg(feature = "field-control")]
