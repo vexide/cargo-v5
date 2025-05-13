@@ -39,20 +39,6 @@ async fn is_nightly_toolchain() -> bool {
     rustc.contains("nightly")
 }
 
-async fn has_wasm_target() -> bool {
-    let Ok(rustup) = Command::new("rustup")
-        .arg("target")
-        .arg("list")
-        .arg("--installed")
-        .output()
-        .await
-    else {
-        return true;
-    };
-    let rustup = String::from_utf8(rustup.stdout).unwrap();
-    rustup.contains("wasm32-unknown-unknown")
-}
-
 pub struct BuildOutput {
     pub elf_artifact: Utf8PathBuf,
     pub bin_artifact: Utf8PathBuf,

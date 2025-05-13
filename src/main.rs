@@ -1,5 +1,5 @@
 use core::panic;
-use std::{env, num::NonZeroU32, path::PathBuf, time::Duration};
+use std::{env, num::NonZeroU32, path::PathBuf};
 
 use cargo_metadata::camino::Utf8PathBuf;
 #[cfg(feature = "field-control")]
@@ -27,10 +27,7 @@ use vex_v5_serial::connection::serial::{self, SerialConnection, SerialDevice};
 use vex_v5_serial::{
     connection::Connection,
     packets::{
-        file::{
-            FileLoadAction, FileVendor, LoadFileActionPacket, LoadFileActionPayload,
-            LoadFileActionReplyPacket,
-        },
+        file::{FileLoadAction, FileVendor, LoadFileActionPacket, LoadFileActionPayload},
         radio::RadioChannel,
     },
     string::FixedString,
@@ -159,8 +156,12 @@ async fn main() -> miette::Result<()> {
 
 async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> miette::Result<()> {
     match command {
-        Command::Build { cargo_opts } => build(&path, cargo_opts).await?,
-        Command::Upload { upload_opts, after } => upload(&path, upload_opts, after).await?,
+        Command::Build { cargo_opts } => {
+            build(&path, cargo_opts).await?;
+        }
+        Command::Upload { upload_opts, after } => {
+            upload(&path, upload_opts, after).await?;
+        }
         Command::Dir => dir(&mut open_connection().await?).await?,
         Command::Devices => devices(&mut open_connection().await?).await?,
         Command::Cat { file } => cat(&mut open_connection().await?, file).await?,
