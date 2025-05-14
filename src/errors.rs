@@ -25,7 +25,7 @@ pub enum CliError {
     ReqwestError(#[from] reqwest::Error),
 
     #[cfg(feature = "fetch-template")]
-    #[error("Recieved a malformed HTTP response")]
+    #[error("Received a malformed HTTP response")]
     #[diagnostic(code(cargo_v5::malformed_response))]
     MalformedResponse,
 
