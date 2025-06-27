@@ -1,14 +1,14 @@
 use core::panic;
-use std::{env, num::NonZeroU32, path::PathBuf};
 #[cfg(feature = "field-control")]
 use std::time::Duration;
+use std::{env, num::NonZeroU32, path::PathBuf};
 
 use cargo_metadata::camino::Utf8PathBuf;
 #[cfg(feature = "field-control")]
 use cargo_v5::{commands::field_control::run_field_control_tui, errors::CliError};
 use cargo_v5::{
     commands::{
-        build::{build, CargoOpts},
+        build::{CargoOpts, build},
         cat::cat,
         devices::devices,
         dir::dir,
@@ -17,9 +17,10 @@ use cargo_v5::{
         rm::rm,
         screenshot::screenshot,
         terminal::terminal,
-        upload::{upload, AfterUpload, UploadOpts},
+        upload::{AfterUpload, UploadOpts, upload},
     },
     connection::{open_connection, switch_radio_channel},
+    self_update::{self, SelfUpdateMode},
 };
 use chrono::Utc;
 use clap::{Args, Parser, Subcommand};
@@ -113,6 +114,8 @@ enum Command {
     #[cfg(feature = "field-control")]
     #[clap(visible_aliases = ["fc", "comp-control"])]
     FieldControl,
+    #[clap(hide = matches!(*self_update::CURRENT_MODE, SelfUpdateMode::Unmanaged(_)))]
+    SelfUpdate,
 }
 
 #[derive(Args, Debug)]
@@ -227,6 +230,9 @@ async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> 
         }
         Command::Init { download_opts } => {
             new(path, None, !download_opts.offline).await?;
+        }
+        Command::SelfUpdate => {
+            self_update::self_update().await?;
         }
     }
 
