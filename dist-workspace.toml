@@ -1,0 +1,45 @@
+[workspace]
+members = ["cargo:."]
+
+# Config for 'dist'
+[dist]
+# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.28.0"
+# CI backends to support
+ci = "github"
+# The installers to generate for each app
+installers = ["shell", "powershell", "homebrew"]
+# A GitHub repo to push Homebrew formulas to
+tap = "vexide/homebrew-vexide"
+# Target platforms to build apps for (Rust target-triple syntax)
+targets = [
+    "aarch64-apple-darwin",
+    "aarch64-unknown-linux-gnu",
+    "aarch64-pc-windows-msvc",
+    "x86_64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+]
+# Path that installers should place binaries in
+install-path = "CARGO_HOME"
+# Publish jobs to run in CI
+publish-jobs = ["homebrew"]
+# Whether to install an updater program
+install-updater = false
+# Which actions to run on pull requests
+pr-run-mode = "upload"
+
+[dist.github-custom-runners]
+global = "ubuntu-24.04"
+aarch64-apple-darwin = "macos-14"
+x86_64-apple-darwin = "macos-14"
+armv-unknown-linux-musleabihf = "ubuntu-24.04"
+armv7-unknown-linux-musleabihf = "ubuntu-24.04"
+aarch64-unknown-linux-gnu = "ubuntu-24.04"
+x86_64-unknown-linux-gnu = "ubuntu-24.04"
+x86_64-unknown-linux-musl = "ubuntu-24.04"
+armv7-unknown-linux-gnueabihf = "ubuntu-24.04"
+arm-unknown-linux-gnueabihf = "ubuntu-24.04"
+arm-unknown-linux-musleabihf = "ubuntu-24.04"
+x86_64-pc-windows-msvc = { container = "messense/cargo-xwin", runner = "ubuntu-24.04" }
+aarch64-pc-windows-msvc = { container = "messense/cargo-xwin", runner = "ubuntu-24.04" }

@@ -10,6 +10,7 @@ authors = [
 ]
 license = "MIT"
 description = "A cargo subcommand for managing V5 Brain Rust projects"
+homepage = "https://vexide.dev"
 repository = "https://github.com/vexide/cargo-pros"
 
 [package.metadata.v5]
@@ -69,3 +70,8 @@ full = ["field-control", "fetch-template"]
 [[bin]]
 name = "cargo-v5"
 required-features = ["clap"]
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
