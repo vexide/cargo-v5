@@ -47,4 +47,8 @@ x86_64-pc-windows-msvc = { container = "messense/cargo-xwin", runner = "ubuntu-2
 aarch64-pc-windows-msvc = { container = "messense/cargo-xwin", runner = "ubuntu-24.04" }
 
 [dist.dependencies.apt]
-udev = '*'
+# TODO
+# "libudev-dev:arm64" = "*"
+libudev-dev = "*"
+gcc-aarch64-linux-gnu = "*"
+pkg-config-aarch64-linux-gnu = "*"
