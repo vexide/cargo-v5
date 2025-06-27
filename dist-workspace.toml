@@ -14,7 +14,8 @@ tap = "vexide/homebrew-vexide"
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = [
     "aarch64-apple-darwin",
-    "aarch64-unknown-linux-gnu",
+    # doesn't work because of missing arm64 `libudev-dev` package in GH actions runner
+    # "aarch64-unknown-linux-gnu",
     "aarch64-pc-windows-msvc",
     "x86_64-apple-darwin",
     "x86_64-unknown-linux-gnu",
@@ -47,8 +48,4 @@ x86_64-pc-windows-msvc = { container = "messense/cargo-xwin", runner = "ubuntu-2
 aarch64-pc-windows-msvc = { container = "messense/cargo-xwin", runner = "ubuntu-24.04" }
 
 [dist.dependencies.apt]
-# TODO
-# "libudev-dev:arm64" = "*"
 libudev-dev = "*"
-gcc-aarch64-linux-gnu = "*"
-pkg-config-aarch64-linux-gnu = "*"
