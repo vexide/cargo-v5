@@ -62,31 +62,33 @@ fn exe_name<'a>(string: impl Into<Cow<'a, str>>) -> Cow<'a, str> {
 
 impl SelfUpdateMode {
     pub fn current() -> Self {
-        if let Some(this_arg) = std::env::args().next()
-            && !this_arg.is_empty()
-        {
-            // Check if managed by cargo
-            if let Some(bin_path) = cargo_bin_path()
-                && let Ok(expected_exe_path) =
-                    bin_path.join(exe_name("cargo-v5").as_ref()).canonicalize()
-                && let Ok(exe_path) = Path::new(&this_arg).canonicalize()
-                && expected_exe_path == exe_path
-            {
-                return Self::Cargo;
-            }
-
-            // Check if managed by homebrew
-            let homebrew_prefix =
-                env::var("HOMEBREW_PREFIX").unwrap_or_else(|_| "/opt/homebrew/bin/".to_string());
-            if this_arg.starts_with(&homebrew_prefix) {
-                return SelfUpdateMode::Unmanaged(Some(ExternalUpdateManager::Homebrew));
-            }
-        }
-
         // Check if installed by shell script
         let mut updater = block_in_place(|| AXOUPDATER.blocking_lock());
         if updater.load_receipt().is_ok() {
             return Self::Axoupdate;
+        }
+
+        let this_arg = std::env::args().next().unwrap_or_default();
+        if this_arg.is_empty() {
+            // Not enough information
+            return SelfUpdateMode::Unmanaged(None);
+        }
+
+        // Check if managed by cargo
+        if let Some(bin_path) = cargo_bin_path()
+            && let Ok(expected_exe_path) =
+                bin_path.join(exe_name("cargo-v5").as_ref()).canonicalize()
+            && let Ok(exe_path) = Path::new(&this_arg).canonicalize()
+            && expected_exe_path == exe_path
+        {
+            return Self::Cargo;
+        }
+
+        // Check if managed by homebrew
+        let homebrew_prefix =
+            env::var("HOMEBREW_PREFIX").unwrap_or_else(|_| "/opt/homebrew/bin/".to_string());
+        if this_arg.starts_with(&homebrew_prefix) {
+            return SelfUpdateMode::Unmanaged(Some(ExternalUpdateManager::Homebrew));
         }
 
         // Idk
