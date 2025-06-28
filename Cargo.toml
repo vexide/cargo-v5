@@ -11,7 +11,7 @@ authors = [
 license = "MIT"
 description = "A cargo subcommand for managing V5 Brain Rust projects"
 homepage = "https://vexide.dev"
-repository = "https://github.com/vexide/cargo-pros"
+repository = "https://github.com/vexide/cargo-v5"
 rust-version = "1.88" # let chains
 
 [package.metadata.v5]
