@@ -701,7 +701,7 @@ pub async fn upload(
         &artifact,
         after,
         slot,
-        name.or(package.as_ref().map(|pkg| pkg.name.clone()))
+        name.or(package.as_ref().map(|pkg| pkg.name.to_string()))
             .unwrap_or("cargo-v5".to_string()),
         description
             .or(package.as_ref().and_then(|pkg| pkg.description.clone()))

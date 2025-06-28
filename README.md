@@ -6,6 +6,40 @@ cargo-v5 is a command line tool that simplifies working with VEX projects writte
 
 ## Installation
 
+### Install via [cargo binstall](https://github.com/cargo-bins/cargo-binstall#cargo-binaryinstall)
+
+> *Supports all platforms*
+
+```sh
+cargo binstall cargo-v5
+```
+
+### Install via [Homebrew](https://brew.sh)
+
+> *Supports macOS & Linux*
+
+```sh
+brew install vexide/vexide/cargo-v5
+```
+
+### Install via shell script
+
+> *Supports macOS & Linux (probably not NixOS)*
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/vexide/cargo-v5/releases/latest/download/cargo-v5-installer.sh | sh
+```
+
+### Install via PowerShell script
+
+> *Supports Windows*
+
+```powershell
+irm https://github.com/vexide/cargo-v5/releases/latest/download/cargo-v5-installer.ps1 | iex
+```
+
+### Build from source
+
 cargo-v5 comes with 2 optional features that enable extra functionality:
 
 - `field-control`: Adds a field control tui accesible through `cargo v5 field-control` or `cargo v5 fc`.
@@ -13,19 +47,22 @@ cargo-v5 comes with 2 optional features that enable extra functionality:
 
 If you wish to enable both, you can simply enable the `full` feature.
 
-### All Features
+> [!TIP]
+> Pre-built versions of cargo-v5 have all optional features enabled.
+
+#### All Features
 
 ```bash
 cargo install cargo-v5 --features "full"
 ```
 
-### Specific Feature
+#### Specific Feature
 
 ```bash
 cargo install cargo-v5 --features "field-control"
 ```
 
-### No Features
+#### No Features
 
 ```bash
 cargo install cargo-v5
@@ -76,4 +113,18 @@ For a full list of arguments, check
 
 ```
 cargo v5 help
+```
+
+## Uninstall
+
+If you installed cargo-v5 using the standalone shell or PowerShell scripts above, you can remove it by running this command in your Unix shell:
+
+```sh
+rm ~/.local/bin/cargo-v5 ~/.config/cargo-v5/cargo-v5-receipt.json
+```
+
+Or by running this in PowerShell:
+
+```powershell
+rm ~\.local\bin\cargo-v5 "$env:LOCALAPPDATA\cargo-v5\cargo-v5-receipt.json"
 ```

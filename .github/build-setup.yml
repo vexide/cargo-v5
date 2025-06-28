@@ -1,0 +1,3 @@
+# setup environment so that windows builds of `ring` crate work properly
+- name: Setup cross-compilation environment
+  run: echo "XWIN_CROSS_COMPILER=clang" >> $GITHUB_ENV
