@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    env,
+    env::{self, consts::EXE_SUFFIX},
     path::{Path, PathBuf},
     sync::LazyLock,
 };
@@ -53,10 +53,10 @@ fn cargo_bin_path() -> Option<PathBuf> {
 }
 
 fn exe_name<'a>(string: impl Into<Cow<'a, str>>) -> Cow<'a, str> {
-    if cfg!(windows) {
-        Cow::Owned(format!("{}.exe", string.into()))
-    } else {
+    if EXE_SUFFIX.is_empty() {
         string.into()
+    } else {
+        Cow::Owned(format!("{}{}", string.into(), EXE_SUFFIX))
     }
 }
 
