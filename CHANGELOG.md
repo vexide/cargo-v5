@@ -14,7 +14,19 @@ Before releasing:
 - update links at the end of the document
 -->
 
-## [Unreleased]
+## [0.11.0]
+
+### Added
+
+- Added self-update command which downloads the latest version of cargo-v5
+
+### Fixed
+
+### Changed
+
+### Removed
+
+## [0.4.0]
 
 ### Added
 
@@ -26,7 +38,6 @@ Before releasing:
 
 ### Removed
 
-
 ## [0.3.0] - 2024-01-08
 
 ### Added
@@ -35,5 +46,6 @@ Before releasing:
 
 ### Removed
 
-[unreleased]: https://github.com/pros-rs/vexide/compare/v0.3.0...HEAD
+[0.11.0]: https://github.com/pros-rs/vexide/compare/v0.4.0..main
+[0.4.0]: https://github.com/pros-rs/vexide/compare/v0.3.0..v0.4.0
 [0.3.0]: https://github.com/pros-rs/vexide/releases/tag/v0.3.0
