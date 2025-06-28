@@ -24,7 +24,7 @@ brew install vexide/vexide/cargo-v5
 
 ### Install via shell script
 
-> *Supports macOS & Linux*
+> *Supports macOS & Linux (probably not NixOS)*
 
 ```sh
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/vexide/cargo-v5/releases/latest/download/cargo-v5-installer.sh | sh
