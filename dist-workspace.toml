@@ -31,6 +31,8 @@ install-updater = false
 github-build-setup = "../build-setup.yml"
 # Features to pass to cargo build
 features = ["full"]
+# Whether to publish prereleases to package managers
+publish-prereleases = true
 
 [dist.github-custom-runners]
 global = "ubuntu-24.04"
