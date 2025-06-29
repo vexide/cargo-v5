@@ -9,7 +9,7 @@ authors = [
     "Tropical",
 ]
 license = "MIT"
-description = "A cargo subcommand for managing V5 Brain Rust projects"
+description = "Cargo subcommand for managing V5 Brain Rust projects"
 homepage = "https://vexide.dev"
 repository = "https://github.com/vexide/cargo-v5"
 rust-version = "1.88" # let chains
