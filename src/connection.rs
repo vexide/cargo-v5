@@ -3,8 +3,8 @@ use std::time::Duration;
 use tokio::{select, task::spawn_blocking, time::sleep};
 use vex_v5_serial::{
     connection::{
-        serial::{self, SerialConnection, SerialError},
         Connection,
+        serial::{self, SerialConnection, SerialError},
     },
     packets::{
         radio::{

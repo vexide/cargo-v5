@@ -3,8 +3,8 @@ use clap::{Args, ValueEnum};
 use flate2::{Compression, GzBuilder};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use inquire::{
-    validator::{ErrorMessage, Validation},
     CustomType,
+    validator::{ErrorMessage, Validation},
 };
 use tokio::{fs::File, io::AsyncWriteExt, spawn, sync::Mutex, task::block_in_place, time::Instant};
 
@@ -16,11 +16,11 @@ use std::{
 
 use vex_v5_serial::{
     commands::file::{
-        LinkedFile, Program, ProgramIniConfig, Project, UploadFile, USER_PROGRAM_LOAD_ADDR,
+        LinkedFile, Program, ProgramIniConfig, Project, USER_PROGRAM_LOAD_ADDR, UploadFile,
     },
     connection::{
-        serial::{SerialConnection, SerialError},
         Connection,
+        serial::{SerialConnection, SerialError},
     },
     crc::VEX_CRC32,
     packets::{
@@ -42,7 +42,7 @@ use crate::{
     metadata::Metadata,
 };
 
-use super::build::{build, objcopy, CargoOpts};
+use super::build::{CargoOpts, build, objcopy};
 
 /// Options used to control the behavior of a program upload
 #[derive(Args, Debug)]

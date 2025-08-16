@@ -8,7 +8,7 @@ use vex_v5_serial::packets::factory::{
 use vex_v5_serial::packets::file::ExtensionType;
 use vex_v5_serial::timestamp::J2000_EPOCH;
 use vex_v5_serial::{
-    connection::{serial::SerialConnection, Connection},
+    connection::{Connection, serial::SerialConnection},
     packets::file::{
         FileVendor, GetDirectoryEntryPacket, GetDirectoryEntryPayload,
         GetDirectoryEntryReplyPacket, GetDirectoryFileCountPacket, GetDirectoryFileCountPayload,
@@ -16,7 +16,7 @@ use vex_v5_serial::{
     },
 };
 
-use humansize::{format_size, BINARY};
+use humansize::{BINARY, format_size};
 use tabwriter::TabWriter;
 
 use crate::errors::CliError;

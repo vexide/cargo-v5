@@ -1,4 +1,4 @@
-use humansize::{format_size, BINARY};
+use humansize::{BINARY, format_size};
 use image::ImageError;
 use miette::Diagnostic;
 use thiserror::Error;
@@ -54,7 +54,9 @@ pub enum CliError {
     #[error("The provided slot should be in the range [1, 8] inclusive.")]
     #[diagnostic(
         code(cargo_v5::slot_out_of_range),
-        help("The V5 brain only has eight program slots. Adjust the `slot` field or argument to be a number from 1-8."),
+        help(
+            "The V5 brain only has eight program slots. Adjust the `slot` field or argument to be a number from 1-8."
+        )
     )]
     SlotOutOfRange,
 
@@ -76,21 +78,27 @@ pub enum CliError {
     #[error("No slot number was provided.")]
     #[diagnostic(
         code(cargo_v5::no_slot),
-        help("A slot number is required to upload programs. Try passing in a slot using the `--slot` argument, or setting the `package.v5.metadata.slot` field in your Cargo.toml.")
+        help(
+            "A slot number is required to upload programs. Try passing in a slot using the `--slot` argument, or setting the `package.v5.metadata.slot` field in your Cargo.toml."
+        )
     )]
     NoSlot,
 
     #[error("ELF build artifact not found. Is this a binary crate?")]
     #[diagnostic(
         code(cargo_v5::no_artifact),
-        help("`cargo v5 build` should generate an ELF file in your project's `target` folder unless this is a library crate. You can explicitly supply a file to upload with the `--file` (`-f`) argument.")
+        help(
+            "`cargo v5 build` should generate an ELF file in your project's `target` folder unless this is a library crate. You can explicitly supply a file to upload with the `--file` (`-f`) argument."
+        )
     )]
     NoArtifact,
 
     #[error("No V5 devices found.")]
     #[diagnostic(
         code(cargo_v5::no_device),
-        help("Ensure that a V5 brain or controller is plugged in and powered on with a stable USB connection, then try again.")
+        help(
+            "Ensure that a V5 brain or controller is plugged in and powered on with a stable USB connection, then try again."
+        )
     )]
     NoDevice,
 
@@ -101,14 +109,18 @@ pub enum CliError {
     #[error("Controller never switched radio channels.")]
     #[diagnostic(
         code(cargo_v5::radio_channel_disconnect_timeout),
-        help("Try running `cargo v5 upload` again. If the problem persists, power cycle your controller and Brain.")
+        help(
+            "Try running `cargo v5 upload` again. If the problem persists, power cycle your controller and Brain."
+        )
     )]
     RadioChannelDisconnectTimeout,
 
     #[error("Controller never reconnected after switching radio channels.")]
     #[diagnostic(
         code(cargo_v5::radio_channel_reconnect_timeout),
-        help("Try running `cargo v5 upload` again. If the problem persists, power cycle your controller and Brain.")
+        help(
+            "Try running `cargo v5 upload` again. If the problem persists, power cycle your controller and Brain."
+        )
     )]
     RadioChannelReconnectTimeout,
 
@@ -116,7 +128,9 @@ pub enum CliError {
     #[error("No V5 controllers found.")]
     #[diagnostic(
         code(cargo_v5::no_controller),
-        help("`cargo v5 fc` can only be ran over a controller connection. Make sure you have a controller plugged into USB, then try again.")
+        help(
+            "`cargo v5 fc` can only be ran over a controller connection. Make sure you have a controller plugged into USB, then try again."
+        )
     )]
     NoController,
 
@@ -124,7 +138,9 @@ pub enum CliError {
     #[error("Attempted to change the match mode over a direct Brain connection.")]
     #[diagnostic(
         code(cargo_v5::brain_connection_set_match_mode),
-        help("This state should not be reachable and is a bug if encountered. Please report it to https://github.com/vexide/cargo-v5")
+        help(
+            "This state should not be reachable and is a bug if encountered. Please report it to https://github.com/vexide/cargo-v5"
+        )
     )]
     BrainConnectionSetMatchMode,
 
@@ -138,7 +154,9 @@ pub enum CliError {
     #[error("Program exceeded the maximum differential upload size of 2MiB (program was {}).", format_size(*.0, BINARY))]
     #[diagnostic(
         code(cargo_v5::program_too_large),
-        help("This size limitation may change in the future. To upload larger binaries, switch to a monolith upload by specifying `--upload-strategy=monolith`.")
+        help(
+            "This size limitation may change in the future. To upload larger binaries, switch to a monolith upload by specifying `--upload-strategy=monolith`."
+        )
     )]
     ProgramTooLarge(usize),
 

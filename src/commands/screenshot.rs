@@ -11,7 +11,7 @@ use log::info;
 use tokio::sync::Mutex;
 use vex_v5_serial::{
     commands::file::DownloadFile,
-    connection::{serial::SerialConnection, Connection},
+    connection::{Connection, serial::SerialConnection},
     packets::{
         capture::{ScreenCapturePacket, ScreenCaptureReplyPacket},
         file::{FileTransferTarget, FileVendor},

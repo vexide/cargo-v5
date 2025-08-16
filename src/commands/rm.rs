@@ -2,8 +2,8 @@ use std::{path::PathBuf, str::FromStr, time::Duration};
 
 use vex_v5_serial::{
     connection::{
-        serial::{SerialConnection, SerialError},
         Connection,
+        serial::{SerialConnection, SerialError},
     },
     packets::file::{
         EraseFilePacket, EraseFilePayload, EraseFileReplyPacket, ExitFileTransferPacket,

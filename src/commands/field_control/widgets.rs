@@ -1,11 +1,11 @@
 use std::time::Duration;
 
 use ratatui::{
+    Frame,
     layout::{Position, Rect},
     style::{Color, Style, Stylize},
     symbols::border::ROUNDED,
     widgets::{Block, Clear, Paragraph, Widget, Wrap},
-    Frame,
 };
 
 pub fn set_duration_digit(digit: u8, pos: usize, duration: Duration) -> Duration {

@@ -1,7 +1,7 @@
 use std::io::{self, Write};
 use std::time::Duration;
 
-use vex_v5_serial::connection::{serial::SerialConnection, Connection};
+use vex_v5_serial::connection::{Connection, serial::SerialConnection};
 
 use tabwriter::TabWriter;
 use vex_v5_serial::packets::device::{GetDeviceStatusPacket, GetDeviceStatusReplyPacket};

@@ -1,11 +1,11 @@
 use std::{path::PathBuf, str::FromStr};
 
-use tokio::io::{stdout, AsyncWriteExt};
+use tokio::io::{AsyncWriteExt, stdout};
 use vex_v5_serial::{
     commands::file::DownloadFile,
     connection::{
-        serial::{SerialConnection, SerialError},
         Connection,
+        serial::{SerialConnection, SerialError},
     },
     packets::file::{FileTransferTarget, FileVendor},
     string::FixedString,

@@ -5,11 +5,11 @@ use std::{
 
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{
+    Frame,
     layout::{Constraint, Flex, Layout, Rect},
     style::{Color, Style, Stylize},
     symbols::{self, border::Set},
     widgets::{Block, Borders, Paragraph},
-    Frame,
 };
 use tui_term::{
     vt100,
@@ -17,8 +17,8 @@ use tui_term::{
 };
 use vex_v5_serial::{
     connection::{
-        serial::{SerialConnection, SerialError},
         Connection,
+        serial::{SerialConnection, SerialError},
     },
     packets::{
         controller::{UserFifoPacket, UserFifoPayload, UserFifoReplyPacket},
@@ -26,7 +26,7 @@ use vex_v5_serial::{
         system::{GetSystemVersionPacket, GetSystemVersionReplyPacket, ProductType},
     },
 };
-use widgets::{set_duration_digit, HelpPopup, Mode};
+use widgets::{HelpPopup, Mode, set_duration_digit};
 
 use crate::errors::CliError;
 
@@ -422,7 +422,8 @@ pub async fn run_field_control_tui(connection: &mut SerialConnection) -> Result<
             5,
             GetSystemVersionPacket::new(()),
         )
-        .await?.payload;
+        .await?
+        .payload;
     if let ProductType::Brain = response.product_type {
         return Err(CliError::BrainConnectionSetMatchMode);
     }
