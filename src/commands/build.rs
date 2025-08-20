@@ -60,13 +60,8 @@ pub async fn build(path: &Utf8Path, opts: CargoOpts) -> miette::Result<Option<Bu
         eprintln!(" hint: this can be fixed by running `rustup override set nightly`");
         exit(1);
     }
-
     let mut explicit_target_specified = false;
     for arg in &opts.args {
-        if arg == "--" {
-            break;
-        }
-
         if arg == "--target" || arg.starts_with("--target=") {
             explicit_target_specified = true;
             break;
