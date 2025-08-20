@@ -45,9 +45,6 @@ pub struct BuildOutput {
 }
 
 pub async fn build(path: &Utf8Path, opts: CargoOpts) -> miette::Result<Option<BuildOutput>> {
-    let rustc_version_meta =
-        rustc_version::version_meta().map_err(|e| CliError::RustcVersionError(e))?;
-
     let mut build_cmd = std::process::Command::new(cargo_bin());
     build_cmd
         .current_dir(path)
@@ -55,11 +52,11 @@ pub async fn build(path: &Utf8Path, opts: CargoOpts) -> miette::Result<Option<Bu
         .arg("--message-format")
         .arg("json-render-diagnostics");
 
+
     if !is_nightly_toolchain().await {
-        eprintln!("ERROR: vexide requires Nightly Rust features, but you're using stable.");
-        eprintln!(" hint: this can be fixed by running `rustup override set nightly`");
-        exit(1);
+        return Err(CliError::UnsupportedReleaseChannel)?;
     }
+
     let mut explicit_target_specified = false;
     for arg in &opts.args {
         if arg == "--target" || arg.starts_with("--target=") {

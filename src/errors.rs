@@ -102,6 +102,16 @@ pub enum CliError {
     )]
     NoDevice,
 
+
+    #[error("cargo-v5 requires Nightly Rust features, but you're using stable.")]
+    #[diagnostic(
+        code(cargo_v5::unsupported_release_channel),
+        help(
+            "Try switching to a `nightly` release channel with `rustup override set nightly`."
+        )
+    )]
+    UnsupportedReleaseChannel,
+
     #[error("Output ELF file could not be parsed.")]
     #[diagnostic(code(cargo_v5::elf_parse_error))]
     ElfParseError(#[from] object::Error),

@@ -4,7 +4,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use fs_err::PathExt;
 use image::GenericImageView;
 use indicatif::{ProgressBar, ProgressStyle};
 use log::info;
@@ -102,7 +101,7 @@ pub async fn screenshot(connection: &mut SerialConnection) -> Result<(), CliErro
 
     info!(
         "Saved screenshot to {}",
-        path.fs_err_canonicalize()?.display()
+        path.canonicalize()?.display()
     );
 
     Ok(())
