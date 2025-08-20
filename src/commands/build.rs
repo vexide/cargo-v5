@@ -1,16 +1,13 @@
 use object::{Object, ObjectSection, ObjectSegment};
 use std::process::{Stdio, exit};
 use tokio::{process::Command, task::block_in_place};
-
+use clap::Args;
 use cargo_metadata::{
     Message, PackageId,
     camino::{Utf8Path, Utf8PathBuf},
 };
-use clap::Args;
 
 use crate::errors::CliError;
-
-pub const TARGET_PATH: &str = "armv7a-vex-v5.json";
 
 /// Common Cargo options to forward.
 #[derive(Args, Debug)]
