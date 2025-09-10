@@ -18,13 +18,11 @@ Before releasing:
 
 ### Added
 
-- Added self-update command which downloads the latest version of cargo-v5
+- Added `self-update` command which downloads the latest version of cargo-v5.
 
 ### Fixed
 
-### Changed
-
-### Removed
+- Fixed builds for `rustc` versions 1.91.0 and above, which made a [breaking change](https://github.com/rust-lang/rust/pull/144443) to the custom target spec JSON schema.
 
 ## [0.4.0]
 
