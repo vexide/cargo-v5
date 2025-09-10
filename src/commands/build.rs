@@ -82,9 +82,7 @@ pub async fn build(path: &Utf8Path, opts: CargoOpts) -> miette::Result<Option<Bu
             for message in Message::parse_stream(reader) {
                 if let Message::CompilerArtifact(artifact) = message? {
                     if let Some(elf_artifact_path) = artifact.executable {
-                        let elf_data = std::fs::read(&elf_artifact_path)?;
-                        let elf = object::File::parse(elf_data.as_slice())?;
-                        let binary = objcopy(elf)?;
+                        let binary = objcopy(&std::fs::read(&elf_artifact_path)?)?;
                         let binary_path = elf_artifact_path.with_extension("bin");
 
                         // Write the binary to a file.
@@ -111,7 +109,9 @@ pub async fn build(path: &Utf8Path, opts: CargoOpts) -> miette::Result<Option<Bu
 }
 
 /// Implementation of `objcopy -O binary`.
-pub fn objcopy(elf: object::File<'_>) -> Result<Vec<u8>, CliError> {
+pub fn objcopy(elf: &[u8]) -> Result<Vec<u8>, CliError> {
+    let elf = object::File::parse(elf)?; // parse ELF file
+
     // First we need to find the loadable sections of the program
     // (the parts of the ELF that will be actually loaded into memory)
     let mut loadable_sections = elf
