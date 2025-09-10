@@ -63,6 +63,7 @@ serde_ini = "0.2.0"
 axoupdater = { version = "0.9.0", default-features = false, features = [
     "github_releases",
 ] }
+rustc_version = "0.4.1"
 
 [features]
 default = ["clap", "fetch-template"]

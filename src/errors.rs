@@ -148,4 +148,8 @@ pub enum CliError {
         help("Try running a cold upload using `cargo v5 upload --cold`.")
     )]
     PatchTooLarge(usize),
+
+    #[error(transparent)]
+    #[diagnostic(code(cargo_v5::rustc_version_error))]
+    RustcVersionError(#[from] rustc_version::Error),
 }
