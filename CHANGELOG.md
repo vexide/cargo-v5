@@ -44,6 +44,6 @@ Before releasing:
 
 ### Removed
 
-[0.11.0]: https://github.com/pros-rs/vexide/compare/v0.4.0..main
-[0.4.0]: https://github.com/pros-rs/vexide/compare/v0.3.0..v0.4.0
-[0.3.0]: https://github.com/pros-rs/vexide/releases/tag/v0.3.0
+[0.11.0]: https://github.com/vexide/cargo-v5/compare/v0.4.0..v0.11.0
+[0.4.0]: https://github.com/vexide/cargo-v5/compare/v0.3.0..v0.4.0
+[0.3.0]: https://github.com/vexide/cargo-v5/releases/tag/v0.3.0
