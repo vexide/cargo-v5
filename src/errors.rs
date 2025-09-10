@@ -107,7 +107,7 @@ pub enum CliError {
     #[diagnostic(
         code(cargo_v5::unsupported_release_channel),
         help(
-            "Try switching to a `nightly` release channel with `rustup override set nightly`."
+            "Try switching to a nightly release channel with `rustup override set nightly`."
         )
     )]
     UnsupportedReleaseChannel,

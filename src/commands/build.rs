@@ -1,11 +1,11 @@
-use object::{Object, ObjectSection, ObjectSegment};
-use std::process::{Stdio, exit};
-use tokio::{process::Command, task::block_in_place};
-use clap::Args;
 use cargo_metadata::{
     Message, PackageId,
     camino::{Utf8Path, Utf8PathBuf},
 };
+use clap::Args;
+use object::{Object, ObjectSection, ObjectSegment};
+use std::process::{Stdio, exit};
+use tokio::{process::Command, task::block_in_place};
 
 use crate::errors::CliError;
 
@@ -25,7 +25,7 @@ pub fn cargo_bin() -> std::ffi::OsString {
     std::env::var_os("CARGO").unwrap_or_else(|| "cargo".to_owned().into())
 }
 
-async fn is_nightly_toolchain() -> bool {
+async fn is_supported_release_channel() -> bool {
     let rustc = Command::new("rustc")
         .arg("--version")
         .output()
@@ -42,17 +42,16 @@ pub struct BuildOutput {
 }
 
 pub async fn build(path: &Utf8Path, opts: CargoOpts) -> miette::Result<Option<BuildOutput>> {
+    if !is_supported_release_channel().await {
+        return Err(CliError::UnsupportedReleaseChannel)?;
+    }
+
     let mut build_cmd = std::process::Command::new(cargo_bin());
     build_cmd
         .current_dir(path)
         .arg("build")
         .arg("--message-format")
         .arg("json-render-diagnostics");
-
-
-    if !is_nightly_toolchain().await {
-        return Err(CliError::UnsupportedReleaseChannel)?;
-    }
 
     let mut explicit_target_specified = false;
     for arg in &opts.args {
@@ -83,7 +82,9 @@ pub async fn build(path: &Utf8Path, opts: CargoOpts) -> miette::Result<Option<Bu
             for message in Message::parse_stream(reader) {
                 if let Message::CompilerArtifact(artifact) = message? {
                     if let Some(elf_artifact_path) = artifact.executable {
-                        let binary = objcopy(&std::fs::read(&elf_artifact_path)?)?;
+                        let elf_data = std::fs::read(&elf_artifact_path)?;
+                        let elf = object::File::parse(elf_data.as_slice())?;
+                        let binary = objcopy(elf)?;
                         let binary_path = elf_artifact_path.with_extension("bin");
 
                         // Write the binary to a file.
@@ -110,9 +111,7 @@ pub async fn build(path: &Utf8Path, opts: CargoOpts) -> miette::Result<Option<Bu
 }
 
 /// Implementation of `objcopy -O binary`.
-pub fn objcopy(elf: &[u8]) -> Result<Vec<u8>, CliError> {
-    let elf = object::File::parse(elf)?; // parse ELF file
-
+pub fn objcopy(elf: object::File<'_>) -> Result<Vec<u8>, CliError> {
     // First we need to find the loadable sections of the program
     // (the parts of the ELF that will be actually loaded into memory)
     let mut loadable_sections = elf
