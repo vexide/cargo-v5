@@ -320,29 +320,30 @@ pub async fn upload_program(
             };
 
             let needs_cold_upload = cold
-                || if let Some(base) = base.as_mut() {
-                    if let Some(brain_metadata) = brain_file_metadata(
+                || 'check: {
+                    let Some(base) = base.as_mut() else {
+                        break 'check true;
+                    };
+
+                    let Some(brain_metadata) = brain_file_metadata(
                         connection,
                         FixedString::new(base_file_name.clone()).unwrap(),
                         FileVendor::User,
                     )
                     .await?
-                    {
-                        if base.len() >= 4 {
-                            let crc_metadata = u32::from_le_bytes(
-                                base.split_off(base.len() - 4).try_into().unwrap(),
-                            );
+                    else {
+                        break 'check true;
+                    };
 
-                            // last four bytes of base file contain the crc32 at time of upload
-                            brain_metadata.crc32 != crc_metadata
-                        } else {
-                            true
-                        }
+                    if base.len() >= 4 {
+                        let crc_metadata =
+                            u32::from_le_bytes(base.split_off(base.len() - 4).try_into().unwrap());
+
+                        // last four bytes of base file contain the crc32 at time of upload
+                        brain_metadata.crc32 != crc_metadata
                     } else {
                         true
                     }
-                } else {
-                    true
                 };
 
             if !needs_cold_upload {
@@ -640,28 +641,17 @@ pub async fn upload(
 
     // Find which package we're being built from, if we're being built from a package at all.
     let package = cargo_metadata.and_then(|metadata| {
-        metadata
-            .packages
-            .iter()
-            .find(|p| {
-                if let Some(package_id) = package_id.as_ref() {
-                    &p.id == package_id
-                } else {
-                    false
-                }
-            })
+        package_id
+            .as_ref()
+            .and_then(|id| metadata.packages.iter().find(|p| &p.id == id))
+            .or_else(|| metadata.packages.first())
             .cloned()
-            .or(metadata.packages.first().cloned())
     });
 
     // Uploading has the option to use the `package.metadata.v5` table for default configuration options.
     // Attempt to serialize `package.metadata.v5` into a [`Metadata`] struct. This will just Default::default to
     // all `None`s if it can't find a specific field, or error if the field is malformed.
-    let metadata = if let Some(ref package) = package {
-        Some(Metadata::new(package)?)
-    } else {
-        None
-    };
+    let metadata = package.as_ref().map(Metadata::new).transpose()?;
 
     // Wait for the serial port to finish opening.
     let mut connection = connection_task.await.unwrap()?;
