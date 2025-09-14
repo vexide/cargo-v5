@@ -7,13 +7,11 @@ use vex_v5_serial::{
         serial::{self, SerialConnection, SerialError},
     },
     packets::{
-        radio::{
-            GetRadioStatusPacket, GetRadioStatusReplyPacket, RadioChannel,
-            SelectRadioChannelPacket, SelectRadioChannelPayload, SelectRadioChannelReplyPacket,
-        },
+        device::{RadioStatusPacket, RadioStatusReplyPacket},
+        file::{FileControlGroup, FileControlPacket, FileControlReplyPacket, RadioChannel},
         system::{
-            GetSystemFlagsPacket, GetSystemFlagsReplyPacket, GetSystemVersionPacket,
-            GetSystemVersionReplyPacket, ProductType,
+            ProductType, SystemFlagsPacket, SystemFlagsReplyPacket, SystemVersionPacket,
+            SystemVersionReplyPacket,
         },
     },
 };
@@ -38,20 +36,20 @@ pub async fn open_connection() -> miette::Result<SerialConnection> {
 
 async fn is_connection_wireless(connection: &mut SerialConnection) -> Result<bool, CliError> {
     let version = connection
-        .packet_handshake::<GetSystemVersionReplyPacket>(
+        .handshake::<SystemVersionReplyPacket>(
             Duration::from_millis(500),
             1,
-            GetSystemVersionPacket::new(()),
+            SystemVersionPacket::new(()),
         )
         .await?;
     let system_flags = connection
-        .packet_handshake::<GetSystemFlagsReplyPacket>(
+        .handshake::<SystemFlagsReplyPacket>(
             Duration::from_millis(500),
             1,
-            GetSystemFlagsPacket::new(()),
+            SystemFlagsPacket::new(()),
         )
         .await?
-        .try_into_inner()?;
+        .payload?;
     let controller = matches!(version.payload.product_type, ProductType::Controller);
 
     let tethered = system_flags.flags & (1 << 8) != 0;
@@ -63,13 +61,9 @@ pub async fn switch_radio_channel(
     channel: RadioChannel,
 ) -> Result<(), CliError> {
     let radio_status = connection
-        .packet_handshake::<GetRadioStatusReplyPacket>(
-            Duration::from_secs(2),
-            3,
-            GetRadioStatusPacket::new(()),
-        )
+        .handshake::<RadioStatusReplyPacket>(Duration::from_secs(2), 3, RadioStatusPacket::new(()))
         .await?
-        .try_into_inner()?;
+        .payload?;
 
     log::debug!("Radio channel: {}", radio_status.channel);
 
@@ -77,7 +71,7 @@ pub async fn switch_radio_channel(
     // TODO: Make this also detect the bluetooth radio channel
     if (radio_status.channel == 5 && channel == RadioChannel::Download)
         || (radio_status.channel == 31 && channel == RadioChannel::Pit)
-        || (radio_status.channel == -11)
+        || (radio_status.channel == 245)
     {
         return Ok(());
     }
@@ -92,13 +86,13 @@ pub async fn switch_radio_channel(
 
         // Tell the controller to switch to the download channel.
         connection
-            .packet_handshake::<SelectRadioChannelReplyPacket>(
+            .handshake::<FileControlReplyPacket>(
                 Duration::from_secs(2),
                 3,
-                SelectRadioChannelPacket::new(SelectRadioChannelPayload { channel }),
+                FileControlPacket::new(FileControlGroup::Radio(channel)),
             )
             .await?
-            .try_into_inner()?;
+            .payload?;
 
         // Wait for the controller to disconnect by spamming it with a packet and waiting until that packet
         // doesn't go through. This indicates that the radio has actually started to switch channels.
@@ -108,10 +102,10 @@ pub async fn switch_radio_channel(
             }
             _ = async {
                 while connection
-                    .packet_handshake::<GetRadioStatusReplyPacket>(
+                    .handshake::<RadioStatusReplyPacket>(
                         Duration::from_millis(250),
                         1,
-                        GetRadioStatusPacket::new(())
+                        RadioStatusPacket::new(())
                     )
                     .await
                     .is_ok()
@@ -127,10 +121,10 @@ pub async fn switch_radio_channel(
         //
         // If the controller doesn't a reply within 8 seconds, it hasn't reconnected correctly.
         connection
-            .packet_handshake::<GetRadioStatusReplyPacket>(
+            .handshake::<RadioStatusReplyPacket>(
                 Duration::from_millis(250),
                 32,
-                GetRadioStatusPacket::new(()),
+                RadioStatusPacket::new(()),
             )
             .await
             .map_err(|err| match err {

@@ -1,19 +1,14 @@
 use chrono::{TimeZone, Utc};
 use std::io::{self, Write};
 use std::time::Duration;
-use vex_v5_serial::packets::factory::{
-    FactoryEnablePacket, FactoryEnablePayload, FactoryEnableReplyPacket,
-};
 
-use vex_v5_serial::packets::file::ExtensionType;
-use vex_v5_serial::timestamp::J2000_EPOCH;
-use vex_v5_serial::{
-    connection::{Connection, serial::SerialConnection},
-    packets::file::{
-        FileVendor, GetDirectoryEntryPacket, GetDirectoryEntryPayload,
-        GetDirectoryEntryReplyPacket, GetDirectoryFileCountPacket, GetDirectoryFileCountPayload,
-        GetDirectoryFileCountReplyPacket,
-    },
+use vex_v5_serial::commands::file::J2000_EPOCH;
+use vex_v5_serial::connection::{Connection, serial::SerialConnection};
+use vex_v5_serial::packets::factory::{FactoryEnablePacket, FactoryEnableReplyPacket};
+use vex_v5_serial::packets::file::{
+    DirectoryEntryPacket, DirectoryEntryPayload, DirectoryEntryReplyPacket,
+    DirectoryFileCountPacket, DirectoryFileCountPayload, DirectoryFileCountReplyPacket,
+    ExtensionType, FileVendor,
 };
 
 use humansize::{BINARY, format_size};
@@ -55,10 +50,10 @@ pub async fn dir(connection: &mut SerialConnection) -> Result<(), CliError> {
     ];
 
     connection
-        .packet_handshake::<FactoryEnableReplyPacket>(
+        .handshake::<FactoryEnableReplyPacket>(
             Duration::from_millis(500),
             1,
-            FactoryEnablePacket::new(FactoryEnablePayload::new()),
+            FactoryEnablePacket::new(FactoryEnablePacket::MAGIC),
         )
         .await
         .unwrap();
@@ -70,28 +65,28 @@ pub async fn dir(connection: &mut SerialConnection) -> Result<(), CliError> {
     .unwrap();
     for vid in USEFUL_VIDS {
         let file_count = connection
-            .packet_handshake::<GetDirectoryFileCountReplyPacket>(
+            .handshake::<DirectoryFileCountReplyPacket>(
                 Duration::from_millis(500),
                 1,
-                GetDirectoryFileCountPacket::new(GetDirectoryFileCountPayload {
+                DirectoryFileCountPacket::new(DirectoryFileCountPayload {
                     vendor: vid,
-                    option: 0,
+                    reserved: 0,
                 }),
             )
             .await?;
 
-        for n in 0..file_count.payload {
+        for n in 0..file_count.payload? {
             if let Some(entry) = connection
-                .packet_handshake::<GetDirectoryEntryReplyPacket>(
+                .handshake::<DirectoryEntryReplyPacket>(
                     Duration::from_millis(500),
                     1,
-                    GetDirectoryEntryPacket::new(GetDirectoryEntryPayload {
+                    DirectoryEntryPacket::new(DirectoryEntryPayload {
                         file_index: n as u8,
-                        unknown: 0,
+                        reserved: 0,
                     }),
                 )
                 .await?
-                .payload
+                .payload?
             {
                 writeln!(
                     &mut tw,

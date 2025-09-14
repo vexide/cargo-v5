@@ -1,4 +1,3 @@
-use cargo_metadata::camino::Utf8PathBuf;
 use log::{debug, info, warn};
 use serde_json::Value;
 
@@ -96,7 +95,7 @@ fn baked_in_template() -> Template {
     }
 }
 
-fn unpack_template(template: Vec<u8>, dir: &Utf8PathBuf) -> io::Result<()> {
+fn unpack_template(template: Vec<u8>, dir: &PathBuf) -> io::Result<()> {
     let mut archive: tar::Archive<flate2::read::GzDecoder<&[u8]>> =
         tar::Archive::new(flate2::read::GzDecoder::new(&template[..]));
     for entry in archive.entries()? {
@@ -119,7 +118,7 @@ fn unpack_template(template: Vec<u8>, dir: &Utf8PathBuf) -> io::Result<()> {
 }
 
 pub async fn new(
-    path: Utf8PathBuf,
+    path: PathBuf,
     name: Option<String>,
     download_template: bool,
 ) -> Result<(), CliError> {
@@ -132,7 +131,7 @@ pub async fn new(
     };
 
     if std::fs::read_dir(&dir).is_ok_and(|e| e.count() > 0) {
-        return Err(CliError::ProjectDirFull(dir.into_string()));
+        return Err(CliError::ProjectDirFull(dir));
     }
 
     let name = name

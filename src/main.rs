@@ -3,7 +3,6 @@ use core::panic;
 use std::time::Duration;
 use std::{env, num::NonZeroU32, path::PathBuf};
 
-use cargo_metadata::camino::Utf8PathBuf;
 #[cfg(feature = "field-control")]
 use cargo_v5::{commands::field_control::run_field_control_tui, errors::CliError};
 use cargo_v5::{
@@ -29,9 +28,8 @@ use flexi_logger::{AdaptiveFormat, FileSpec, LogfileSelector, LoggerHandle};
 use vex_v5_serial::connection::serial::{self, SerialConnection, SerialDevice};
 use vex_v5_serial::{
     connection::Connection,
-    packets::{
-        file::{FileLoadAction, FileVendor, LoadFileActionPacket, LoadFileActionPayload},
-        radio::RadioChannel,
+    packets::file::{
+        FileLoadAction, FileLoadActionPacket, FileLoadActionPayload, FileVendor, RadioChannel,
     },
     string::FixedString,
 };
@@ -49,7 +47,7 @@ enum Cargo {
         command: Command,
 
         #[arg(long, default_value = ".", global = true)]
-        path: Utf8PathBuf,
+        path: PathBuf,
     },
 }
 
@@ -160,7 +158,7 @@ async fn main() -> miette::Result<()> {
     Ok(())
 }
 
-async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> miette::Result<()> {
+async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miette::Result<()> {
     match command {
         Command::Build { cargo_opts } => {
             build(&path, cargo_opts).await?;
@@ -184,11 +182,11 @@ async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> 
                     //
                     // Don't bother waiting for a response, since the brain could
                     // be locked up and prevent the program from exiting.
-                    _ = connection.send_packet(
-                        LoadFileActionPacket::new(LoadFileActionPayload {
+                    _ = connection.send(
+                        FileLoadActionPacket::new(FileLoadActionPayload {
                             vendor: FileVendor::User,
                             action: FileLoadAction::Stop,
-                            file_name: FixedString::new(Default::default()).unwrap(),
+                            file_name: FixedString::default(),
                         })
                     ).await;
 

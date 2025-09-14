@@ -1,10 +1,10 @@
-use cargo_metadata::{
-    Message, PackageId,
-    camino::{Utf8Path, Utf8PathBuf},
-};
+use cargo_metadata::{Message, PackageId};
 use clap::Args;
 use object::{Object, ObjectSection, ObjectSegment};
-use std::process::{Stdio, exit};
+use std::{
+    path::{Path, PathBuf},
+    process::{Stdio, exit},
+};
 use tokio::{process::Command, task::block_in_place};
 
 use crate::errors::CliError;
@@ -26,7 +26,7 @@ pub fn cargo_bin() -> std::ffi::OsString {
 }
 
 async fn is_supported_release_channel() -> bool {
-    let rustc = Command::new("rustc")
+    let rustc = Command::new("cargo")
         .arg("--version")
         .output()
         .await
@@ -36,12 +36,12 @@ async fn is_supported_release_channel() -> bool {
 }
 
 pub struct BuildOutput {
-    pub elf_artifact: Utf8PathBuf,
-    pub bin_artifact: Utf8PathBuf,
+    pub elf_artifact: PathBuf,
+    pub bin_artifact: PathBuf,
     pub package_id: PackageId,
 }
 
-pub async fn build(path: &Utf8Path, opts: CargoOpts) -> miette::Result<Option<BuildOutput>> {
+pub async fn build(path: &Path, opts: CargoOpts) -> miette::Result<Option<BuildOutput>> {
     if !is_supported_release_channel().await {
         return Err(CliError::UnsupportedReleaseChannel)?;
     }
@@ -49,6 +49,7 @@ pub async fn build(path: &Utf8Path, opts: CargoOpts) -> miette::Result<Option<Bu
     let mut build_cmd = std::process::Command::new(cargo_bin());
     build_cmd
         .current_dir(path)
+        .stdout(Stdio::piped())
         .arg("build")
         .arg("--message-format")
         .arg("json-render-diagnostics");
@@ -64,11 +65,6 @@ pub async fn build(path: &Utf8Path, opts: CargoOpts) -> miette::Result<Option<Bu
     if !explicit_target_specified {
         build_cmd.arg("--target").arg("armv7a-vex-v5");
     }
-
-    build_cmd
-        .arg("-Zbuild-std=core,alloc,compiler_builtins")
-        .arg("-Zbuild-std-features=compiler-builtins-mem")
-        .stdout(Stdio::piped());
 
     build_cmd.args(opts.args);
 
@@ -90,8 +86,8 @@ pub async fn build(path: &Utf8Path, opts: CargoOpts) -> miette::Result<Option<Bu
                         println!("     \x1b[1;92mObjcopy\x1b[0m {binary_path}");
 
                         output = Some(BuildOutput {
-                            bin_artifact: binary_path,
-                            elf_artifact: elf_artifact_path,
+                            bin_artifact: binary_path.into_std_path_buf(),
+                            elf_artifact: elf_artifact_path.into_std_path_buf(),
                             package_id: artifact.package_id,
                         });
                     }

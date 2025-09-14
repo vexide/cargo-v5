@@ -12,8 +12,8 @@ use vex_v5_serial::{
     commands::file::DownloadFile,
     connection::{Connection, serial::SerialConnection},
     packets::{
-        capture::{ScreenCapturePacket, ScreenCaptureReplyPacket},
         file::{FileTransferTarget, FileVendor},
+        screen::{ScreenCapturePacket, ScreenCapturePayload, ScreenCaptureReplyPacket},
     },
     string::FixedString,
 };
@@ -38,21 +38,21 @@ pub async fn screenshot(connection: &mut SerialConnection) -> Result<(), CliErro
 
     // Tell the brain we want to take a screenshot
     connection
-        .packet_handshake::<ScreenCaptureReplyPacket>(
+        .handshake::<ScreenCaptureReplyPacket>(
             Duration::from_millis(100),
             5,
-            ScreenCapturePacket::new(()),
+            ScreenCapturePacket::new(ScreenCapturePayload { layer: None }),
         )
         .await?
-        .try_into_inner()?;
+        .payload?;
 
     // Grab the image data
     let cap = connection
         .execute_command(DownloadFile {
             file_name: FixedString::new("screen".to_string()).unwrap(),
             vendor: FileVendor::Sys,
-            target: Some(FileTransferTarget::Cbuf),
-            load_addr: 0,
+            target: FileTransferTarget::Cbuf,
+            address: 0,
             size: 512 * 272 * 4,
             progress_callback: Some({
                 let progress = progress.clone();
@@ -99,10 +99,7 @@ pub async fn screenshot(connection: &mut SerialConnection) -> Result<(), CliErro
         .to_image()
         .save(path)?;
 
-    info!(
-        "Saved screenshot to {}",
-        path.canonicalize()?.display()
-    );
+    info!("Saved screenshot to {}", path.canonicalize()?.display());
 
     Ok(())
 }

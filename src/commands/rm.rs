@@ -6,8 +6,8 @@ use vex_v5_serial::{
         serial::{SerialConnection, SerialError},
     },
     packets::file::{
-        EraseFilePacket, EraseFilePayload, EraseFileReplyPacket, ExitFileTransferPacket,
-        ExitFileTransferReplyPacket, FileExitAction,
+        FileErasePacket, FileErasePayload, FileEraseReplyPacket, FileExitAction,
+        FileTransferExitPacket, FileTransferExitReplyPacket,
     },
     string::FixedString,
 };
@@ -24,29 +24,29 @@ pub async fn rm(connection: &mut SerialConnection, file: PathBuf) -> Result<(), 
     });
 
     let file_name = FixedString::from_str(file.file_name().unwrap_or_default().to_str().unwrap())
-        .map_err(|err| CliError::SerialError(SerialError::EncodeError(err)))?;
+        .map_err(|err| CliError::SerialError(SerialError::FixedStringSizeError(err)))?;
 
     connection
-        .packet_handshake::<EraseFileReplyPacket>(
+        .handshake::<FileEraseReplyPacket>(
             Duration::from_millis(500),
             1,
-            EraseFilePacket::new(EraseFilePayload {
+            FileErasePacket::new(FileErasePayload {
                 vendor,
-                option: 0,
+                reserved: 0,
                 file_name,
             }),
         )
         .await?
-        .try_into_inner()?;
+        .payload?;
 
     connection
-        .packet_handshake::<ExitFileTransferReplyPacket>(
+        .handshake::<FileTransferExitReplyPacket>(
             Duration::from_millis(500),
             1,
-            ExitFileTransferPacket::new(FileExitAction::DoNothing),
+            FileTransferExitPacket::new(FileExitAction::DoNothing),
         )
         .await?
-        .try_into_inner()?;
+        .payload?;
 
     Ok(())
 }

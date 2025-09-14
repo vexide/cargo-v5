@@ -4,7 +4,7 @@ use std::time::Duration;
 use vex_v5_serial::connection::{Connection, serial::SerialConnection};
 
 use tabwriter::TabWriter;
-use vex_v5_serial::packets::device::{GetDeviceStatusPacket, GetDeviceStatusReplyPacket};
+use vex_v5_serial::packets::device::{DeviceStatusPacket, DeviceStatusReplyPacket};
 
 use crate::errors::CliError;
 
@@ -12,13 +12,13 @@ pub async fn devices(connection: &mut SerialConnection) -> Result<(), CliError> 
     let mut tw = TabWriter::new(io::stdout());
 
     let status = connection
-        .packet_handshake::<GetDeviceStatusReplyPacket>(
+        .handshake::<DeviceStatusReplyPacket>(
             Duration::from_millis(500),
             10,
-            GetDeviceStatusPacket::new(()),
+            DeviceStatusPacket::new(()),
         )
         .await?
-        .try_into_inner()?;
+        .payload?;
     writeln!(
         &mut tw,
         "\x1B[1mPort\tType\tStatus\tFirmware\tBootloader\x1B[0m"

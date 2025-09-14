@@ -1,4 +1,3 @@
-use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use clap::{Args, ValueEnum};
 use flate2::{Compression, GzBuilder};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -9,14 +8,13 @@ use inquire::{
 use tokio::{fs::File, io::AsyncWriteExt, spawn, sync::Mutex, task::block_in_place, time::Instant};
 
 use std::{
-    io::{ErrorKind, Write},
-    sync::Arc,
-    time::Duration,
+    ffi::OsStr, io::{ErrorKind, Write}, path::{Path, PathBuf}, sync::Arc, time::Duration
 };
 
 use vex_v5_serial::{
     commands::file::{
         LinkedFile, Program, ProgramIniConfig, Project, USER_PROGRAM_LOAD_ADDR, UploadFile,
+        j2000_timestamp,
     },
     connection::{
         Connection,
@@ -26,13 +24,12 @@ use vex_v5_serial::{
     packets::{
         cdc2::Cdc2Ack,
         file::{
-            ExtensionType, FileExitAction, FileMetadata, FileVendor, GetFileMetadataPacket,
-            GetFileMetadataPayload, GetFileMetadataReplyPacket, GetFileMetadataReplyPayload,
+            ExtensionType, FileExitAction, FileMetadata, FileMetadataPacket, FileMetadataPayload,
+            FileMetadataReplyPacket, FileMetadataReplyPayload, FileTransferTarget, FileVendor,
+            RadioChannel,
         },
-        radio::RadioChannel,
     },
     string::FixedString,
-    timestamp::j2000_timestamp,
     version::Version,
 };
 
@@ -69,7 +66,7 @@ pub struct UploadOpts {
 
     /// An build artifact to upload (either an ELF or BIN).
     #[arg(long)]
-    pub file: Option<Utf8PathBuf>,
+    pub file: Option<PathBuf>,
 
     /// Method to use when uploading binaries.
     #[arg(long)]
@@ -162,7 +159,7 @@ const DIFFERENTIAL_UPLOAD_MAX_SIZE: usize = 0x200000;
 /// Upload a program to the brain.
 pub async fn upload_program(
     connection: &mut SerialConnection,
-    path: &Utf8Path,
+    path: &Path,
     after: AfterUpload,
     slot: u8,
     name: String,
@@ -220,7 +217,7 @@ pub async fn upload_program(
 
         connection
             .execute_command(UploadFile {
-                filename: FixedString::new(ini_file_name).unwrap(),
+                file_name: FixedString::new(ini_file_name).unwrap(),
                 metadata: FileMetadata {
                     extension: FixedString::new("ini".to_string()).unwrap(),
                     extension_type: ExtensionType::default(),
@@ -232,10 +229,10 @@ pub async fn upload_program(
                         beta: 0,
                     },
                 },
-                vendor: None,
+                vendor: FileVendor::User,
                 data: ini_data,
-                target: None,
-                load_addr: USER_PROGRAM_LOAD_ADDR,
+                target: FileTransferTarget::Qspi,
+                load_address: USER_PROGRAM_LOAD_ADDR,
                 linked_file: None,
                 after_upload: FileExitAction::DoNothing,
                 progress_callback: Some(build_progress_callback(
@@ -270,7 +267,7 @@ pub async fn upload_program(
             // Upload the program.
             connection
                 .execute_command(UploadFile {
-                    filename: FixedString::new(slot_file_name.clone()).unwrap(),
+                    file_name: FixedString::new(slot_file_name.clone()).unwrap(),
                     metadata: FileMetadata {
                         extension: FixedString::new("bin".to_string()).unwrap(),
                         extension_type: ExtensionType::default(),
@@ -282,7 +279,7 @@ pub async fn upload_program(
                             beta: 0,
                         },
                     },
-                    vendor: Some(FileVendor::User),
+                    vendor: FileVendor::User,
                     data: {
                         let mut data = tokio::fs::read(path).await?;
 
@@ -292,8 +289,8 @@ pub async fn upload_program(
 
                         data
                     },
-                    target: None,
-                    load_addr: USER_PROGRAM_LOAD_ADDR,
+                    target: FileTransferTarget::Qspi,
+                    load_address: USER_PROGRAM_LOAD_ADDR,
                     linked_file: None,
                     after_upload: match after {
                         AfterUpload::None => FileExitAction::DoNothing,
@@ -380,7 +377,7 @@ pub async fn upload_program(
 
                 connection
                     .execute_command(UploadFile {
-                        filename: FixedString::new(slot_file_name.clone()).unwrap(),
+                        file_name: FixedString::new(slot_file_name.clone()).unwrap(),
                         metadata: FileMetadata {
                             extension: FixedString::new("bin".to_string()).unwrap(),
                             extension_type: ExtensionType::default(),
@@ -392,13 +389,13 @@ pub async fn upload_program(
                                 beta: 0,
                             },
                         },
-                        vendor: Some(FileVendor::User),
+                        vendor: FileVendor::User,
                         data: patch,
-                        target: None,
-                        load_addr: 0x07A00000,
+                        target: FileTransferTarget::Qspi,
+                        load_address: 0x07A00000,
                         linked_file: Some(LinkedFile {
-                            filename: FixedString::new(base_file_name.clone()).unwrap(),
-                            vendor: Some(FileVendor::User),
+                            file_name: FixedString::new(base_file_name.clone()).unwrap(),
+                            vendor: FileVendor::User,
                         }),
                         after_upload: match after {
                             AfterUpload::None => FileExitAction::DoNothing,
@@ -439,7 +436,7 @@ pub async fn upload_program(
 
                 connection
                     .execute_command(UploadFile {
-                        filename: FixedString::new(base_file_name.clone()).unwrap(),
+                        file_name: FixedString::new(base_file_name.clone()).unwrap(),
                         metadata: FileMetadata {
                             extension: FixedString::new("bin".to_string()).unwrap(),
                             extension_type: ExtensionType::default(),
@@ -451,7 +448,7 @@ pub async fn upload_program(
                                 beta: 0,
                             },
                         },
-                        vendor: Some(FileVendor::User),
+                        vendor: FileVendor::User,
                         data: {
                             let mut base_file =
                                 File::create(path.with_file_name(&base_file_name)).await?;
@@ -467,8 +464,8 @@ pub async fn upload_program(
 
                             base_data
                         },
-                        target: None,
-                        load_addr: USER_PROGRAM_LOAD_ADDR,
+                        target: FileTransferTarget::Qspi,
+                        load_address: USER_PROGRAM_LOAD_ADDR,
                         linked_file: None,
                         after_upload: FileExitAction::DoNothing,
                         progress_callback: Some(build_progress_callback(
@@ -481,7 +478,7 @@ pub async fn upload_program(
 
                 connection
                     .execute_command(UploadFile {
-                        filename: FixedString::new(slot_file_name.clone()).unwrap(),
+                        file_name: FixedString::new(slot_file_name.clone()).unwrap(),
                         metadata: FileMetadata {
                             extension: FixedString::new("bin".to_string()).unwrap(),
                             extension_type: ExtensionType::default(),
@@ -493,13 +490,13 @@ pub async fn upload_program(
                                 beta: 0,
                             },
                         },
-                        vendor: Some(FileVendor::User),
+                        vendor: FileVendor::User,
                         data: u32::to_le_bytes(0xB2DF).to_vec(),
-                        target: None,
-                        load_addr: 0x07A00000,
+                        target: FileTransferTarget::Qspi,
+                        load_address: 0x07A00000,
                         linked_file: Some(LinkedFile {
-                            filename: FixedString::new(base_file_name).unwrap(),
-                            vendor: Some(FileVendor::User),
+                            file_name: FixedString::new(base_file_name).unwrap(),
+                            vendor: FileVendor::User,
                         }),
                         after_upload: match after {
                             AfterUpload::None => FileExitAction::DoNothing,
@@ -538,26 +535,23 @@ async fn brain_file_metadata(
     connection: &mut SerialConnection,
     file_name: FixedString<23>,
     vendor: FileVendor,
-) -> Result<Option<GetFileMetadataReplyPayload>, SerialError> {
+) -> Result<Option<FileMetadataReplyPayload>, SerialError> {
     let reply = connection
-        .packet_handshake::<GetFileMetadataReplyPacket>(
+        .handshake::<FileMetadataReplyPacket>(
             Duration::from_millis(1000),
             2,
-            GetFileMetadataPacket::new(GetFileMetadataPayload {
+            FileMetadataPacket::new(FileMetadataPayload {
                 vendor,
-                option: 0,
+                reserved: 0,
                 file_name,
             }),
         )
         .await?;
-    match reply.ack {
-        Cdc2Ack::NackProgramFile => Ok(None),
-        Cdc2Ack::Ack => Ok(Some(if let Some(data) = reply.try_into_inner()? {
-            data
-        } else {
-            return Ok(None);
-        })),
-        nack => Err(SerialError::Nack(nack)),
+
+    match reply.payload {
+        Ok(payload) => Ok(payload),
+        Err(Cdc2Ack::NackProgramFile) => Ok(None),
+        Err(nack) => Err(SerialError::Nack(nack)),
     }
 }
 
@@ -585,7 +579,7 @@ fn gzip_compress(data: &mut Vec<u8>) {
 }
 
 pub async fn upload(
-    path: &Utf8Path,
+    path: &Path,
     UploadOpts {
         file,
         slot,
@@ -607,7 +601,7 @@ pub async fn upload(
     // The user either directly passed an file through the `--file` argument, or they didn't and we need to run
     // `cargo build`.
     let (artifact, package_id) = if let Some(file) = file {
-        if file.extension() == Some("bin") {
+        if file.extension() == Some(OsStr::new("bin")) {
             (file, None)
         } else {
             // If a BIN file wasn't provided, we'll attempt to objcopy it as if it were an ELF.
@@ -622,7 +616,7 @@ pub async fn upload(
             tokio::fs::write(&binary_path, binary)
                 .await
                 .map_err(|e| CliError::IoError(e))?;
-            println!("     \x1b[1;92mObjcopy\x1b[0m {}", binary_path);
+            println!("     \x1b[1;92mObjcopy\x1b[0m {}", binary_path.display());
 
             (binary_path, None)
         }

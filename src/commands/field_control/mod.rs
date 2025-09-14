@@ -37,7 +37,7 @@ async fn set_match_mode(
     match_mode: MatchMode,
 ) -> Result<(), SerialError> {
     connection
-        .packet_handshake::<SetMatchModeReplyPacket>(
+        .handshake::<SetMatchModeReplyPacket>(
             Duration::from_millis(500),
             10,
             SetMatchModePacket::new(SetMatchModePayload {
@@ -46,13 +46,13 @@ async fn set_match_mode(
             }),
         )
         .await?
-        .try_into_inner()?;
+        .payload?;
     Ok(())
 }
 
 async fn try_read_terminal(connection: &mut SerialConnection) -> Result<Vec<u8>, CliError> {
     let read = connection
-        .packet_handshake::<UserFifoReplyPacket>(
+        .handshake::<UserFifoReplyPacket>(
             Duration::from_millis(100),
             1,
             UserFifoPacket::new(UserFifoPayload {
@@ -61,7 +61,7 @@ async fn try_read_terminal(connection: &mut SerialConnection) -> Result<Vec<u8>,
             }),
         )
         .await?
-        .try_into_inner()?;
+        .payload?;
 
     let mut data = Vec::new();
     if let Some(read) = read.data {
@@ -417,7 +417,7 @@ fn handle_countdown(tui_state: &mut TuiState) -> Control {
 
 pub async fn run_field_control_tui(connection: &mut SerialConnection) -> Result<(), CliError> {
     let response = connection
-        .packet_handshake::<GetSystemVersionReplyPacket>(
+        .handshake::<GetSystemVersionReplyPacket>(
             Duration::from_millis(700),
             5,
             GetSystemVersionPacket::new(()),

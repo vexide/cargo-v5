@@ -17,7 +17,7 @@ pub async fn terminal(connection: &mut SerialConnection, logger: &mut LoggerHand
     let mut stdin = stdin();
     let mut program_output = [0; 2048];
     let mut program_input = [0; 4096];
-    
+
     loop {
         select! {
             read = connection.read_user(&mut program_output) => {

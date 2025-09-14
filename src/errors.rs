@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use humansize::{BINARY, format_size};
 use image::ImageError;
 use miette::Diagnostic;
@@ -102,13 +104,10 @@ pub enum CliError {
     )]
     NoDevice,
 
-
     #[error("cargo-v5 requires Nightly Rust features, but you're using stable.")]
     #[diagnostic(
         code(cargo_v5::unsupported_release_channel),
-        help(
-            "Try switching to a nightly release channel with `rustup override set nightly`."
-        )
+        help("Try switching to a nightly release channel with `rustup override set nightly`.")
     )]
     UnsupportedReleaseChannel,
 
@@ -159,7 +158,7 @@ pub enum CliError {
         code(cargo_v5::project_dir_full),
         help("Try creating the project in a different directory or with a different name.")
     )]
-    ProjectDirFull(String),
+    ProjectDirFull(PathBuf),
 
     #[error("Program exceeded the maximum differential upload size of 2MiB (program was {}).", format_size(*.0, BINARY))]
     #[diagnostic(
@@ -176,8 +175,4 @@ pub enum CliError {
         help("Try running a cold upload using `cargo v5 upload --cold`.")
     )]
     PatchTooLarge(usize),
-
-    #[error(transparent)]
-    #[diagnostic(code(cargo_v5::rustc_version_error))]
-    RustcVersionError(#[from] rustc_version::Error),
 }
