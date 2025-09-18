@@ -1,10 +1,8 @@
 use std::{
-    collections::{BTreeMap, HashMap},
-    fmt::Display,
-    io::{self, ErrorKind},
-    path::{absolute, Path, PathBuf},
+    borrow::Cow, collections::{BTreeMap, HashMap}, fmt::Display, io::{self, ErrorKind}, path::{absolute, Path, PathBuf}
 };
 
+use fs_err::tokio as fs;
 use miette::Diagnostic;
 use owo_colors::OwoColorize;
 use supports_color::Stream;
@@ -15,8 +13,8 @@ use syntect::{
     util::{LinesWithEndings, as_24_bit_terminal_escaped},
 };
 use thiserror::Error;
-use fs_err::tokio as fs;
-use toml_edit::{table, value, DocumentMut, Value};
+use tokio::task::JoinSet;
+use toml_edit::{DocumentMut, Value, table, value};
 
 use crate::errors::CliError;
 
@@ -37,7 +35,7 @@ pub async fn upgrade_workspace(root: &Path) -> Result<(), CliError> {
     let highlight = supports_color::on_cached(Stream::Stdout).is_some();
 
     println!();
-    println!("{}", files.display(true, highlight));
+    println!("{}", files.display(true, highlight).await);
 
     Ok(())
 }
@@ -50,7 +48,9 @@ async fn update_cargo_config(root: &Path, files: &mut FileOperationStore) -> Res
 
     // If the config file is missing, make a new one.
     let mut document = match existing_config {
-        Ok(contents) => contents.parse::<DocumentMut>().map_err(UpgradeError::from)?,
+        Ok(contents) => contents
+            .parse::<DocumentMut>()
+            .map_err(UpgradeError::from)?,
         Err(err) if err.kind() == ErrorKind::NotFound => DocumentMut::new(),
         Err(other) => return Err(other)?,
     };
@@ -58,7 +58,6 @@ async fn update_cargo_config(root: &Path, files: &mut FileOperationStore) -> Res
     let mut build = table();
     build["target"] = value("armv7a-vex-v5");
     document["build"] = build;
-
 
     let mut unstable = table();
 
@@ -70,7 +69,7 @@ async fn update_cargo_config(root: &Path, files: &mut FileOperationStore) -> Res
 
     match files.delete(root.join("armv7a-vex-v5.json")).await {
         Err(err) if err.kind() != ErrorKind::NotFound => return Err(err)?,
-        _ => {},
+        _ => {}
     }
 
     Ok(())
@@ -113,11 +112,35 @@ impl FileOperationStore {
         fs::read_to_string(path).await
     }
 
-    fn display(&self, show_contents: bool, highlight: bool) -> FileOperationsDisplay<'_> {
+    async fn display(&self, show_contents: bool, highlight: bool) -> FileOperationsDisplay<'_> {
+        let old_files = if show_contents {
+            let mut read_tasks = JoinSet::new();
+
+            for (file, change) in &self.changes {
+                if matches!(change, FileChange::Change(_)) {
+                    let file = file.clone();
+
+                    read_tasks.spawn(async move {
+                        let contents = fs::read_to_string(&file).await;
+                        (file, contents.ok())
+                    });
+                }
+            }
+
+            Some(read_tasks
+                .join_all()
+                .await
+                .into_iter()
+                .filter_map(|(path, contents)| Some((path, contents?)))
+                .collect())
+        } else {
+            None
+        };
+
         FileOperationsDisplay {
             store: self,
-            show_contents,
             highlight,
+            old_files,
         }
     }
 }
@@ -125,7 +148,8 @@ impl FileOperationStore {
 /// Prints created files, deleted files, and modified files.
 struct FileOperationsDisplay<'a> {
     store: &'a FileOperationStore,
-    show_contents: bool,
+    /// The contents of the files before the pending changes
+    old_files: Option<BTreeMap<PathBuf, String>>,
     highlight: bool,
 }
 
@@ -159,7 +183,7 @@ impl Display for FileOperationsDisplay<'_> {
             writeln!(f, " {}", path.display())?;
             writeln!(f)?;
 
-            if self.show_contents
+            if let Some(old_files) = &self.old_files
                 && let FileChange::Change(contents) = change
             {
                 let mut fmt = if self.highlight {
@@ -169,18 +193,32 @@ impl Display for FileOperationsDisplay<'_> {
                     None
                 };
 
-                for (idx, line) in LinesWithEndings::from(contents).enumerate() {
-                    // writeln!(f, "{line:?}")?;
-                    let line_num = format!("{:2}", idx + 1);
+                let left = old_files.get(path).map(Cow::from).unwrap_or_default();
+
+                for (idx, line_diff) in diff::lines(&left, contents).iter().enumerate() {
+                    let line = match line_diff {
+                        diff::Result::Left(line) => line,
+                        diff::Result::Both(line, _) => line,
+                        diff::Result::Right(line) => line,
+                    };
+                    let diff_indicator = match line_diff {
+                        diff::Result::Left(..) => format!("{}", "-".red()),
+                        diff::Result::Both(..) => " ".to_string(),
+                        diff::Result::Right(..) => format!("{}", "+".green()),
+                    };
+
+                    let prefix = format!("{:2}", idx + 1);
 
                     if let Some(fmt) = &mut fmt {
                         let ranges: Vec<(Style, &str)> = fmt.highlight_line(line, &ps).unwrap();
                         let escaped = as_24_bit_terminal_escaped(&ranges[..], false);
 
-                        write!(f, " {}  {escaped}", line_num.bright_black())?;
+                        write!(f, "{diff_indicator}  {}  {escaped}", prefix.bright_black())?;
                     } else {
-                        write!(f, " {line_num} {line}")?;
+                        write!(f, "{diff_indicator}  {prefix} {line}")?;
                     }
+
+                    writeln!(f)?;
                 }
 
                 write!(f, "\n\n")?;

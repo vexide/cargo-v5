@@ -67,6 +67,7 @@ syntect = { version = "5.2.0", default-features = false, features = ["default-sy
 supports-color = "3.0.2"
 toml_edit = "0.23.5"
 fs-err = { version = "3.1.2", features = ["tokio"] }
+diff = "0.1.13"
 
 [features]
 default = ["clap", "fetch-template"]
