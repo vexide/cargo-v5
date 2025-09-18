@@ -62,6 +62,11 @@ serde_ini = "0.2.0"
 axoupdater = { version = "0.9.0", default-features = false, features = [
     "github_releases",
 ] }
+owo-colors = "4.2.2"
+syntect = { version = "5.2.0", default-features = false, features = ["default-syntaxes", "default-themes", "regex-fancy"] }
+supports-color = "3.0.2"
+toml_edit = "0.23.5"
+fs-err = { version = "3.1.2", features = ["tokio"] }
 
 [features]
 default = ["clap", "fetch-template"]

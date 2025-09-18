@@ -4,22 +4,14 @@ use std::time::Duration;
 use std::{env, num::NonZeroU32, path::PathBuf};
 
 #[cfg(feature = "field-control")]
-use cargo_v5::{commands::field_control::run_field_control_tui, errors::CliError};
+use cargo_v5::{commands::field_control::run_field_control_tui};
 use cargo_v5::{
     commands::{
-        build::{CargoOpts, build},
-        cat::cat,
-        devices::devices,
-        dir::dir,
-        log::log,
-        new::new,
-        rm::rm,
-        screenshot::screenshot,
-        terminal::terminal,
-        upload::{AfterUpload, UploadOpts, upload},
+        build::{build, CargoOpts}, cat::cat, devices::devices, dir::dir, log::log, new::new, rm::rm, screenshot::screenshot, terminal::terminal, upgrade, upload::{upload, AfterUpload, UploadOpts}
     },
     connection::{open_connection, switch_radio_channel},
     self_update::{self, SelfUpdateMode},
+    errors::CliError,
 };
 use chrono::Utc;
 use clap::{Args, Parser, Subcommand};
@@ -115,6 +107,7 @@ enum Command {
     /// Update cargo-v5 to the latest version.
     #[clap(hide = matches!(*self_update::CURRENT_MODE, SelfUpdateMode::Unmanaged(_)))]
     SelfUpdate,
+    Upgrade,
 }
 
 #[derive(Args, Debug)]
@@ -232,6 +225,9 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
         }
         Command::SelfUpdate => {
             self_update::self_update().await?;
+        }
+        Command::Upgrade => {
+            upgrade::upgrade_workspace(&path).await.map_err(CliError::from)?;
         }
     }
 

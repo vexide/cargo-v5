@@ -10,3 +10,4 @@ pub mod rm;
 pub mod screenshot;
 pub mod terminal;
 pub mod upload;
+pub mod upgrade;

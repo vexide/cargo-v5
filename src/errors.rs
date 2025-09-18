@@ -6,6 +6,8 @@ use miette::Diagnostic;
 use thiserror::Error;
 use vex_v5_serial::packets::cdc2::Cdc2Ack;
 
+use crate::commands::upgrade::UpgradeError;
+
 #[non_exhaustive]
 #[derive(Error, Diagnostic, Debug)]
 pub enum CliError {
@@ -20,6 +22,10 @@ pub enum CliError {
     #[error(transparent)]
     #[diagnostic(code(cargo_v5::cdc2_nack))]
     Nack(#[from] Cdc2Ack),
+
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    UpgradeError(#[from] UpgradeError),
 
     #[cfg(feature = "fetch-template")]
     #[error(transparent)]
