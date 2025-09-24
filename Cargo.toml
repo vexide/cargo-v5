@@ -9,21 +9,17 @@ authors = [
     "Tropical",
 ]
 license = "MIT"
-description = "Cargo subcommand for managing V5 Brain Rust projects"
+description = "Cargo tool for working with VEX V5 Rust projects."
 homepage = "https://vexide.dev"
 repository = "https://github.com/vexide/cargo-v5"
 rust-version = "1.88" # let chains
-
-[package.metadata.v5]
-icon = "robot"
-slot = 1
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 cargo-subcommand-metadata = "0.1.0"
 cargo_metadata = "0.22.0"
-clap = { version = "4.5.40", features = ["derive"] }
+clap = { version = "4.5.40", features = ["derive"], optional = true }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 inquire = { version = "0.7.5", default-features = false, features = ["crossterm"] }
@@ -68,13 +64,15 @@ fs-err = { version = "3.1.2", features = ["tokio"] }
 diff = "0.1.13"
 
 [features]
-default = ["field-control", "fetch-template"]
+default = ["clap", "field-control", "fetch-template"]
+clap = ["dep:clap"]
 
 field-control = ["dep:ratatui", "dep:crossterm", "dep:tui-term"]
 fetch-template = ["dep:reqwest", "dep:directories"]
 
 [[bin]]
 name = "cargo-v5"
+required-features = ["clap"]
 
 # The profile that 'dist' will build with
 [profile.dist]

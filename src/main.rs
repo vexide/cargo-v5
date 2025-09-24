@@ -1,32 +1,41 @@
-use core::panic;
-#[cfg(feature = "field-control")]
-use std::time::Duration;
-use std::{env, num::NonZeroU32, path::PathBuf};
-
-#[cfg(feature = "field-control")]
-use cargo_v5::{commands::field_control::run_field_control_tui};
 use cargo_v5::{
     commands::{
-        build::{build, CargoOpts}, cat::cat, devices::devices, dir::dir, log::log, new::new, rm::rm, screenshot::screenshot, terminal::terminal, upgrade, upload::{upload, AfterUpload, UploadOpts}
+        build::{CargoOpts, build},
+        cat::cat,
+        devices::devices,
+        dir::dir,
+        log::log,
+        new::new,
+        rm::rm,
+        screenshot::screenshot,
+        terminal::terminal,
+        upgrade,
+        upload::{AfterUpload, UploadOpts, upload},
     },
     connection::{open_connection, switch_radio_channel},
-    self_update::{self, SelfUpdateMode},
     errors::CliError,
+    self_update::{self, SelfUpdateMode},
 };
 use chrono::Utc;
 use clap::{Args, Parser, Subcommand};
 use flexi_logger::{AdaptiveFormat, FileSpec, LogfileSelector, LoggerHandle};
-#[cfg(feature = "field-control")]
-use vex_v5_serial::serial::{self, SerialConnection, SerialDevice};
+use std::{env, num::NonZeroU32, panic, path::PathBuf};
 use vex_v5_serial::{
     Connection,
     protocol::{
+        FixedString,
         cdc2::file::{
             FileLoadAction, FileLoadActionPacket, FileLoadActionPayload, FileVendor, RadioChannel,
         },
-        FixedString,
     },
+    serial::{self, SerialConnection, SerialDevice},
 };
+
+#[cfg(feature = "field-control")]
+use cargo_v5::commands::field_control::run_field_control_tui;
+#[cfg(feature = "field-control")]
+use std::time::Duration;
+#[cfg(feature = "field-control")]
 
 cargo_subcommand_metadata::description!("Manage vexide projects");
 
@@ -88,9 +97,13 @@ enum Command {
     #[clap(visible_alias = "ls")]
     Dir,
     /// Read a file from flash, then write its contents to stdout.
-    Cat { file: PathBuf },
+    Cat {
+        file: PathBuf,
+    },
     /// Erase a file from flash.
-    Rm { file: PathBuf },
+    Rm {
+        file: PathBuf,
+    },
     /// Read event log.
     Log {
         #[arg(long, short, default_value = "1")]
@@ -229,7 +242,9 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
             self_update::self_update().await?;
         }
         Command::Upgrade => {
-            upgrade::upgrade_workspace(&path).await.map_err(CliError::from)?;
+            upgrade::upgrade_workspace(&path)
+                .await
+                .map_err(CliError::from)?;
         }
     }
 
