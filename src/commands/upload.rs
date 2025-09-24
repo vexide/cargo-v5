@@ -8,29 +8,28 @@ use inquire::{
 use tokio::{fs::File, io::AsyncWriteExt, spawn, sync::Mutex, task::block_in_place, time::Instant};
 
 use std::{
-    ffi::OsStr, io::{ErrorKind, Write}, path::{Path, PathBuf}, sync::Arc, time::Duration
+    ffi::OsStr,
+    io::{ErrorKind, Write},
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
 };
 
 use vex_v5_serial::{
-    commands::file::{
-        LinkedFile, Program, ProgramIniConfig, Project, USER_PROGRAM_LOAD_ADDR, UploadFile,
-        j2000_timestamp,
-    },
-    connection::{
-        Connection,
-        serial::{SerialConnection, SerialError},
-    },
-    crc::VEX_CRC32,
-    packets::{
-        cdc2::Cdc2Ack,
-        file::{
-            ExtensionType, FileExitAction, FileMetadata, FileMetadataPacket, FileMetadataPayload,
-            FileMetadataReplyPacket, FileMetadataReplyPayload, FileTransferTarget, FileVendor,
-            RadioChannel,
+    Connection,
+    commands::file::{LinkedFile, USER_PROGRAM_LOAD_ADDR, UploadFile, j2000_timestamp},
+    protocol::{
+        FixedString, VEX_CRC32, Version,
+        cdc2::{
+            Cdc2Ack,
+            file::{
+                ExtensionType, FileExitAction, FileMetadata, FileMetadataPacket,
+                FileMetadataPayload, FileMetadataReplyPacket, FileMetadataReplyPayload,
+                FileTransferTarget, FileVendor, RadioChannel,
+            },
         },
     },
-    string::FixedString,
-    version::Version,
+    serial::{SerialConnection, SerialError},
 };
 
 use crate::{
@@ -175,17 +174,21 @@ pub async fn upload_program(
     let slot_file_name = format!("slot_{}.bin", slot);
     let ini_file_name = format!("slot_{}.ini", slot);
 
-    let ini_data = serde_ini::to_vec(&ProgramIniConfig {
-        program: Program {
-            description,
-            icon: format!("USER{:03}x.bmp", icon as u16),
-            iconalt: String::new(),
-            slot: slot - 1,
-            name,
-        },
-        project: Project { ide: program_type },
-    })
-    .unwrap();
+    let ini = format!(
+        "[project]
+ide={}
+[program]
+name={}
+slot={}
+icon=USER{:03}x.bmp
+iconalt=
+description={}",
+        program_type,
+        name,
+        slot - 1,
+        icon as u16,
+        description
+    );
 
     let needs_ini_upload = if let Some(brain_metadata) = brain_file_metadata(
         connection,
@@ -194,7 +197,7 @@ pub async fn upload_program(
     )
     .await?
     {
-        brain_metadata.crc32 != VEX_CRC32.checksum(&ini_data)
+        brain_metadata.crc32 != VEX_CRC32.checksum(ini.as_bytes())
     } else {
         true
     };
@@ -230,7 +233,7 @@ pub async fn upload_program(
                     },
                 },
                 vendor: FileVendor::User,
-                data: ini_data,
+                data: ini.as_bytes(),
                 target: FileTransferTarget::Qspi,
                 load_address: USER_PROGRAM_LOAD_ADDR,
                 linked_file: None,
@@ -280,7 +283,7 @@ pub async fn upload_program(
                         },
                     },
                     vendor: FileVendor::User,
-                    data: {
+                    data: &{
                         let mut data = tokio::fs::read(path).await?;
 
                         if compress {
@@ -390,7 +393,7 @@ pub async fn upload_program(
                             },
                         },
                         vendor: FileVendor::User,
-                        data: patch,
+                        data: &patch,
                         target: FileTransferTarget::Qspi,
                         load_address: 0x07A00000,
                         linked_file: Some(LinkedFile {
@@ -462,7 +465,7 @@ pub async fn upload_program(
                                 .write_all(&VEX_CRC32.checksum(&base_data).to_le_bytes())
                                 .await?;
 
-                            base_data
+                            &base_data
                         },
                         target: FileTransferTarget::Qspi,
                         load_address: USER_PROGRAM_LOAD_ADDR,
@@ -491,7 +494,7 @@ pub async fn upload_program(
                             },
                         },
                         vendor: FileVendor::User,
-                        data: u32::to_le_bytes(0xB2DF).to_vec(),
+                        data: &u32::to_le_bytes(0xB2DF),
                         target: FileTransferTarget::Qspi,
                         load_address: 0x07A00000,
                         linked_file: Some(LinkedFile {

@@ -9,13 +9,16 @@ use indicatif::{ProgressBar, ProgressStyle};
 use log::info;
 use tokio::sync::Mutex;
 use vex_v5_serial::{
+    Connection,
     commands::file::DownloadFile,
-    connection::{Connection, serial::SerialConnection},
-    packets::{
-        file::{FileTransferTarget, FileVendor},
-        screen::{ScreenCapturePacket, ScreenCapturePayload, ScreenCaptureReplyPacket},
+    protocol::{
+        FixedString,
+        cdc2::{
+            file::{FileTransferTarget, FileVendor},
+            system::{ScreenCapturePacket, ScreenCapturePayload, ScreenCaptureReplyPacket},
+        },
     },
-    string::FixedString,
+    serial::SerialConnection,
 };
 
 use crate::errors::CliError;

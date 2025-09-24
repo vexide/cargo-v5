@@ -2,9 +2,11 @@ use std::io::{self, Write};
 use std::num::NonZeroU32;
 use std::time::Duration;
 use tabwriter::{Alignment, TabWriter};
-use vex_v5_serial::packets::system::{LogReadPacket, LogReadPayload, LogReadReplyPacket};
-
-use vex_v5_serial::connection::{Connection, serial::SerialConnection};
+use vex_v5_serial::{
+    Connection,
+    protocol::cdc2::system::{LogReadPacket, LogReadPayload, LogReadReplyPacket},
+    serial::SerialConnection,
+};
 
 use crate::errors::CliError;
 

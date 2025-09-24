@@ -1,5 +1,9 @@
 use std::{
-    borrow::Cow, collections::{BTreeMap, HashMap}, fmt::Display, io::{self, ErrorKind}, path::{absolute, Path, PathBuf}
+    borrow::Cow,
+    collections::BTreeMap,
+    fmt::Display,
+    io::{self, ErrorKind},
+    path::{Path, PathBuf, absolute},
 };
 
 use fs_err::tokio as fs;
@@ -10,7 +14,7 @@ use syntect::{
     easy::HighlightLines,
     highlighting::{Style, ThemeSet},
     parsing::SyntaxSet,
-    util::{LinesWithEndings, as_24_bit_terminal_escaped},
+    util::as_24_bit_terminal_escaped,
 };
 use thiserror::Error;
 use tokio::task::JoinSet;
@@ -127,12 +131,14 @@ impl FileOperationStore {
                 }
             }
 
-            Some(read_tasks
-                .join_all()
-                .await
-                .into_iter()
-                .filter_map(|(path, contents)| Some((path, contents?)))
-                .collect())
+            Some(
+                read_tasks
+                    .join_all()
+                    .await
+                    .into_iter()
+                    .filter_map(|(path, contents)| Some((path, contents?)))
+                    .collect(),
+            )
         } else {
             None
         };

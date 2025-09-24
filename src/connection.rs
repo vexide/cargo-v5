@@ -2,18 +2,18 @@ use log::info;
 use std::time::Duration;
 use tokio::{select, task::spawn_blocking, time::sleep};
 use vex_v5_serial::{
-    connection::{
-        Connection,
-        serial::{self, SerialConnection, SerialError},
-    },
-    packets::{
-        device::{RadioStatusPacket, RadioStatusReplyPacket},
-        file::{FileControlGroup, FileControlPacket, FileControlReplyPacket, RadioChannel},
-        system::{
-            ProductType, SystemFlagsPacket, SystemFlagsReplyPacket, SystemVersionPacket,
-            SystemVersionReplyPacket,
+    Connection,
+    protocol::{
+        cdc::{ProductType, SystemVersionPacket, SystemVersionReplyPacket},
+        cdc2::{
+            file::{FileControlGroup, FileControlPacket, FileControlReplyPacket, RadioChannel},
+            system::{
+                RadioStatusPacket, RadioStatusReplyPacket, SystemFlagsPacket,
+                SystemFlagsReplyPacket,
+            },
         },
     },
+    serial::{self, SerialConnection, SerialError},
 };
 
 use crate::errors::CliError;

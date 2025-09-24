@@ -2,13 +2,13 @@ use std::{path::PathBuf, str::FromStr};
 
 use tokio::io::{AsyncWriteExt, stdout};
 use vex_v5_serial::{
+    Connection,
     commands::file::DownloadFile,
-    connection::{
-        Connection,
-        serial::{SerialConnection, SerialError},
+    protocol::{
+        FixedString,
+        cdc2::file::{FileTransferTarget, FileVendor},
     },
-    packets::file::{FileTransferTarget, FileVendor},
-    string::FixedString,
+    serial::{SerialConnection, SerialError},
 };
 
 use crate::errors::CliError;

@@ -1,10 +1,13 @@
 use std::io::{self, Write};
 use std::time::Duration;
 
-use vex_v5_serial::connection::{Connection, serial::SerialConnection};
+use vex_v5_serial::{
+    Connection,
+    protocol::cdc2::system::{DeviceStatusPacket, DeviceStatusReplyPacket},
+    serial::SerialConnection,
+};
 
 use tabwriter::TabWriter;
-use vex_v5_serial::packets::device::{DeviceStatusPacket, DeviceStatusReplyPacket};
 
 use crate::errors::CliError;
 

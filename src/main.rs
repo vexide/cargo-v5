@@ -17,13 +17,15 @@ use chrono::Utc;
 use clap::{Args, Parser, Subcommand};
 use flexi_logger::{AdaptiveFormat, FileSpec, LogfileSelector, LoggerHandle};
 #[cfg(feature = "field-control")]
-use vex_v5_serial::connection::serial::{self, SerialConnection, SerialDevice};
+use vex_v5_serial::serial::{self, SerialConnection, SerialDevice};
 use vex_v5_serial::{
-    connection::Connection,
-    packets::file::{
-        FileLoadAction, FileLoadActionPacket, FileLoadActionPayload, FileVendor, RadioChannel,
+    Connection,
+    protocol::{
+        cdc2::file::{
+            FileLoadAction, FileLoadActionPacket, FileLoadActionPayload, FileVendor, RadioChannel,
+        },
+        FixedString,
     },
-    string::FixedString,
 };
 
 cargo_subcommand_metadata::description!("Manage vexide projects");

@@ -1,15 +1,15 @@
 use std::{path::PathBuf, str::FromStr, time::Duration};
 
 use vex_v5_serial::{
-    connection::{
-        Connection,
-        serial::{SerialConnection, SerialError},
+    Connection,
+    protocol::{
+        FixedString,
+        cdc2::file::{
+            FileErasePacket, FileErasePayload, FileEraseReplyPacket, FileExitAction,
+            FileTransferExitPacket, FileTransferExitReplyPacket,
+        },
     },
-    packets::file::{
-        FileErasePacket, FileErasePayload, FileEraseReplyPacket, FileExitAction,
-        FileTransferExitPacket, FileTransferExitReplyPacket,
-    },
-    string::FixedString,
+    serial::{SerialConnection, SerialError},
 };
 
 use crate::errors::CliError;

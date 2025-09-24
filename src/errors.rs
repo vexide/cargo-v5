@@ -4,7 +4,7 @@ use humansize::{BINARY, format_size};
 use image::ImageError;
 use miette::Diagnostic;
 use thiserror::Error;
-use vex_v5_serial::packets::cdc2::Cdc2Ack;
+use vex_v5_serial::protocol::cdc2::Cdc2Ack;
 
 use crate::commands::upgrade::UpgradeError;
 
@@ -17,7 +17,7 @@ pub enum CliError {
 
     #[error(transparent)]
     #[diagnostic(code(cargo_v5::serial_error))]
-    SerialError(#[from] vex_v5_serial::connection::serial::SerialError),
+    SerialError(#[from] vex_v5_serial::serial::SerialError),
 
     #[error(transparent)]
     #[diagnostic(code(cargo_v5::cdc2_nack))]

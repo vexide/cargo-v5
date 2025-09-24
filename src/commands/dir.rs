@@ -2,13 +2,18 @@ use chrono::{TimeZone, Utc};
 use std::io::{self, Write};
 use std::time::Duration;
 
-use vex_v5_serial::commands::file::J2000_EPOCH;
-use vex_v5_serial::connection::{Connection, serial::SerialConnection};
-use vex_v5_serial::packets::factory::{FactoryEnablePacket, FactoryEnableReplyPacket};
-use vex_v5_serial::packets::file::{
-    DirectoryEntryPacket, DirectoryEntryPayload, DirectoryEntryReplyPacket,
-    DirectoryFileCountPacket, DirectoryFileCountPayload, DirectoryFileCountReplyPacket,
-    ExtensionType, FileVendor,
+use vex_v5_serial::{
+    Connection,
+    commands::file::J2000_EPOCH,
+    protocol::cdc2::{
+        factory::{FactoryEnablePacket, FactoryEnableReplyPacket},
+        file::{
+            DirectoryEntryPacket, DirectoryEntryPayload, DirectoryEntryReplyPacket,
+            DirectoryFileCountPacket, DirectoryFileCountPayload, DirectoryFileCountReplyPacket,
+            ExtensionType, FileVendor,
+        },
+    },
+    serial::SerialConnection,
 };
 
 use humansize::{BINARY, format_size};
