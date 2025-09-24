@@ -50,22 +50,22 @@ If you wish to enable both, you can simply enable the `full` feature.
 > [!TIP]
 > Pre-built versions of cargo-v5 have all optional features enabled.
 
-#### All Features
+#### All Features (enabled by default)
 
 ```bash
-cargo install cargo-v5 --features "full"
+cargo install cargo-v5
 ```
 
 #### Specific Feature
 
 ```bash
-cargo install cargo-v5 --features "field-control"
+cargo install cargo-v5 --no-default-features --features "field-control"
 ```
 
 #### No Features
 
 ```bash
-cargo install cargo-v5
+cargo install cargo-v5 --no-default-features
 ```
 
 ## Usage

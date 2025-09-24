@@ -29,8 +29,6 @@ publish-jobs = ["homebrew"]
 install-updater = false
 # Setup extra environment variables
 github-build-setup = "../build-setup.yml"
-# Features to pass to cargo build
-features = ["full"]
 
 [dist.github-custom-runners]
 global = "ubuntu-24.04"

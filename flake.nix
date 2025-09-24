@@ -39,7 +39,6 @@
           };
           build-cargo-v5 = { features ? [ ], ... }:
             pkgs.lib.checkListOfEnum "cargo-v5: features" [
-              "full"
               "field-control"
               "fetch-template"
             ] features naersk'.buildPackage {
@@ -63,14 +62,11 @@
             };
         in rec {
           cargo-v5 = build-cargo-v5 { };
-          cargo-v5-full = build-cargo-v5 { features = [ "full" ]; };
           default = cargo-v5;
         };
 
         apps = rec {
           cargo-v5 = flake-utils.lib.mkApp { drv = packages.cargo-v5; };
-          cargo-v5-full =
-            flake-utils.lib.mkApp { drv = packages.cargo-v5-full; };
           default = cargo-v5;
         };
       }));
