@@ -2,8 +2,7 @@ use cargo_metadata::{Message, PackageId};
 use clap::Args;
 use object::{Object, ObjectSection, ObjectSegment};
 use std::{
-    path::{Path, PathBuf},
-    process::{Stdio, exit},
+    ffi::OsStr, path::{Path, PathBuf}, process::{exit, Stdio}
 };
 use tokio::{process::Command, task::block_in_place};
 
@@ -25,8 +24,8 @@ pub fn cargo_bin() -> std::ffi::OsString {
     std::env::var_os("CARGO").unwrap_or_else(|| "cargo".to_owned().into())
 }
 
-async fn is_supported_release_channel() -> bool {
-    let rustc = Command::new("cargo")
+async fn is_supported_release_channel(cargo_bin: &OsStr) -> bool {
+    let rustc = Command::new(cargo_bin)
         .arg("--version")
         .output()
         .await
@@ -42,11 +41,13 @@ pub struct BuildOutput {
 }
 
 pub async fn build(path: &Path, opts: CargoOpts) -> miette::Result<Option<BuildOutput>> {
-    if !is_supported_release_channel().await {
+    let cargo = cargo_bin();
+
+    if !is_supported_release_channel(&cargo).await {
         return Err(CliError::UnsupportedReleaseChannel)?;
     }
 
-    let mut build_cmd = std::process::Command::new(cargo_bin());
+    let mut build_cmd = std::process::Command::new(cargo);
     build_cmd
         .current_dir(path)
         .stdout(Stdio::piped())
