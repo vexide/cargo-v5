@@ -708,7 +708,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.0",
 ]
 
 [[package]]
@@ -2984,8 +2984,9 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "vex-cdc"
-version = "0.0.1"
-source = "git+https://github.com/vexide/vex-v5-serial.git#a1f77c49d8792704d55e00c069af5a6df130751e"
+version = "0.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c90e84e8162191e67790494251eca4d418bb127c3cf6df6ad90dea0987fa08e7"
 dependencies = [
  "bitflags 2.9.1",
  "crc",
@@ -2994,8 +2995,9 @@ dependencies = [
 
 [[package]]
 name = "vex-v5-serial"
-version = "0.3.3"
-source = "git+https://github.com/vexide/vex-v5-serial.git#a1f77c49d8792704d55e00c069af5a6df130751e"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26360afbdeca7220893a12fdb4f428a0e1ad38cc4d4e224fde0f8f2e8dbfe138"
 dependencies = [
  "flate2",
  "log",
