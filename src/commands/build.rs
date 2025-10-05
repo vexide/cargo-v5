@@ -84,7 +84,7 @@ pub async fn build(path: &Path, opts: CargoOpts) -> miette::Result<Option<BuildO
 
                         // Write the binary to a file.
                         std::fs::write(&binary_path, binary)?;
-                        println!("     \x1b[1;92mObjcopy\x1b[0m {binary_path}");
+                        eprintln!("     \x1b[1;92mObjcopy\x1b[0m {binary_path}");
 
                         output = Some(BuildOutput {
                             bin_artifact: binary_path.into_std_path_buf(),

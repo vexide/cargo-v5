@@ -514,7 +514,7 @@ description={}",
     }
 
     if after == AfterUpload::Run {
-        println!("     \x1b[1;92mRunning\x1b[0m `{}`", slot_file_name);
+        eprintln!("     \x1b[1;92mRunning\x1b[0m `{}`", slot_file_name);
     }
 
     Ok(())
@@ -619,7 +619,7 @@ pub async fn upload(
             tokio::fs::write(&binary_path, binary)
                 .await
                 .map_err(|e| CliError::IoError(e))?;
-            println!("     \x1b[1;92mObjcopy\x1b[0m {}", binary_path.display());
+            eprintln!("     \x1b[1;92mObjcopy\x1b[0m {}", binary_path.display());
 
             (binary_path, None)
         }
