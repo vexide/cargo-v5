@@ -1,9 +1,11 @@
+use core::fmt;
 use std::{
     borrow::Cow,
     collections::BTreeMap,
-    fmt::Display,
+    fmt::{Display, Formatter},
     io::{self, ErrorKind},
     path::{Path, PathBuf, absolute},
+    sync::{LazyLock, OnceLock},
 };
 
 use fs_err::tokio as fs;
@@ -11,9 +13,10 @@ use miette::Diagnostic;
 use owo_colors::OwoColorize;
 use supports_color::Stream;
 use syntect::{
+    dumps::from_uncompressed_data,
     easy::HighlightLines,
-    highlighting::{Style, ThemeSet},
-    parsing::SyntaxSet,
+    highlighting::{Style, Theme, ThemeSet},
+    parsing::{SyntaxDefinition, SyntaxReference, SyntaxSet},
     util::as_24_bit_terminal_escaped,
 };
 use thiserror::Error;
@@ -21,6 +24,8 @@ use tokio::task::JoinSet;
 use toml_edit::{DocumentMut, Value, table, value};
 
 use crate::errors::CliError;
+
+mod vfs;
 
 #[derive(Debug, Error, Diagnostic)]
 pub enum UpgradeError {
@@ -31,9 +36,10 @@ pub enum UpgradeError {
 
 /// Applies all available upgrades to the workspace.
 pub async fn upgrade_workspace(root: &Path) -> Result<(), CliError> {
-    let mut files = FileOperationStore::default();
+    let mut files = vfs::FileOperationStore::default();
 
     update_cargo_config(root, &mut files).await?;
+    update_vexide(root, &mut files).await?;
 
     // Print pending changes - in the future we will apply them too.
     let highlight = supports_color::on_cached(Stream::Stdout).is_some();
@@ -44,14 +50,14 @@ pub async fn upgrade_workspace(root: &Path) -> Result<(), CliError> {
     Ok(())
 }
 
-/// Updates the user's Cargo config to use the Rust `armv7a-vex-v5` target
-/// and deletes their old target JSON file.
-async fn update_cargo_config(root: &Path, files: &mut FileOperationStore) -> Result<(), CliError> {
-    let cargo_config = root.join(".cargo").join("config.toml");
-    let existing_config = files.read_to_string(&cargo_config).await;
+async fn open_toml(
+    path: &Path,
+    files: &mut vfs::FileOperationStore,
+) -> Result<DocumentMut, CliError> {
+    let file = files.read_to_string(&path).await;
 
     // If the config file is missing, make a new one.
-    let mut document = match existing_config {
+    let doc = match file {
         Ok(contents) => contents
             .parse::<DocumentMut>()
             .map_err(UpgradeError::from)?,
@@ -59,184 +65,104 @@ async fn update_cargo_config(root: &Path, files: &mut FileOperationStore) -> Res
         Err(other) => return Err(other)?,
     };
 
+    Ok(doc)
+}
+
+/// Updates the user's Cargo config to use the Rust `armv7a-vex-v5` target
+/// and deletes their old target JSON file.
+async fn update_cargo_config(
+    root: &Path,
+    files: &mut vfs::FileOperationStore,
+) -> Result<(), CliError> {
+    let cargo_config = root.join(".cargo").join("config.toml");
+    let mut document = open_toml(&cargo_config, files).await?;
+
     let mut build = table();
-    build["target"] = value("armv7a-vex-v5");
+    let rustflags = Value::from_iter(vec!["-Clink-arg=-Tvexide.ld"]);
+    build["rustflags"] = value(rustflags);
+
     document["build"] = build;
 
     let mut unstable = table();
 
     let build_std = Value::from_iter(vec!["std", "panic_abort"]);
+    let build_std_features = Value::from_iter(vec!["compiler-builtins-mem"]);
+
     unstable["build-std"] = value(build_std);
+    unstable["build-std-features"] = value(build_std_features);
+
     document["unstable"] = unstable;
 
     files.write(cargo_config, document.to_string()).await?;
 
-    match files.delete(root.join("armv7a-vex-v5.json")).await {
-        Err(err) if err.kind() != ErrorKind::NotFound => return Err(err)?,
-        _ => {}
-    }
+    files
+        .delete_if_exists(root.join("armv7a-vex-v5.json"))
+        .await?;
 
     Ok(())
 }
 
-/// Stores pending operations on the file system.
-#[derive(Debug, Default)]
-struct FileOperationStore {
-    changes: BTreeMap<PathBuf, FileChange>,
-}
+async fn update_vexide(root: &Path, files: &mut vfs::FileOperationStore) -> Result<(), CliError> {
+    let cargo_toml = root.join("Cargo.toml");
+    let mut document = open_toml(&cargo_toml, files).await?;
 
-impl FileOperationStore {
-    async fn delete(&mut self, path: impl AsRef<Path>) -> io::Result<()> {
-        self.changes
-            .insert(fs::canonicalize(&path).await?, FileChange::Delete);
+    let old_entry = document.get("dependencies").and_then(|d| d.get("vexide"));
 
-        Ok(())
+    let old_features_array = old_entry
+        .and_then(|v| v.get("features"))
+        .and_then(|d| d.as_array());
+
+    let default_features = old_entry
+        .and_then(|v| v.get("default-features"))
+        .and_then(|d| d.as_bool())
+        .unwrap_or(true);
+
+    let mut features = vec![];
+
+    if default_features {
+        features.push("full");
     }
 
-    async fn write(&mut self, path: impl AsRef<Path>, contents: String) -> io::Result<()> {
-        let path = path.as_ref();
-        let path = fs::canonicalize(path).await.or_else(|_| absolute(path))?;
-
-        self.changes.insert(path, FileChange::Change(contents));
-
-        Ok(())
-    }
-
-    async fn read_to_string(&self, path: impl AsRef<Path>) -> io::Result<String> {
-        let path = path.as_ref();
-        let path = fs::canonicalize(path).await.or_else(|_| absolute(path))?;
-
-        if let Some(change) = self.changes.get(&path) {
-            return match change {
-                FileChange::Change(contents) => Ok(contents.clone()),
-                FileChange::Delete => Err(io::Error::from(ErrorKind::NotFound)),
+    // Add features that were already enabled so the user doesn't have to
+    // turn them back on manually.
+    if let Some(old_features_array) = old_features_array {
+        for value in old_features_array {
+            let Some(mut feature) = value.as_str() else {
+                continue;
             };
-        }
 
-        fs::read_to_string(path).await
-    }
+            // Apply renames.
+            feature = match feature {
+                "dangerous_motor_tuning" => "dangerous-motor-tuning",
+                "backtraces" => "backtrace",
+                "force_rust_libm" => continue, // Removed
+                other => other,
+            };
 
-    async fn display(&self, show_contents: bool, highlight: bool) -> FileOperationsDisplay<'_> {
-        let old_files = if show_contents {
-            let mut read_tasks = JoinSet::new();
-
-            for (file, change) in &self.changes {
-                if matches!(change, FileChange::Change(_)) {
-                    let file = file.clone();
-
-                    read_tasks.spawn(async move {
-                        let contents = fs::read_to_string(&file).await;
-                        (file, contents.ok())
-                    });
-                }
-            }
-
-            Some(
-                read_tasks
-                    .join_all()
-                    .await
-                    .into_iter()
-                    .filter_map(|(path, contents)| Some((path, contents?)))
-                    .collect(),
-            )
-        } else {
-            None
-        };
-
-        FileOperationsDisplay {
-            store: self,
-            highlight,
-            old_files,
+            features.push(feature);
         }
     }
-}
 
-/// Prints created files, deleted files, and modified files.
-struct FileOperationsDisplay<'a> {
-    store: &'a FileOperationStore,
-    /// The contents of the files before the pending changes
-    old_files: Option<BTreeMap<PathBuf, String>>,
-    highlight: bool,
-}
-
-impl Display for FileOperationsDisplay<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let ps = SyntaxSet::load_defaults_newlines();
-        let ts = ThemeSet::load_defaults();
-        let theme = &ts.themes["Solarized (dark)"];
-
-        for (path, change) in &self.store.changes {
-            if self.highlight {
-                match change {
-                    FileChange::Delete => {
-                        write!(f, "{}", "File deleted".on_red().bold())?;
-                    }
-                    FileChange::Change(_) => {
-                        write!(f, "{}", "File created".on_green().bold())?;
-                    }
-                }
-            } else {
-                match change {
-                    FileChange::Delete => {
-                        write!(f, "File deleted:")?;
-                    }
-                    FileChange::Change(_) => {
-                        write!(f, "File created:")?;
-                    }
-                }
-            }
-
-            writeln!(f, " {}", path.display())?;
-            writeln!(f)?;
-
-            if let Some(old_files) = &self.old_files
-                && let FileChange::Change(contents) = change
-            {
-                let mut fmt = if self.highlight {
-                    ps.find_syntax_by_extension("rs")
-                        .map(|syntax| HighlightLines::new(syntax, theme))
-                } else {
-                    None
-                };
-
-                let left = old_files.get(path).map(Cow::from).unwrap_or_default();
-
-                for (idx, line_diff) in diff::lines(&left, contents).iter().enumerate() {
-                    let line = match line_diff {
-                        diff::Result::Left(line) => line,
-                        diff::Result::Both(line, _) => line,
-                        diff::Result::Right(line) => line,
-                    };
-                    let diff_indicator = match line_diff {
-                        diff::Result::Left(..) => format!("{}", "-".red()),
-                        diff::Result::Both(..) => " ".to_string(),
-                        diff::Result::Right(..) => format!("{}", "+".green()),
-                    };
-
-                    let prefix = format!("{:2}", idx + 1);
-
-                    if let Some(fmt) = &mut fmt {
-                        let ranges: Vec<(Style, &str)> = fmt.highlight_line(line, &ps).unwrap();
-                        let escaped = as_24_bit_terminal_escaped(&ranges[..], false);
-
-                        write!(f, "{diff_indicator}  {}  {escaped}", prefix.bright_black())?;
-                    } else {
-                        write!(f, "{diff_indicator}  {prefix} {line}")?;
-                    }
-
-                    writeln!(f)?;
-                }
-
-                write!(f, "\n\n")?;
-            }
-        }
-
-        Ok(())
+    if default_features || features.contains(&"startup") {
+        features.push("vex-sdk-jumptable");
+        features.push("vex-sdk-mock");
     }
-}
 
-#[derive(Debug)]
-enum FileChange {
-    Delete,
-    Change(String),
+    let mut dependencies = table();
+
+    let mut vexide = table();
+
+    vexide["version"] = value("v0.8.0-alpha.2");
+    vexide["features"] = value(Value::from_iter(features));
+    if !default_features {
+        vexide["default-features"] = value(default_features);
+    }
+
+    dependencies["vexide"] = vexide;
+
+    document["dependencies"] = dependencies;
+
+    files.write(cargo_toml, document.to_string()).await?;
+
+    Ok(())
 }
