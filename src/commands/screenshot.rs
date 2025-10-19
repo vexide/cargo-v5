@@ -52,7 +52,7 @@ pub async fn screenshot(connection: &mut SerialConnection) -> Result<(), CliErro
     // Grab the image data
     let cap = connection
         .execute_command(DownloadFile {
-            file_name: FixedString::new("screen".to_string()).unwrap(),
+            file_name: FixedString::new("screen").unwrap(),
             vendor: FileVendor::Sys,
             target: FileTransferTarget::Cbuf,
             address: 0,

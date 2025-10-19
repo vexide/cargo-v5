@@ -24,11 +24,8 @@ async fn get_current_sha() -> Result<String, CliError> {
         .header("User-Agent", "vexide/cargo-v5")
         .send()
         .await
-        .map_err(|err| CliError::ReqwestError(err))?;
-    let response_text = response
-        .text()
-        .await
-        .map_err(|err| CliError::ReqwestError(err))?;
+        .map_err(CliError::ReqwestError)?;
+    let response_text = response.text().await.map_err(CliError::ReqwestError)?;
     match &serde_json::from_str::<Value>(&response_text).unwrap_or_default()["sha"] {
         Value::String(str) => Ok(str.clone()),
         _ => Err(CliError::MalformedResponse),
@@ -182,6 +179,6 @@ pub async fn new(
     let manifest = manifest.replace("vexide-template", &name);
     tokio::fs::write(manifest_path, manifest).await?;
 
-    info!("Successfully created new project at {:?}", dir);
+    info!("Successfully created new project at {dir:?}");
     Ok(())
 }

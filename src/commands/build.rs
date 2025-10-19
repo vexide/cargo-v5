@@ -2,7 +2,9 @@ use cargo_metadata::{Message, PackageId};
 use clap::Args;
 use object::{Object, ObjectSection, ObjectSegment};
 use std::{
-    ffi::OsStr, path::{Path, PathBuf}, process::{exit, Stdio}
+    ffi::OsStr,
+    path::{Path, PathBuf},
+    process::{Stdio, exit},
 };
 use tokio::{process::Command, task::block_in_place};
 

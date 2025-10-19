@@ -104,7 +104,7 @@ pub async fn log(connection: &mut SerialConnection, page: NonZeroU32) -> Result<
                 let error_string = decode_error_message(log.description);
 
                 match log.description {
-                    2 => writeln!(&mut tw, "{} {}", type_string, error_string)?,
+                    2 => writeln!(&mut tw, "{type_string} {error_string}")?,
                     7 | 8 => match log.log_type {
                         3 => writeln!(
                             &mut tw,
@@ -112,9 +112,9 @@ pub async fn log(connection: &mut SerialConnection, page: NonZeroU32) -> Result<
                             device_string, error_string, log.code
                         )?,
                         4 => writeln!(&mut tw, "Field tether disconnected")?,
-                        _ => writeln!(&mut tw, "{} {}", type_string, error_string)?,
+                        _ => writeln!(&mut tw, "{type_string} {error_string}")?,
                     },
-                    9 => writeln!(&mut tw, "{}", error_string)?,
+                    9 => writeln!(&mut tw, "{error_string}")?,
                     11 => {
                         if log.spare == 2 {
                             writeln!(&mut tw, "{} Run", decode_default_program(0))?;
@@ -126,7 +126,7 @@ pub async fn log(connection: &mut SerialConnection, page: NonZeroU32) -> Result<
                     }
                     13 => {
                         if log.code == 0 {
-                            writeln!(&mut tw, "{}", error_string)?;
+                            writeln!(&mut tw, "{error_string}")?;
                         } else if log.code == 0xff {
                             writeln!(&mut tw, "Power off")?;
                         } else if log.code == 0xf0 {
@@ -142,24 +142,24 @@ pub async fn log(connection: &mut SerialConnection, page: NonZeroU32) -> Result<
                     )?,
                     15 => {
                         if log.spare == 0 {
-                            writeln!(&mut tw, "{} Voltage", error_string)?;
+                            writeln!(&mut tw, "{error_string} Voltage")?;
                         } else {
                             writeln!(&mut tw, "{} Cell {}", error_string, log.spare)?;
                         }
                     }
-                    16 => writeln!(&mut tw, "{} AFE fault", error_string)?,
+                    16 => writeln!(&mut tw, "{error_string} AFE fault")?,
                     17 => writeln!(&mut tw, "Motor {} on port {}", error_string, log.code)?,
                     18 => writeln!(
                         &mut tw,
                         "Motor {} {} on port {}",
                         error_string, log.spare, log.code
                     )?,
-                    22 => writeln!(&mut tw, "{} Error", error_string)?,
-                    23 => writeln!(&mut tw, "Motor {} Error", error_string)?,
-                    24 => writeln!(&mut tw, "{}", error_string)?,
+                    22 => writeln!(&mut tw, "{error_string} Error")?,
+                    23 => writeln!(&mut tw, "Motor {error_string} Error")?,
+                    24 => writeln!(&mut tw, "{error_string}")?,
                     _ => {
                         if log.description < 26 {
-                            writeln!(&mut tw, "{}", error_string)?;
+                            writeln!(&mut tw, "{error_string}")?;
                         } else {
                             writeln!(
                                 &mut tw,

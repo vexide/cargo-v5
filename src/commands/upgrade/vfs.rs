@@ -2,31 +2,23 @@
 
 use core::fmt;
 use std::{
-    borrow::Cow,
     collections::BTreeMap,
     fmt::{Display, Formatter},
     io::{self, ErrorKind},
     path::{Path, PathBuf, absolute},
-    sync::{LazyLock, OnceLock},
+    sync::LazyLock,
 };
 
 use fs_err::tokio as fs;
-use miette::Diagnostic;
 use owo_colors::OwoColorize;
 use owo_colors::Style as OwoStyle;
-use supports_color::Stream;
 use syntect::{
-    dumps::from_uncompressed_data,
     easy::HighlightLines,
-    highlighting::{Style, Theme, ThemeSet},
-    parsing::{SyntaxDefinition, SyntaxReference, SyntaxSet},
+    highlighting::{Style, ThemeSet},
+    parsing::SyntaxSet,
     util::as_24_bit_terminal_escaped,
 };
-use thiserror::Error;
 use tokio::task::JoinSet;
-use toml_edit::{DocumentMut, Value, table, value};
-
-use crate::errors::CliError;
 
 /// Stores pending operations on the file system.
 #[derive(Debug, Default)]
@@ -44,7 +36,7 @@ impl FileOperationStore {
 
     pub async fn delete_if_exists(&mut self, path: impl AsRef<Path>) -> io::Result<()> {
         match self.delete(path).await {
-            Err(err) if err.kind() != ErrorKind::NotFound => return Err(err)?,
+            Err(err) if err.kind() != ErrorKind::NotFound => Err(err)?,
             _ => Ok(()),
         }
     }

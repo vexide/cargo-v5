@@ -1,26 +1,8 @@
-use core::fmt;
-use std::{
-    borrow::Cow,
-    collections::BTreeMap,
-    fmt::{Display, Formatter},
-    io::{self, ErrorKind},
-    path::{Path, PathBuf, absolute},
-    sync::{LazyLock, OnceLock},
-};
+use std::{io::ErrorKind, path::Path};
 
-use fs_err::tokio as fs;
 use miette::Diagnostic;
-use owo_colors::OwoColorize;
 use supports_color::Stream;
-use syntect::{
-    dumps::from_uncompressed_data,
-    easy::HighlightLines,
-    highlighting::{Style, Theme, ThemeSet},
-    parsing::{SyntaxDefinition, SyntaxReference, SyntaxSet},
-    util::as_24_bit_terminal_escaped,
-};
 use thiserror::Error;
-use tokio::task::JoinSet;
 use toml_edit::{DocumentMut, Value, table, value};
 
 use crate::errors::CliError;

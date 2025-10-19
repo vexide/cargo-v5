@@ -1,6 +1,9 @@
 use std::{env, path::PathBuf};
 
-use syntect::{dumps::dump_to_uncompressed_file, parsing::{SyntaxDefinition, SyntaxSet}};
+use syntect::{
+    dumps::dump_to_uncompressed_file,
+    parsing::{SyntaxDefinition, SyntaxSet},
+};
 
 const TOML_SYNTAX: &str = include_str!("src/commands/upgrade/TOML.sublime-syntax");
 

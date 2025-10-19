@@ -171,8 +171,8 @@ pub async fn upload_program(
 ) -> Result<(), CliError> {
     let multi_progress = MultiProgress::new();
 
-    let slot_file_name = format!("slot_{}.bin", slot);
-    let ini_file_name = format!("slot_{}.ini", slot);
+    let slot_file_name = format!("slot_{slot}.bin");
+    let ini_file_name = format!("slot_{slot}.ini");
 
     let ini = format!(
         "[project]
@@ -222,7 +222,7 @@ description={}",
             .execute_command(UploadFile {
                 file_name: FixedString::new(ini_file_name).unwrap(),
                 metadata: FileMetadata {
-                    extension: FixedString::new("ini".to_string()).unwrap(),
+                    extension: FixedString::new("ini").unwrap(),
                     extension_type: ExtensionType::default(),
                     timestamp: j2000_timestamp(),
                     version: Version {
@@ -272,7 +272,7 @@ description={}",
                 .execute_command(UploadFile {
                     file_name: FixedString::new(slot_file_name.clone()).unwrap(),
                     metadata: FileMetadata {
-                        extension: FixedString::new("bin".to_string()).unwrap(),
+                        extension: FixedString::new("bin").unwrap(),
                         extension_type: ExtensionType::default(),
                         timestamp: j2000_timestamp(),
                         version: Version {
@@ -311,7 +311,7 @@ description={}",
             bin_progress.lock().await.finish();
         }
         UploadStrategy::Differential => {
-            let base_file_name = format!("slot_{}.base.bin", slot);
+            let base_file_name = format!("slot_{slot}.base.bin");
 
             let mut base = match tokio::fs::read(&path.with_file_name(&base_file_name)).await {
                 Ok(contents) => Some(contents),
@@ -382,7 +382,7 @@ description={}",
                     .execute_command(UploadFile {
                         file_name: FixedString::new(slot_file_name.clone()).unwrap(),
                         metadata: FileMetadata {
-                            extension: FixedString::new("bin".to_string()).unwrap(),
+                            extension: FixedString::new("bin").unwrap(),
                             extension_type: ExtensionType::default(),
                             timestamp: j2000_timestamp(),
                             version: Version {
@@ -441,7 +441,7 @@ description={}",
                     .execute_command(UploadFile {
                         file_name: FixedString::new(base_file_name.clone()).unwrap(),
                         metadata: FileMetadata {
-                            extension: FixedString::new("bin".to_string()).unwrap(),
+                            extension: FixedString::new("bin").unwrap(),
                             extension_type: ExtensionType::default(),
                             timestamp: j2000_timestamp(),
                             version: Version {
@@ -483,7 +483,7 @@ description={}",
                     .execute_command(UploadFile {
                         file_name: FixedString::new(slot_file_name.clone()).unwrap(),
                         metadata: FileMetadata {
-                            extension: FixedString::new("bin".to_string()).unwrap(),
+                            extension: FixedString::new("bin").unwrap(),
                             extension_type: ExtensionType::default(),
                             timestamp: j2000_timestamp(),
                             version: Version {
@@ -514,7 +514,7 @@ description={}",
     }
 
     if after == AfterUpload::Run {
-        eprintln!("     \x1b[1;92mRunning\x1b[0m `{}`", slot_file_name);
+        eprintln!("     \x1b[1;92mRunning\x1b[0m `{slot_file_name}`");
     }
 
     Ok(())
@@ -608,17 +608,13 @@ pub async fn upload(
             (file, None)
         } else {
             // If a BIN file wasn't provided, we'll attempt to objcopy it as if it were an ELF.
-            let binary = objcopy(
-                &tokio::fs::read(&file)
-                    .await
-                    .map_err(|e| CliError::IoError(e))?,
-            )?;
+            let binary = objcopy(&tokio::fs::read(&file).await.map_err(CliError::IoError)?)?;
             let binary_path = file.with_extension("bin");
 
             // Write the binary to a file.
             tokio::fs::write(&binary_path, binary)
                 .await
-                .map_err(|e| CliError::IoError(e))?;
+                .map_err(CliError::IoError)?;
             eprintln!("     \x1b[1;92mObjcopy\x1b[0m {}", binary_path.display());
 
             (binary_path, None)

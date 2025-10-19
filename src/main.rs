@@ -155,7 +155,7 @@ async fn main() -> miette::Result<()> {
         .unwrap();
 
     if let Err(err) = app(command, path, &mut logger).await {
-        log::debug!("cargo-v5 is exiting due to an error: {}", err);
+        log::debug!("cargo-v5 is exiting due to an error: {err}");
         if let Ok(files) = logger.existing_log_files(&LogfileSelector::default()) {
             for file in files {
                 eprintln!("A log file is available at {}.", file.display());
@@ -214,14 +214,14 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
                 let devices = serial::find_devices().map_err(CliError::SerialError)?;
 
                 tokio::task::spawn_blocking::<_, Result<SerialConnection, CliError>>(move || {
-                    Ok(devices
+                    devices
                         .into_iter()
                         .find(|device| {
                             matches!(device, SerialDevice::Controller { system_port: _ })
                         })
                         .ok_or(CliError::NoController)?
                         .connect(Duration::from_secs(5))
-                        .map_err(CliError::SerialError)?)
+                        .map_err(CliError::SerialError)
                 })
                 .await
                 .unwrap()?
@@ -242,9 +242,7 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
             self_update::self_update().await?;
         }
         Command::Upgrade => {
-            upgrade::upgrade_workspace(&path)
-                .await
-                .map_err(CliError::from)?;
+            upgrade::upgrade_workspace(&path).await?;
         }
     }
 
