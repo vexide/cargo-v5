@@ -213,8 +213,8 @@ impl<'a> FileOperationsDisplay<'a> {
 
         let right_old = old_contents.unwrap_or_default();
 
-        let mut left_num = 1;
-        let mut right_num = 1;
+        let mut left_num = 0;
+        let mut right_num = 0;
 
         struct DiffLine<'a> {
             num: usize,

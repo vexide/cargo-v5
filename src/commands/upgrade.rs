@@ -1,6 +1,5 @@
 use std::{
     env::{self, home_dir},
-    io::ErrorKind,
     path::{Path, PathBuf},
 };
 
@@ -8,7 +7,7 @@ use fs_err::tokio as fs;
 use miette::Diagnostic;
 use supports_color::Stream;
 use thiserror::Error;
-use toml_edit::{Document, DocumentMut, Item, Table, Value, table, value};
+use toml_edit::{Document, Table, Value, table, value};
 
 use crate::errors::CliError;
 
@@ -48,7 +47,10 @@ pub async fn upgrade_workspace(root: &Path) -> Result<(), CliError> {
 
     println!();
     println!("{}", ctx.fs.display(true, highlight).await);
-    println!("- Will disable Rustup override: {}", ctx.will_disable_rustup_override);
+    println!(
+        "- Will disable Rustup override: {}",
+        ctx.will_disable_rustup_override
+    );
 
     Ok(())
 }
@@ -99,15 +101,17 @@ async fn update_cargo_config(ctx: &mut ChangesCtx) -> Result<(), CliError> {
     fs.edit_toml(".cargo/config.toml", |document| {
         let build = document.table("build");
 
+        build.remove("target");
+
         let rustflags = Value::from_iter(vec!["-Clink-arg=-Tvexide.ld"]);
         build["rustflags"] = value(rustflags);
 
         let unstable = document.table("unstable");
 
         let build_std = Value::from_iter(vec!["std", "panic_abort"]);
-        let build_std_features = Value::from_iter(vec!["compiler-builtins-mem"]);
-
         unstable["build-std"] = value(build_std);
+
+        let build_std_features = Value::from_iter(vec!["compiler-builtins-mem"]);
         unstable["build-std-features"] = value(build_std_features);
     })
     .await?;
@@ -170,7 +174,9 @@ async fn update_vexide(ctx: &mut ChangesCtx) -> Result<(), CliError> {
 
         let dependencies = document.table("dependencies");
 
-        let mut vexide = table();
+        dependencies.remove("vexide");
+
+        let mut vexide = Table::new();
 
         vexide["version"] = value("v0.8.0-alpha.2");
         vexide["features"] = value(Value::from_iter(features));
@@ -178,7 +184,7 @@ async fn update_vexide(ctx: &mut ChangesCtx) -> Result<(), CliError> {
             vexide["default-features"] = value(default_features);
         }
 
-        dependencies["vexide"] = vexide;
+        dependencies["vexide"] = vexide.into();
     })
     .await
 }
