@@ -19,31 +19,54 @@ use syntect::{
     util::as_24_bit_terminal_escaped,
 };
 use tokio::task::JoinSet;
+use toml_edit::DocumentMut;
+
+use crate::{commands::upgrade::UpgradeError, errors::CliError};
 
 /// Stores pending operations on the file system.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct FileOperationStore {
     changes: BTreeMap<PathBuf, FileChange>,
+    root: PathBuf,
 }
 
 impl FileOperationStore {
-    pub async fn delete(&mut self, path: impl AsRef<Path>) -> io::Result<()> {
-        self.changes
-            .insert(fs::canonicalize(&path).await?, FileChange::Delete);
+    pub fn new(root: impl Into<PathBuf>) -> Self {
+        Self {
+            root: root.into(),
+            changes: BTreeMap::new(),
+        }
+    }
+
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// Canonicalize the given relative path.
+    async fn resolve(&self, relative: impl AsRef<Path>) -> io::Result<PathBuf> {
+        let full = self.root.join(relative);
+        fs::canonicalize(&full).await.or_else(|_| absolute(&full))
+    }
+
+    pub async fn delete_if_exists(&mut self, path: impl AsRef<Path>) -> io::Result<()> {
+        let path = self.resolve(path).await?;
+
+        if matches!(self.changes.get(&path), Some(FileChange::Delete)) {
+            return Ok(());
+        }
+
+        let exists = tokio::fs::try_exists(&path).await.unwrap_or(true);
+        if !exists {
+            return Ok(());
+        }
+
+        self.changes.insert(path, FileChange::Delete);
 
         Ok(())
     }
 
-    pub async fn delete_if_exists(&mut self, path: impl AsRef<Path>) -> io::Result<()> {
-        match self.delete(path).await {
-            Err(err) if err.kind() != ErrorKind::NotFound => Err(err)?,
-            _ => Ok(()),
-        }
-    }
-
     pub async fn write(&mut self, path: impl AsRef<Path>, contents: String) -> io::Result<()> {
-        let path = path.as_ref();
-        let path = fs::canonicalize(path).await.or_else(|_| absolute(path))?;
+        let path = self.resolve(path).await?;
 
         self.changes.insert(path, FileChange::Change(contents));
 
@@ -51,8 +74,7 @@ impl FileOperationStore {
     }
 
     pub async fn read_to_string(&self, path: impl AsRef<Path>) -> io::Result<String> {
-        let path = path.as_ref();
-        let path = fs::canonicalize(path).await.or_else(|_| absolute(path))?;
+        let path = self.resolve(path).await?;
 
         if let Some(change) = self.changes.get(&path) {
             return match change {
@@ -67,6 +89,38 @@ impl FileOperationStore {
     pub async fn display(&self, show_contents: bool, highlight: bool) -> FileOperationsDisplay<'_> {
         FileOperationsDisplay::new(self, show_contents, highlight).await
     }
+
+    pub async fn edit_toml(
+        &mut self,
+        path: impl AsRef<Path>,
+        editor: impl FnOnce(&mut DocumentMut),
+    ) -> Result<(), CliError> {
+        let path = path.as_ref();
+
+        let mut doc = open_or_create_toml(self, path).await?;
+        editor(&mut doc);
+        self.write(path, doc.to_string()).await?;
+
+        Ok(())
+    }
+}
+
+async fn open_or_create_toml(
+    files: &mut FileOperationStore,
+    path: impl AsRef<Path>,
+) -> Result<DocumentMut, CliError> {
+    let file = files.read_to_string(&path).await;
+
+    // If the config file is missing, make a new one.
+    let doc = match file {
+        Ok(contents) => contents
+            .parse::<DocumentMut>()
+            .map_err(UpgradeError::from)?,
+        Err(err) if err.kind() == ErrorKind::NotFound => DocumentMut::new(),
+        Err(other) => return Err(other)?,
+    };
+
+    Ok(doc)
 }
 
 /// Prints created files, deleted files, and modified files.
