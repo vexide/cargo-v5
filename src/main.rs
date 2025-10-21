@@ -12,7 +12,7 @@ use cargo_v5::{
         upgrade,
         upload::{AfterUpload, UploadOpts, upload},
     },
-    connection::{open_connection, switch_radio_channel},
+    connection::{open_connection, switch_to_download_channel},
     errors::CliError,
     self_update::{self, SelfUpdateMode},
 };
@@ -24,9 +24,7 @@ use vex_v5_serial::{
     Connection,
     protocol::{
         FixedString,
-        cdc2::file::{
-            FileLoadAction, FileLoadActionPacket, FileLoadActionPayload, FileVendor, RadioChannel,
-        },
+        cdc2::file::{FileLoadAction, FileLoadActionPacket, FileLoadActionPayload, FileVendor},
     },
     serial::{self, SerialConnection, SerialDevice},
 };
@@ -64,7 +62,7 @@ enum Command {
         #[clap(flatten)]
         cargo_opts: CargoOpts,
     },
-    /// Build a project and upload it to the V5 brain.
+    /// Upload a project or file to a Brain.
     #[clap(visible_alias = "u")]
     Upload {
         #[arg(long, default_value = "none")]
@@ -73,10 +71,10 @@ enum Command {
         #[clap(flatten)]
         upload_opts: UploadOpts,
     },
-    /// Access the brain's remote terminal I/O.
+    /// Access a Brain's remote terminal I/O.
     #[clap(visible_alias = "t")]
     Terminal,
-    /// Build, upload, and run a program on the V5 brain, showing its output in the terminal.
+    /// Build, upload, and run a program on a V5 brain, showing its output in the terminal.
     #[clap(visible_alias = "r")]
     Run(UploadOpts),
     /// Create a new vexide project with a given name.
@@ -88,7 +86,7 @@ enum Command {
         #[clap(flatten)]
         download_opts: DownloadOpts,
     },
-    /// Creates a new vexide project in the current directory
+    /// Create a new vexide project in the current directory.
     Init {
         #[clap(flatten)]
         download_opts: DownloadOpts,
@@ -104,12 +102,12 @@ enum Command {
     Rm {
         file: PathBuf,
     },
-    /// Read event log.
+    /// Read a Brain's event log.
     Log {
         #[arg(long, short, default_value = "1")]
         page: NonZeroU32,
     },
-    /// List devices connected to a brain.
+    /// List devices connected to a Brain.
     #[clap(visible_alias = "lsdev")]
     Devices,
     /// Take a screen capture of the brain, saving the file to the current directory.
@@ -204,7 +202,7 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
         }
         Command::Terminal => {
             let mut connection = open_connection().await?;
-            switch_radio_channel(&mut connection, RadioChannel::Download).await?;
+            switch_to_download_channel(&mut connection).await?;
             terminal(&mut connection, logger).await;
         }
         #[cfg(feature = "field-control")]

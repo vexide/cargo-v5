@@ -424,7 +424,7 @@ pub async fn run_field_control_tui(connection: &mut SerialConnection) -> Result<
         )
         .await?
         .payload;
-    if let ProductType::Brain = response.product_type {
+    if response.product_type != ProductType::Controller {
         return Err(CliError::BrainConnectionSetMatchMode);
     }
 

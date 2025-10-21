@@ -25,7 +25,7 @@ use vex_v5_serial::{
             file::{
                 ExtensionType, FileExitAction, FileMetadata, FileMetadataPacket,
                 FileMetadataPayload, FileMetadataReplyPacket, FileMetadataReplyPayload,
-                FileTransferTarget, FileVendor, RadioChannel,
+                FileTransferTarget, FileVendor,
             },
         },
     },
@@ -33,7 +33,7 @@ use vex_v5_serial::{
 };
 
 use crate::{
-    connection::{open_connection, switch_radio_channel},
+    connection::{open_connection, switch_to_download_channel},
     errors::CliError,
     metadata::Metadata,
 };
@@ -602,7 +602,7 @@ pub async fn upload(
             let mut connection = open_connection().await?;
 
             // Switch the radio to the download channel if the controller is wireless.
-            switch_radio_channel(&mut connection, RadioChannel::Download).await?;
+            switch_to_download_channel(&mut connection).await?;
 
             Ok::<SerialConnection, CliError>(connection)
         },

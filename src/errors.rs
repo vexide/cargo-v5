@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use humansize::{BINARY, format_size};
 use image::ImageError;
+use inquire::InquireError;
 use miette::Diagnostic;
 use thiserror::Error;
 use vex_v5_serial::protocol::cdc2::Cdc2Ack;
@@ -40,6 +41,10 @@ pub enum CliError {
     #[error(transparent)]
     #[diagnostic(code(cargo_v5::image_error))]
     ImageError(#[from] ImageError),
+
+    #[error(transparent)]
+    #[diagnostic(code(cargo_v5::inquire))]
+    Inquire(#[from] InquireError),
 
     // TODO: Add source spans.
     #[error("Incorrect type for field `{field}` (expected {expected}, found {found}).")]
@@ -120,6 +125,15 @@ pub enum CliError {
     #[error("Output ELF file could not be parsed.")]
     #[diagnostic(code(cargo_v5::elf_parse_error))]
     ElfParseError(#[from] object::Error),
+
+    #[error("Controller is stuck in radio channel 9.")]
+    #[diagnostic(
+        code(cargo_v5::radio_channel_stuck),
+        help(
+            "This is a bug in the controller's firmware. Please power cycle the controller to fix this."
+        )
+    )]
+    RadioChannelStuck,
 
     #[error("Controller never switched radio channels.")]
     #[diagnostic(
