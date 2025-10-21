@@ -5,7 +5,7 @@ use inquire::{
     CustomType,
     validator::{ErrorMessage, Validation},
 };
-use tokio::{fs::File, io::AsyncWriteExt, spawn, sync::Mutex, task::block_in_place, time::Instant};
+use tokio::{fs::File, io::AsyncWriteExt, sync::Mutex, task::block_in_place, time::Instant};
 
 use std::{
     ffi::OsStr,
@@ -597,35 +597,49 @@ pub async fn upload(
     after: AfterUpload,
 ) -> miette::Result<SerialConnection> {
     // Try to open a serialport in the background while we build.
-    let connection_task = spawn(open_connection());
+    let (mut connection, (artifact, package_id)) = tokio::try_join!(
+        async {
+            let mut connection = open_connection().await?;
 
-    // Get the build artifact we'll be uploading with.
-    //
-    // The user either directly passed an file through the `--file` argument, or they didn't and we need to run
-    // `cargo build`.
-    let (artifact, package_id) = if let Some(file) = file {
-        if file.extension() == Some(OsStr::new("bin")) {
-            (file, None)
-        } else {
-            // If a BIN file wasn't provided, we'll attempt to objcopy it as if it were an ELF.
-            let binary = objcopy(&tokio::fs::read(&file).await.map_err(CliError::IoError)?)?;
-            let binary_path = file.with_extension("bin");
+            // Switch the radio to the download channel if the controller is wireless.
+            switch_radio_channel(&mut connection, RadioChannel::Download).await?;
 
-            // Write the binary to a file.
-            tokio::fs::write(&binary_path, binary)
-                .await
-                .map_err(CliError::IoError)?;
-            eprintln!("     \x1b[1;92mObjcopy\x1b[0m {}", binary_path.display());
+            Ok::<SerialConnection, CliError>(connection)
+        },
+        async {
+            // Get the build artifact we'll be uploading with.
+            //
+            // The user either directly passed an file through the `--file` argument, or they didn't and we need to run
+            // `cargo build`.
+            Ok(if let Some(file) = file {
+                if file.extension() == Some(OsStr::new("bin")) {
+                    (file, None)
+                } else {
+                    // If a BIN file wasn't provided, we'll attempt to objcopy it as if it were an ELF.
+                    let binary = objcopy(
+                        &tokio::fs::read(&file)
+                            .await
+                            .map_err(|e| CliError::IoError(e))?,
+                    )?;
+                    let binary_path = file.with_extension("bin");
 
-            (binary_path, None)
+                    // Write the binary to a file.
+                    tokio::fs::write(&binary_path, binary)
+                        .await
+                        .map_err(|e| CliError::IoError(e))?;
+                    eprintln!("     \x1b[1;92mObjcopy\x1b[0m {}", binary_path.display());
+
+                    (binary_path, None)
+                }
+            } else {
+                // Run cargo build, then objcopy.
+                build(path, cargo_opts)
+                    .await?
+                    .map(|output| (output.bin_artifact, Some(output.package_id)))
+                    .ok_or(CliError::NoArtifact)?
+            })
         }
-    } else {
-        // Run cargo build, then objcopy.
-        build(path, cargo_opts)
-            .await?
-            .map(|output| (output.bin_artifact, Some(output.package_id)))
-            .ok_or(CliError::NoArtifact)?
-    };
+    )?;
 
     // We'll use `cargo-metadata` to parse the output of `cargo metadata` and find valid `Cargo.toml`
     // files in the workspace directory.
@@ -645,9 +659,6 @@ pub async fn upload(
     // Attempt to serialize `package.metadata.v5` into a [`Metadata`] struct. This will just Default::default to
     // all `None`s if it can't find a specific field, or error if the field is malformed.
     let metadata = package.as_ref().map(Metadata::new).transpose()?;
-
-    // Wait for the serial port to finish opening.
-    let mut connection = connection_task.await.unwrap()?;
 
     // The program's slot number is absolutely required for uploading. If the slot argument isn't directly provided:
     //
@@ -674,9 +685,6 @@ pub async fn upload(
     if !(1..=8).contains(&slot) {
         Err(CliError::SlotOutOfRange)?;
     }
-
-    // Switch the radio to the download channel if the controller is wireless.
-    switch_radio_channel(&mut connection, RadioChannel::Download).await?;
 
     // Pass information to the upload routine.
     upload_program(

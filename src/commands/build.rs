@@ -42,7 +42,7 @@ pub struct BuildOutput {
     pub package_id: PackageId,
 }
 
-pub async fn build(path: &Path, opts: CargoOpts) -> miette::Result<Option<BuildOutput>> {
+pub async fn build(path: &Path, opts: CargoOpts) -> Result<Option<BuildOutput>, CliError> {
     let cargo = cargo_bin();
 
     if !is_supported_release_channel(&cargo).await {

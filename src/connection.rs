@@ -18,7 +18,7 @@ use vex_v5_serial::{
 
 use crate::errors::CliError;
 
-pub async fn open_connection() -> miette::Result<SerialConnection> {
+pub async fn open_connection() -> Result<SerialConnection, CliError> {
     // Find all vex devices on serial ports.
     let devices = serial::find_devices().map_err(CliError::SerialError)?;
 
