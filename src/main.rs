@@ -100,7 +100,7 @@ enum Command {
     },
     /// Erase a file from flash.
     Rm {
-        file: PathBuf,
+        files: Vec<PathBuf>,
     },
     /// Read a Brain's event log.
     Log {
@@ -175,7 +175,7 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
         Command::Dir => dir(&mut open_connection().await?).await?,
         Command::Devices => devices(&mut open_connection().await?).await?,
         Command::Cat { file } => cat(&mut open_connection().await?, file).await?,
-        Command::Rm { file } => rm(&mut open_connection().await?, file).await?,
+        Command::Rm { files } => rm(&mut open_connection().await?, files).await?,
         Command::Log { page } => log(&mut open_connection().await?, page).await?,
         Command::Screenshot => screenshot(&mut open_connection().await?).await?,
         Command::Run(opts) => {
