@@ -2997,9 +2997,9 @@ dependencies = [
 
 [[package]]
 name = "vex-v5-serial"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f821aab1c4fb98e9717e6b1fe5505552d99c854be8a0ff69d578b31b44892390"
+checksum = "4e0407f0f1e2d176affe531e20a2c17d07a4f393afdee6a84e959e5fa180d86b"
 dependencies = [
  "flate2",
  "log",
