@@ -177,8 +177,8 @@ async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> 
         Command::Log { page } => log(&mut open_connection().await?, page).await?,
         Command::LogAll => {
             let mut connection = open_connection().await?;
-            for page in (1..) {
-                log(&mut connection, page).await?;
+            for page in (1u32..) {
+                log(&mut connection, page.try_into().unwrap()).await?;
             }
         }
         Command::Screenshot => screenshot(&mut open_connection().await?).await?,
