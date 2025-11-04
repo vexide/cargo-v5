@@ -99,11 +99,13 @@ enum Command {
     Cat { file: PathBuf },
     /// Erase a file from flash.
     Rm { file: PathBuf },
-    /// Read event log.
+    /// Read page of event log.
     Log {
         #[arg(long, short, default_value = "1")]
         page: NonZeroU32,
     },
+    /// Read all event log pages.
+    LogAll,
     /// List devices connected to a brain.
     #[clap(visible_alias = "lsdev")]
     Devices,
@@ -173,6 +175,12 @@ async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> 
         Command::Cat { file } => cat(&mut open_connection().await?, file).await?,
         Command::Rm { file } => rm(&mut open_connection().await?, file).await?,
         Command::Log { page } => log(&mut open_connection().await?, page).await?,
+        Command::LogAll => {
+            let mut connection = open_connection().await?;
+            for page in (1..) {
+                log(&mut connection, page).await?;
+            }
+        }
         Command::Screenshot => screenshot(&mut open_connection().await?).await?,
         Command::Run(opts) => {
             let mut connection = upload(&path, opts, AfterUpload::Run).await?;
