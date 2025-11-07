@@ -1,8 +1,13 @@
+use clap::Args;
+use chrono::NaiveTime;
+use serde::{Serialize, Deserialize};
 use std::io::{self, Write};
 use std::num::NonZeroU32;
 use std::time::Duration;
+use std::option::Option;
 use tabwriter::{Alignment, TabWriter};
 use vex_v5_serial::packets::log::{ReadLogPagePacket, ReadLogPagePayload, ReadLogPageReplyPacket};
+use vex_v5_serial::packets::log::Log as V5SerialLog;
 
 use vex_v5_serial::connection::{serial::SerialConnection, Connection};
 
@@ -10,176 +15,176 @@ use crate::errors::CliError;
 
 const MAX_LOGS_PER_PAGE: u32 = 254;
 
-pub async fn log(connection: &mut SerialConnection, page: NonZeroU32) -> Result<(), CliError> {
-    let mut tw = TabWriter::new(io::stdout())
-        .tab_indent(false)
-        .padding(1)
-        .alignment(Alignment::Right);
+#[derive(Args, Debug)]
+pub struct LogOpts {
+    #[arg(long, default_value = "None")]
+    page: Option<NonZeroU32>,
+    #[arg(long)]
+    no_color: bool,
+}
 
-    let mut entries = Vec::new();
-    entries.extend(
-        connection
-            .packet_handshake::<ReadLogPageReplyPacket>(
-                Duration::from_millis(500),
-                10,
-                ReadLogPagePacket::new(ReadLogPagePayload {
-                    offset: MAX_LOGS_PER_PAGE * page.get(),
-                    count: MAX_LOGS_PER_PAGE,
-                }),
-            )
-            .await?
-            .payload
-            .entries,
-    );
+#[derive(Default, Debug, Clone, Copy, Eq, PartialEq)]
+enum LogCategory {
+    FieldControl,
+    Warning,
+    Error,
+    Battery,
+    #[default]
+    Default
+}
 
-    for (i, log) in entries.into_iter().enumerate() {
-        let time = log.time / 1000;
-        write!(
-            &mut tw,
-            "{}:\t[{:02}:{:02}:{:02}]\t",
-            (MAX_LOGS_PER_PAGE * page.get()) - (i as u32),
-            (time / 3600) % 24,
-            (time / 60) % 60,
-            time % 60
-        )?;
+impl LogCategory {
+    fn ansi_color(&self) -> &'static str {
+        match self {
+            // Bold white
+            LogCategory::FieldControl => "\x1B[1m",
+            // Yellow
+            LogCategory::Warning => "\x1B[33m",
+            // Red
+            LogCategory::Error => "\x1B[31m",
+            // Green
+            LogCategory::Battery => "\x1B[32m",
+            // Blue
+            LogCategory::Default => "\x1B[34m",
+        }
+    }
+}
 
-        if matches!(log.log_type, 10..=0xc) {
-            write!(&mut tw, "\x1B[1m")?; // Bold white
+#[derive(Default, Debug, Clone, Eq, PartialEq)]
+struct Log {
+    pub timestamp: Duration,
+    pub category: LogCategory,
+    pub text: String
+}
+
+impl Log {
+    fn decode_log(log: V5SerialLog) -> Log {
+        let timestamp = Duration::from_millis(log.time);
+        
+        let category = if matches!(log.log_type, 10..=0xc) {
+            LogCategory::FieldControl
         } else if (128..u8::MAX).contains(&log.log_type) {
-            write!(&mut tw, "\x1B[33m")?; // Yellow (warning)
+            LogCategory::Warning
         } else if matches!(
             log.description,
             2 | 8 | 9 | 0xf | 0x10 | 0x11 | 0x12 | 0x16 | 0x17 | 0x18 | 14
         ) {
-            write!(&mut tw, "\x1B[31m")?; // Error
+            LogCategory::Error
         } else if log.description == 13 {
-            write!(&mut tw, "\x1B[32m")?; // Green (battery-related)
+            LogCategory::Battery
         } else {
-            write!(&mut tw, "\x1B[34m")?; // Blue (default)
-        }
+            LogCategory::Default
+        };
 
-        match log.log_type {
-            4 if log.description == 7 => writeln!(&mut tw, "Field tether connected")?,
-            9 if log.description == 7 => writeln!(&mut tw, "Radio linked")?,
+        let text = match log.log_type {
+            4 if log.description == 7 => format!("Field tether connected"),
+            9 if log.description == 7 => format!("Radio linked"),
             10 => {
                 if log.description & 0b11000000 == 0 {
-                    writeln!(
-                        &mut tw,
+                    format!(
                         "VRC-{}-{}",
                         log.description & 0b00111111,
                         u32::from(log.code) * 256 + u32::from(log.spare)
-                    )?
+                    )
                 } else {
-                    writeln!(
-                        &mut tw,
+                    format!(
                         "XXX-{}-{}",
                         log.description & 0b00111111,
                         u32::from(log.code) * 256 + u32::from(log.spare)
-                    )?
+                    )
                 }
             }
             11 => {
                 let match_round = decode_match_round(log.description);
                 match log.description {
-                    2..=8 => writeln!(&mut tw, "{}-{}-{}", match_round, log.code, log.spare)?,
-                    9 | 99 => writeln!(
-                        &mut tw,
+                    2..=8 => format!("{}-{}-{}", match_round, log.code, log.spare),
+                    9 | 99 => format!(
                         "{}-{:.04}",
                         match_round,
                         u32::from(log.code) * 256 + u32::from(log.spare)
-                    )?,
-                    _ => writeln!(&mut tw, "Match error")?,
+                    ),
+                    _ => format!("Match error"),
                 }
             }
-            12 => writeln!(
-                &mut tw,
+            12 => format!(
                 "--> {:.02}:{:.02}:{:.02}",
                 log.code, log.spare, log.description
-            )?,
+            ),
             0..=127 => {
                 let device_string = decode_device_type(log.spare);
                 let type_string = decode_log_type(log.log_type);
                 let error_string = decode_error_message(log.description);
 
                 match log.description {
-                    2 => writeln!(&mut tw, "{} {}", type_string, error_string)?,
+                    2 => format!("{} {}", type_string, error_string),
                     7 | 8 => match log.log_type {
-                        3 => writeln!(
-                            &mut tw,
+                        3 => format!(
                             "{} {} on port {}",
                             device_string, error_string, log.code
-                        )?,
-                        4 => writeln!(&mut tw, "Field tether disconnected")?,
-                        _ => writeln!(&mut tw, "{} {}", type_string, error_string)?,
+                        ),
+                        4 => format!("Field tether disconnected"),
+                        _ => format!("{} {}", type_string, error_string),
                     },
-                    9 => writeln!(&mut tw, "{}", error_string)?,
+                    9 => format!("{}", error_string),
                     11 => {
                         if log.spare == 2 {
-                            writeln!(&mut tw, "{} Run", decode_default_program(0))?;
+                            format!("{} Run", decode_default_program(0));
                         } else if log.spare == 1 && log.code == 0 {
-                            writeln!(&mut tw, "{} Run", decode_default_program(1))?;
+                            format!("{} Run", decode_default_program(1));
                         } else {
-                            writeln!(&mut tw, "{} slot {}", error_string, log.code)?;
+                            format!("{} slot {}", error_string, log.code);
                         }
                     }
                     13 => {
                         if log.code == 0 {
-                            writeln!(&mut tw, "{}", error_string)?;
+                            format!("{}", error_string);
                         } else if log.code == 0xff {
-                            writeln!(&mut tw, "Power off")?;
+                            format!("Power off");
                         } else if log.code == 0xf0 {
-                            writeln!(&mut tw, "Reset")?;
+                            format!("Reset");
                         }
                     }
-                    14 => writeln!(
-                        &mut tw,
+                    14 => format!(
                         "{} {:.2}V {}% Capacity",
                         error_string,
                         log.code as f32 * 0.064,
                         log.spare,
-                    )?,
+                    ),
                     15 => {
                         if log.spare == 0 {
-                            writeln!(&mut tw, "{} Voltage", error_string)?;
+                            format!("{} Voltage", error_string);
                         } else {
-                            writeln!(&mut tw, "{} Cell {}", error_string, log.spare)?;
+                            format!("{} Cell {}", error_string, log.spare);
                         }
                     }
-                    16 => writeln!(&mut tw, "{} AFE fault", error_string)?,
-                    17 => writeln!(&mut tw, "Motor {} on port {}", error_string, log.code)?,
-                    18 => writeln!(
-                        &mut tw,
+                    16 => format!("{} AFE fault", error_string),
+                    17 => format!("Motor {} on port {}", error_string, log.code),
+                    18 => format!(
                         "Motor {} {} on port {}",
                         error_string, log.spare, log.code
-                    )?,
-                    22 => writeln!(&mut tw, "{} Error", error_string)?,
-                    23 => writeln!(&mut tw, "Motor {} Error", error_string)?,
-                    24 => writeln!(&mut tw, "{}", error_string)?,
-                    _ => {
-                        if log.description < 26 {
-                            writeln!(&mut tw, "{}", error_string)?;
-                        } else {
-                            writeln!(
-                                &mut tw,
-                                "?: {:.02X} {:.02X} {:.02X} {:.02X}",
-                                log.code, log.spare, log.description, log.log_type
-                            )?;
-                        }
+                    ),
+                    22 => format!("{} Error", error_string),
+                    23 => format!("Motor {} Error", error_string),
+                    1 | 3..=6 | 10 | 12 | 19..=21 | 24 | 25 => format!("{}", error_string),
+                    26.. => {                
+                        format!(
+                            "?: {:.02X} {:.02X} {:.02X} {:.02X}",
+                            log.code, log.spare, log.description, log.log_type
+                        );
                     }
                 }
             }
             128 => match log.code {
-                0x11 => writeln!(&mut tw, "Program error: Invalid")?,
-                0x12 => writeln!(&mut tw, "Program error: Abort")?,
-                0x13 => writeln!(&mut tw, "Program error: SDK")?,
-                0x14 => writeln!(&mut tw, "Program error: SDK Mismatch")?,
-                _ => writeln!(
-                    &mut tw,
+                0x11 => format!("Program error: Invalid"),
+                0x12 => format!("Program error: Abort"),
+                0x13 => format!("Program error: SDK"),
+                0x14 => format!("Program error: SDK Mismatch"),
+                _ => format!(
                     "U {:.02X}:{:.02X}:{:.02X}",
                     log.code, log.spare, log.description
-                )?,
+                ),
             },
-            144 => writeln!(&mut tw, "Program: Tamper")?,
+            144 => format!("Program: Tamper"),
             160 => {
                 let r1 = if (log.spare & 1) != 0 {
                     Some("R1")
@@ -203,38 +208,99 @@ pub async fn log(connection: &mut SerialConnection, page: NonZeroU32) -> Result<
                 };
 
                 match log.code {
-                    1 => writeln!(
-                        &mut tw,
+                    1 => format!(
                         "FC: Cable - {}{}{}{}{}",
                         r1.unwrap_or_default(),
                         b1.unwrap_or_default(),
                         r2.unwrap_or_default(),
                         b2.unwrap_or_default(),
                         log.description
-                    )?,
-                    2 => writeln!(
-                        &mut tw,
+                    ),
+                    2 => format!(
                         "FC: Radio - {}{}{}{}{}",
                         r1.unwrap_or_default(),
                         b1.unwrap_or_default(),
                         r2.unwrap_or_default(),
                         b2.unwrap_or_default(),
                         log.description
-                    )?,
-                    _ => writeln!(
-                        &mut tw,
+                    ),
+                    _ => format!(
                         "FC: {:.02X}:{:.02X}:{:.02X}",
                         log.code, log.spare, log.description
-                    )?,
+                    ),
                 }
             }
-            _ => writeln!(
-                &mut tw,
+            _ => format!(
                 "X: {:.02X}:{:.02X}:{:.02X}",
                 log.code, log.spare, log.description
-            )?,
+            ),
+        };
+        Log {
+            timestamp,
+            category,
+            text,
         }
-        write!(&mut tw, "\x1B[0m")?;
+    }
+}
+
+pub async fn log(connection: &mut SerialConnection, opts: LogOpts) -> Result<(), CliError> {
+    let LogOpts { page, no_color } = opts;
+    let mut tw = TabWriter::new(io::stdout())
+        .tab_indent(false)
+        .padding(1)
+        .ansi(true)
+        .alignment(Alignment::Right);
+
+    let mut entries = Vec::new();
+    let page_range = match page {
+        Some(page) => page.get()..(page.get() + 1),
+        None => {
+            let log_count = 
+                connection
+                    .packet_handshake::<GetLogCountReplyPacket>(
+                        Duration::from_millis(500),
+                        10,
+                        GetLogCountPacket::new(()),
+                    )
+                    .await?
+                    .payload
+                    .count;
+            let pages = log_count.div_ceil(MAX_LOGS_PER_PAGE);
+            1..(pages+1)
+        }
+    });
+    for page in page_range {
+        entries.extend(
+            connection
+                .packet_handshake::<ReadLogPageReplyPacket>(
+                    Duration::from_millis(500),
+                    10,
+                    ReadLogPagePacket::new(ReadLogPagePayload {
+                        offset: MAX_LOGS_PER_PAGE * page.get(),
+                        count: MAX_LOGS_PER_PAGE,
+                    }),
+                )
+                .await?
+                .payload
+                .entries
+                .into_iter()
+                .enumerate()
+                .map(|(i, log)| ((MAX_LOGS_PER_PAGE * page) - (i as u32), log))
+                .rev(),
+        )
+    }
+
+    // TODO: remove
+    assert!(entries.iter().is_sorted());
+
+    for (i, Log { timestamp, category, text }) in entries {
+        let time = (NaiveTime::MIN + timestamp).format("%H:%M:%S");
+        let color = if no_color {
+            ""
+        } else {
+            category.ansi_color()
+        }; 
+        writeln!(&mut tw, "{color}{i}:\t[{time}]\t{text}\x1B[0m")?;
     }
 
     tw.flush()?;
