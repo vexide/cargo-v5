@@ -1,7 +1,7 @@
 use core::panic;
 #[cfg(feature = "field-control")]
 use std::time::Duration;
-use std::{env, num::NonZeroU32, path::PathBuf};
+use std::{env, num::NonZeroU32, option::Option, path::PathBuf};
 
 use cargo_metadata::camino::Utf8PathBuf;
 #[cfg(feature = "field-control")]
@@ -12,7 +12,7 @@ use cargo_v5::{
         cat::cat,
         devices::devices,
         dir::dir,
-        log::log,
+        log::{LogOpts, log},
         new::new,
         rm::rm,
         screenshot::screenshot,
@@ -101,8 +101,8 @@ enum Command {
     Rm { file: PathBuf },
     /// Read event log.
     Log {
-        #[arg(long, short, default_value = "1")]
-        page: NonZeroU32,
+        #[clap(flattem)]
+        log_opts: LogOpts,
     },
     /// List devices connected to a brain.
     #[clap(visible_alias = "lsdev")]
@@ -172,7 +172,7 @@ async fn app(command: Command, path: Utf8PathBuf, logger: &mut LoggerHandle) -> 
         Command::Devices => devices(&mut open_connection().await?).await?,
         Command::Cat { file } => cat(&mut open_connection().await?, file).await?,
         Command::Rm { file } => rm(&mut open_connection().await?, file).await?,
-        Command::Log { page } => log(&mut open_connection().await?, page).await?,
+        Command::Log { log_opts } => log(&mut open_connection().await?, log_opts).await?,
         Command::Screenshot => screenshot(&mut open_connection().await?).await?,
         Command::Run(opts) => {
             let mut connection = upload(&path, opts, AfterUpload::Run).await?;
