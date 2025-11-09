@@ -12,6 +12,7 @@ use toml_edit::{Document, Table, Value, table, value};
 use crate::errors::CliError;
 
 mod vfs;
+mod editor;
 
 #[derive(Debug, Error, Diagnostic)]
 pub enum UpgradeError {
@@ -51,6 +52,8 @@ pub async fn upgrade_workspace(root: &Path) -> Result<(), CliError> {
         "- Will disable Rustup override: {}",
         ctx.will_disable_rustup_override
     );
+
+    editor::update_project(&mut ctx).await?;
 
     Ok(())
 }
