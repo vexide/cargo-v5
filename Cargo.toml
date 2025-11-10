@@ -61,6 +61,8 @@ supports-color = "3.0.2"
 toml_edit = "0.23.5"
 fs-err = { version = "3.1.2", features = ["tokio"] }
 diff = "0.1.13"
+semver = "1.0.27"
+ra_ap_syntax = "0.0.305"
 
 [dependencies.syntect]
 version = "5.3.0"

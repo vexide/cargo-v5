@@ -1,74 +1,131 @@
 use std::{
     env::{self, home_dir},
+    fmt::Display,
+    io::ErrorKind,
     path::{Path, PathBuf},
 };
 
+use cargo_metadata::{Metadata, semver::VersionReq};
 use fs_err::tokio as fs;
+use inquire::Confirm;
 use miette::Diagnostic;
+use semver::Version;
 use supports_color::Stream;
 use thiserror::Error;
-use toml_edit::{Document, Table, Value, table, value};
+use tokio::{
+    process::Command,
+    task::{block_in_place, spawn_blocking},
+};
+use toml_edit::{Array, Document, DocumentMut, Item, Table, Value, table, value};
 
 use crate::errors::CliError;
 
+mod source_code;
 mod vfs;
-
-#[derive(Debug, Error, Diagnostic)]
-pub enum UpgradeError {
-    #[error("failed to parse toml file")]
-    #[diagnostic(code(cargo_v5::upgrade::invalid_toml_file))]
-    TomlParse(#[from] toml_edit::TomlError),
-}
-
-struct ChangesCtx {
-    fs: vfs::FileOperationStore,
-    will_disable_rustup_override: bool,
-}
-
-impl ChangesCtx {
-    pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self {
-            fs: vfs::FileOperationStore::new(root),
-            will_disable_rustup_override: false,
-        }
-    }
-}
 
 /// Applies all available upgrades to the workspace.
 pub async fn upgrade_workspace(root: &Path) -> Result<(), CliError> {
-    let mut ctx = ChangesCtx::new(root);
+    let metadata_task = block_in_place(|| {
+        cargo_metadata::MetadataCommand::new()
+            .current_dir(root)
+            .exec()
+            .ok()
+    });
 
-    update_cargo_config(&mut ctx).await?;
-    update_vexide(&mut ctx).await?;
+    let Some(metadata) = metadata_task else {
+        return Err(UpgradeError::Metadata.into());
+    };
+
+    let mut ctx = ChangesCtx::new(&metadata.workspace_root);
+
+    update_vexide(&mut ctx, &metadata).await?;
     update_rust(&mut ctx).await?;
+    update_cargo_config(&mut ctx).await?;
+    source_code::update_targets(&mut ctx, &metadata).await?;
 
     // Print pending changes - in the future we will apply them too.
     let highlight = supports_color::on_cached(Stream::Stdout).is_some();
 
     println!();
-    println!("{}", ctx.fs.display(true, highlight).await);
-    println!(
-        "- Will disable Rustup override: {}",
-        ctx.will_disable_rustup_override
-    );
+    println!("Changes Summary:");
+    for desc in &ctx.description {
+        println!("  - {desc}");
+    }
+    if ctx.description.is_empty() {
+        println!("  - (No changes)");
+        println!();
+        return Ok(());
+    }
+    println!();
+
+    loop {
+        let confirmation: inquire::Select<'_, ConfirmOptions> = inquire::Select::new(
+            "Apply changes?",
+            vec![
+                ConfirmOptions::Confirm,
+                ConfirmOptions::ViewDiff,
+                ConfirmOptions::Abort,
+            ],
+        );
+
+        let reply = block_in_place(|| confirmation.prompt_skippable())?.unwrap_or_default();
+
+        match reply {
+            ConfirmOptions::Confirm => {
+                ctx.apply().await?;
+                break;
+            }
+            ConfirmOptions::ViewDiff => println!("{}", ctx.fs.display(true, highlight).await),
+            ConfirmOptions::Abort => {
+                break;
+            }
+        }
+    }
 
     Ok(())
 }
 
-async fn update_rust(ctx: &mut ChangesCtx) -> Result<(), CliError> {
-    let files = &mut ctx.fs;
+#[derive(Default)]
+enum ConfirmOptions {
+    Confirm,
+    ViewDiff,
+    #[default]
+    Abort,
+}
 
-    files
-        .edit_toml("rust-toolchain.toml", |document| {
-            let toolchain = document.table("toolchain");
-            toolchain["channel"] = value("nightly-2025-09-26");
+impl Display for ConfirmOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ConfirmOptions::Confirm => "Confirm",
+            ConfirmOptions::ViewDiff => "View Changes",
+            ConfirmOptions::Abort => "Abort",
         })
-        .await?;
+    }
+}
+
+async fn update_rust(ctx: &mut ChangesCtx) -> Result<(), CliError> {
+    ctx.edit_toml("rust-toolchain.toml", |document, ctx| {
+        let latest = "nightly-2025-09-26";
+
+        let toolchain = document.table("toolchain");
+        let old_channel = toolchain.insert("channel", value(latest));
+
+        if let Some(old_channel) = old_channel
+            && let Some(old_channel) = old_channel.as_str()
+            && old_channel != latest
+        {
+            ctx.describe("Updated to Rust 1.91");
+        }
+    })
+    .await?;
 
     let has_override = rustup_has_override_for_path(ctx.fs.root())
         .await
         .unwrap_or(false);
-    ctx.will_disable_rustup_override = has_override;
+    if has_override {
+        ctx.will_disable_rustup_override = has_override;
+        ctx.describe("Disabled the Rustup override for this project.");
+    }
 
     Ok(())
 }
@@ -96,35 +153,66 @@ async fn rustup_has_override_for_path(path: &Path) -> Option<bool> {
 /// Updates the user's Cargo config to use the Rust `armv7a-vex-v5` target
 /// and deletes their old target JSON file.
 async fn update_cargo_config(ctx: &mut ChangesCtx) -> Result<(), CliError> {
-    let fs = &mut ctx.fs;
-
-    fs.edit_toml(".cargo/config.toml", |document| {
+    ctx.edit_toml(".cargo/config.toml", |document, ctx| {
         let build = document.table("build");
 
-        build.remove("target");
+        let old_target = build.remove("target");
+        if old_target.is_some() {
+            ctx.describe("Enabled desktop unit testing");
+        }
 
-        let rustflags = Value::from_iter(vec!["-Clink-arg=-Tvexide.ld"]);
-        build["rustflags"] = value(rustflags);
+        let rustflags = vec!["-Clink-arg=-Tvexide.ld"];
+
+        let rustflags_are_updated = toml_item_eq_strings(build.get("rustflags"), &rustflags);
+        if !rustflags_are_updated {
+            let rustflags = Value::from_iter(rustflags);
+            build["rustflags"] = value(rustflags);
+            ctx.describe("Enabled the vexide v0.8.0 memory layout");
+        }
 
         let unstable = document.table("unstable");
 
-        let build_std = Value::from_iter(vec!["std", "panic_abort"]);
-        unstable["build-std"] = value(build_std);
+        let build_std = vec!["std", "panic_abort"];
+        let build_std_features = vec!["compiler-builtins-mem"];
 
-        let build_std_features = Value::from_iter(vec!["compiler-builtins-mem"]);
-        unstable["build-std-features"] = value(build_std_features);
+        let unstable_is_updated = toml_item_eq_strings(unstable.get("build-std"), &build_std)
+            && toml_item_eq_strings(unstable.get("build-std-features"), &build_std_features);
+
+        if !unstable_is_updated {
+            let build_std = Value::from_iter(vec!["std", "panic_abort"]);
+            unstable["build-std"] = value(build_std);
+
+            let build_std_features = Value::from_iter(vec!["compiler-builtins-mem"]);
+            unstable["build-std-features"] = value(build_std_features);
+
+            ctx.describe("Added the Rust Standard Library as a dependency");
+        }
     })
     .await?;
 
-    fs.delete_if_exists("armv7a-vex-v5.json").await?;
+    ctx.fs.delete_if_exists("armv7a-vex-v5.json").await?;
 
     Ok(())
 }
 
-async fn update_vexide(ctx: &mut ChangesCtx) -> Result<(), CliError> {
-    let fs = &mut ctx.fs;
+async fn update_vexide(ctx: &mut ChangesCtx, metadata: &Metadata) -> Result<(), CliError> {
+    let latest = "0.8.0-alpha.2";
 
-    fs.edit_toml("Cargo.toml", |document| {
+    let mut packages = metadata.packages.iter();
+
+    if let Some(current_vexide) = packages.find(|p| p.name.as_str() == "vexide") {
+        let supported_by_tool = Version::new(0, 7, 0);
+        let latest = Version::parse(latest).unwrap();
+
+        let is_eligible =
+            current_vexide.version < latest && current_vexide.version >= supported_by_tool;
+        if !is_eligible {
+            log::warn!("vexide {} not eligible for upgrade", current_vexide.version);
+            return Ok(());
+        }
+    }
+
+    ctx.edit_toml("Cargo.toml", |document, ctx| {
         let old_entry = document.get("dependencies").and_then(|d| d.get("vexide"));
 
         let old_features_array = old_entry
@@ -178,15 +266,88 @@ async fn update_vexide(ctx: &mut ChangesCtx) -> Result<(), CliError> {
 
         let mut vexide = Table::new();
 
-        vexide["version"] = value("v0.8.0-alpha.2");
+        vexide["version"] = value(latest);
         vexide["features"] = value(Value::from_iter(features));
         if !default_features {
             vexide["default-features"] = value(default_features);
         }
 
         dependencies["vexide"] = vexide.into();
+
+        ctx.describe(format!("Updated to vexide v{latest}"));
     })
     .await
+}
+
+#[derive(Debug, Error, Diagnostic)]
+pub enum UpgradeError {
+    #[error("failed to parse toml file")]
+    #[diagnostic(code(cargo_v5::upgrade::invalid_toml_file))]
+    TomlParse(#[from] toml_edit::TomlError),
+    #[error("Cannot determine the current Cargo workspace")]
+    #[diagnostic(code(cargo_v5::upgrade::no_metadata))]
+    Metadata,
+}
+
+struct ChangesCtx {
+    fs: vfs::FileOperationStore,
+    will_disable_rustup_override: bool,
+    description: Vec<String>,
+}
+
+impl ChangesCtx {
+    pub fn new(root: impl Into<PathBuf>) -> Self {
+        Self {
+            fs: vfs::FileOperationStore::new(root),
+            will_disable_rustup_override: false,
+            description: vec![],
+        }
+    }
+
+    pub async fn edit_toml(
+        &mut self,
+        path: impl AsRef<Path>,
+        editor: impl FnOnce(&mut DocumentMut, &mut Self),
+    ) -> Result<(), CliError> {
+        let path = path.as_ref();
+        let (mut doc, old_contents) = open_or_create_toml(&mut self.fs, path).await?;
+        editor(&mut doc, self);
+
+        let new_file = doc.to_string();
+        if old_contents.as_ref() == Some(&new_file) {
+            return Ok(()); // Avoid marking file as changed; hides diff.
+        }
+
+        self.fs.write(path, new_file).await?;
+
+        Ok(())
+    }
+
+    pub fn describe(&mut self, change: impl Into<String>) {
+        self.description.push(change.into());
+    }
+
+    pub async fn apply(&mut self) -> Result<(), CliError> {
+        self.fs.apply().await?;
+
+        if self.will_disable_rustup_override {
+            let mut cmd = Command::new("rustup");
+
+            cmd.arg("override")
+                .arg("unset")
+                .arg("--path")
+                .arg(self.fs.root());
+
+            let status = cmd.spawn()?.wait().await?;
+            if !status.success() {
+                log::warn!(
+                    "Disabling the rustup override for the project directory was unsuccessful"
+                );
+            }
+        }
+
+        Ok(())
+    }
 }
 
 trait TableExt {
@@ -205,4 +366,36 @@ impl TableExt for Table {
 
         value.as_table_mut().unwrap()
     }
+}
+
+async fn open_or_create_toml(
+    files: &mut vfs::FileOperationStore,
+    path: &Path,
+) -> Result<(DocumentMut, Option<String>), CliError> {
+    let file = files.read_to_string(&path).await;
+
+    // If the config file is missing, make a new one.
+    let doc = match file {
+        Ok(contents) => {
+            let toml = contents
+                .parse::<DocumentMut>()
+                .map_err(UpgradeError::from)?;
+            (toml, Some(contents))
+        }
+        Err(err) if err.kind() == ErrorKind::NotFound => (DocumentMut::new(), None),
+        Err(other) => return Err(other)?,
+    };
+
+    Ok(doc)
+}
+
+fn toml_item_eq_strings(toml: Option<&Item>, strings: &[&str]) -> bool {
+    toml.and_then(|f| f.as_array())
+        .map(|array| {
+            array
+                .into_iter()
+                .map(|f| f.as_str().unwrap_or_default())
+                .eq(strings.iter().cloned())
+        })
+        .unwrap_or_default()
 }
