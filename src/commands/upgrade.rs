@@ -46,7 +46,13 @@ pub async fn upgrade_workspace(root: &Path) -> Result<(), CliError> {
     // Print pending changes - in the future we will apply them too.
     let highlight = supports_color::on_cached(Stream::Stdout).is_some();
 
-    println!();
+    println!(
+        "The upgrade tool will now update your project configuration to the vexide v0.8 recommended defaults."
+    );
+    println!(
+        "After applying these changes, make sure to check out the upgrade guide on the vexide website"
+    );
+    println!("for instructions on how to update your project's code!");
     println!("Changes Summary:");
     for desc in &ctx.description {
         println!("  - {desc}");
@@ -114,7 +120,7 @@ async fn update_rust(ctx: &mut ChangesCtx) -> Result<(), CliError> {
             && let Some(old_channel) = old_channel.as_str()
             && old_channel != latest
         {
-            ctx.describe("Updated to Rust 1.91");
+            ctx.describe("Updated to Rust 1.92");
         }
     })
     .await?;
