@@ -160,6 +160,8 @@ async fn rustup_has_override_for_path(path: &Path) -> Option<bool> {
 /// and deletes their old target JSON file.
 async fn update_cargo_config(ctx: &mut ChangesCtx) -> Result<(), CliError> {
     ctx.edit_toml(".cargo/config.toml", |document, ctx| {
+        // Disable forced target.
+
         let build = document.table("build");
         build.set_implicit(true);
 
@@ -168,13 +170,38 @@ async fn update_cargo_config(ctx: &mut ChangesCtx) -> Result<(), CliError> {
             ctx.describe("Enabled desktop unit testing");
         }
 
+        // Move/add all required rustflags to target config.
+
+        let rustflags = vec!["-Clink-arg=-Tvexide.ld"];
+
+        if let Some(old_rustflags) = build.get_mut("rustflags")
+            && let Some(flag_array) = old_rustflags.as_array_mut()
+        {
+            // If the normal rustflags have any of these items, just remove them because
+            // that's probably a mistake.
+
+            #[rustfmt::skip]
+            flag_array.retain(|item| {
+                // Only keep items that aren't vexide-specific.
+
+                let is_vexide_flag = rustflags.iter().any(|&vexide_flag| {
+                    item.as_str().is_some_and(|flag| flag == vexide_flag)
+                });
+
+                !is_vexide_flag
+            });
+
+            if flag_array.is_empty() {
+                build.remove("rustflags");
+            }
+        }
+
+        // Now set up the target table and put the rustflags in.
         let target = document.table("target");
         target.set_implicit(true);
         target.set_position(-1);
 
         let this_target = target.table(r#"cfg(target_os = "vexos")"#);
-
-        let rustflags = vec!["-Clink-arg=-Tvexide.ld"];
 
         let rustflags_are_updated = toml_item_eq_strings(this_target.get("rustflags"), &rustflags);
         if !rustflags_are_updated {
@@ -183,6 +210,7 @@ async fn update_cargo_config(ctx: &mut ChangesCtx) -> Result<(), CliError> {
             ctx.describe("Enabled the vexide v0.8.0 memory layout");
         }
 
+        // Build-std config.
         let unstable = document.table("unstable");
 
         let build_std = vec!["std", "panic_abort"];
