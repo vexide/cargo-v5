@@ -161,18 +161,25 @@ async fn rustup_has_override_for_path(path: &Path) -> Option<bool> {
 async fn update_cargo_config(ctx: &mut ChangesCtx) -> Result<(), CliError> {
     ctx.edit_toml(".cargo/config.toml", |document, ctx| {
         let build = document.table("build");
+        build.set_implicit(true);
 
         let old_target = build.remove("target");
         if old_target.is_some() {
             ctx.describe("Enabled desktop unit testing");
         }
 
+        let target = document.table("target");
+        target.set_implicit(true);
+        target.set_position(-1);
+
+        let this_target = target.table(r#"cfg(target_os = "vexos")"#);
+
         let rustflags = vec!["-Clink-arg=-Tvexide.ld"];
 
-        let rustflags_are_updated = toml_item_eq_strings(build.get("rustflags"), &rustflags);
+        let rustflags_are_updated = toml_item_eq_strings(this_target.get("rustflags"), &rustflags);
         if !rustflags_are_updated {
             let rustflags = Value::from_iter(rustflags);
-            build["rustflags"] = value(rustflags);
+            this_target["rustflags"] = value(rustflags);
             ctx.describe("Enabled the vexide v0.8.0 memory layout");
         }
 
