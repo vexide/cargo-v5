@@ -616,17 +616,14 @@ pub async fn upload(
                     (file, None)
                 } else {
                     // If a BIN file wasn't provided, we'll attempt to objcopy it as if it were an ELF.
-                    let binary = objcopy(
-                        &tokio::fs::read(&file)
-                            .await
-                            .map_err(|e| CliError::IoError(e))?,
-                    )?;
+                    let binary =
+                        objcopy(&tokio::fs::read(&file).await.map_err(CliError::IoError)?)?;
                     let binary_path = file.with_extension("bin");
 
                     // Write the binary to a file.
                     tokio::fs::write(&binary_path, binary)
                         .await
-                        .map_err(|e| CliError::IoError(e))?;
+                        .map_err(CliError::IoError)?;
                     eprintln!("     \x1b[1;92mObjcopy\x1b[0m {}", binary_path.display());
 
                     (binary_path, None)

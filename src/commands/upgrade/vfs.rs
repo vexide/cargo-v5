@@ -19,9 +19,6 @@ use syntect::{
     util::as_24_bit_terminal_escaped,
 };
 use tokio::task::JoinSet;
-use toml_edit::DocumentMut;
-
-use crate::{commands::upgrade::UpgradeError, errors::CliError};
 
 /// Stores pending operations on the file system.
 #[derive(Debug)]

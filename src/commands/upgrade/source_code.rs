@@ -1,25 +1,15 @@
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::Debug,
-    str::FromStr,
-};
+use std::str::FromStr;
 
-use cargo_metadata::{Edition, Metadata};
+use cargo_metadata::Metadata;
 use ra_ap_syntax::{
-    AstNode, SourceFile, SyntaxNode,
-    ast::{
-        Attr, ExternCrate, HasAttrs, HasModuleItem, HasName, Item, Path, PathSegment, Use, UseTree, UseTreeList, make
-    },
-    syntax_editor::SyntaxEditor,
+    AstNode, SourceFile,
+    ast::{Attr, ExternCrate, HasAttrs},
 };
-use tokio::task::{block_in_place, spawn_blocking};
 
 use crate::{commands::upgrade::ChangesCtx, errors::CliError};
 
 /// Perform updates that require knowledge of Rust workspace layout & syntax.
 pub async fn update_targets(ctx: &mut ChangesCtx, metadata: &Metadata) -> Result<(), CliError> {
-    let root = ctx.fs.root().to_owned();
-
     for package in metadata.workspace_packages() {
         let edition =
             ra_ap_syntax::Edition::from_str(package.edition.as_str()).expect("unknown edition");
@@ -62,7 +52,6 @@ pub async fn update_targets(ctx: &mut ChangesCtx, metadata: &Metadata) -> Result
             // Removing nodes can leave the line they are on, so remove any prefixed whitespace.
             let trimmed_len = new_contents.len() - new_contents.trim_start().len();
             new_contents.drain(..trimmed_len);
-
 
             ctx.fs.write(entrypoint, new_contents).await?;
         }

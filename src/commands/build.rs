@@ -71,40 +71,38 @@ pub async fn build(path: &Path, opts: CargoOpts) -> Result<Option<BuildOutput>, 
 
     build_cmd.args(opts.args);
 
-    Ok(block_in_place::<_, Result<Option<BuildOutput>, CliError>>(
-        || {
-            let mut out = build_cmd.spawn()?;
-            let reader = std::io::BufReader::new(out.stdout.take().unwrap());
+    block_in_place::<_, Result<Option<BuildOutput>, CliError>>(|| {
+        let mut out = build_cmd.spawn()?;
+        let reader = std::io::BufReader::new(out.stdout.take().unwrap());
 
-            let mut output = None;
+        let mut output = None;
 
-            for message in Message::parse_stream(reader) {
-                if let Message::CompilerArtifact(artifact) = message? {
-                    if let Some(elf_artifact_path) = artifact.executable {
-                        let binary = objcopy(&std::fs::read(&elf_artifact_path)?)?;
-                        let binary_path = elf_artifact_path.with_extension("bin");
+        for message in Message::parse_stream(reader) {
+            if let Message::CompilerArtifact(artifact) = message?
+                && let Some(elf_artifact_path) = artifact.executable
+            {
+                let binary = objcopy(&std::fs::read(&elf_artifact_path)?)?;
+                let binary_path = elf_artifact_path.with_extension("bin");
 
-                        // Write the binary to a file.
-                        std::fs::write(&binary_path, binary)?;
-                        eprintln!("     \x1b[1;92mObjcopy\x1b[0m {binary_path}");
+                // Write the binary to a file.
+                std::fs::write(&binary_path, binary)?;
+                eprintln!("     \x1b[1;92mObjcopy\x1b[0m {binary_path}");
 
-                        output = Some(BuildOutput {
-                            bin_artifact: binary_path.into_std_path_buf(),
-                            elf_artifact: elf_artifact_path.into_std_path_buf(),
-                            package_id: artifact.package_id,
-                        });
-                    }
-                }
+                output = Some(BuildOutput {
+                    bin_artifact: binary_path.into_std_path_buf(),
+                    elf_artifact: elf_artifact_path.into_std_path_buf(),
+                    package_id: artifact.package_id,
+                });
             }
+        }
 
-            let status = out.wait()?;
-            if !status.success() {
-                exit(status.code().unwrap_or(1));
-            }
+        let status = out.wait()?;
+        if !status.success() {
+            exit(status.code().unwrap_or(1));
+        }
 
-            Ok(output)
-        },
-    )?)
+        Ok(output)
+    })
 }
 
 /// Implementation of `objcopy -O binary`.

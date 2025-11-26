@@ -5,18 +5,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use cargo_metadata::{Metadata, semver::VersionReq};
+use cargo_metadata::Metadata;
 use fs_err::tokio as fs;
-use inquire::Confirm;
 use miette::Diagnostic;
 use semver::Version;
 use supports_color::Stream;
 use thiserror::Error;
-use tokio::{
-    process::Command,
-    task::{block_in_place, spawn_blocking},
-};
-use toml_edit::{Array, Document, DocumentMut, Item, Table, Value, table, value};
+use tokio::{process::Command, task::block_in_place};
+use toml_edit::{Document, DocumentMut, Item, Table, Value, table, value};
 
 use crate::errors::CliError;
 

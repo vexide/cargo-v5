@@ -463,16 +463,16 @@ pub async fn run_field_control_tui(connection: &mut SerialConnection) -> Result<
         }
         terminal.draw(|frame| draw_tui(frame, &mut tui_state))?;
 
-        if let Ok(output) = try_read_terminal(connection).await {
-            if !output.is_empty() {
-                for byte in output.iter() {
-                    let byte = if *byte == b'\n' {
-                        b"\r\n"
-                    } else {
-                        std::slice::from_ref(byte)
-                    };
-                    tui_state.parser.process(byte);
-                }
+        if let Ok(output) = try_read_terminal(connection).await
+            && !output.is_empty()
+        {
+            for byte in output.iter() {
+                let byte = if *byte == b'\n' {
+                    b"\r\n"
+                } else {
+                    std::slice::from_ref(byte)
+                };
+                tui_state.parser.process(byte);
             }
         }
     }

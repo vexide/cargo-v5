@@ -71,9 +71,9 @@ pub async fn open_connection() -> Result<SerialConnection, CliError> {
 
     // Open a connection to the device.
     spawn_blocking(move || {
-        Ok(device
+        device
             .connect(Duration::from_secs(5))
-            .map_err(CliError::SerialError)?)
+            .map_err(CliError::SerialError)
     })
     .await
     .unwrap()
