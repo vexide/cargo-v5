@@ -5,7 +5,7 @@ use syntect::{
     parsing::{SyntaxDefinition, SyntaxSet},
 };
 
-const TOML_SYNTAX: &str = include_str!("src/commands/upgrade/TOML.sublime-syntax");
+const TOML_SYNTAX: &str = include_str!("src/commands/migrate/TOML.sublime-syntax");
 
 fn main() {
     // Create dump with custom languages for syntax highlighting.

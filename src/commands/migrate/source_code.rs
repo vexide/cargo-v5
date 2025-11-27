@@ -6,7 +6,7 @@ use ra_ap_syntax::{
     ast::{Attr, ExternCrate, HasAttrs},
 };
 
-use crate::{commands::upgrade::ChangesCtx, errors::CliError};
+use crate::{commands::migrate::ChangesCtx, errors::CliError};
 
 /// Perform updates that require knowledge of Rust workspace layout & syntax.
 pub async fn update_targets(ctx: &mut ChangesCtx, metadata: &Metadata) -> Result<(), CliError> {

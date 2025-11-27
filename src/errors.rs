@@ -26,7 +26,7 @@ pub enum CliError {
 
     #[error(transparent)]
     #[diagnostic(transparent)]
-    UpgradeError(#[from] MigrateError),
+    MigrateError(#[from] MigrateError),
 
     #[cfg(feature = "fetch-template")]
     #[error(transparent)]

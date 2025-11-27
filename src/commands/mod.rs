@@ -9,6 +9,6 @@ pub mod new;
 pub mod rm;
 pub mod screenshot;
 pub mod terminal;
-pub mod upgrade;
+pub mod migrate;
 pub mod upload;
 pub mod key_value;
