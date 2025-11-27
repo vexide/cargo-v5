@@ -250,6 +250,10 @@ async fn update_vexide(ctx: &mut ChangesCtx, metadata: &Metadata) -> Result<(), 
     }
 
     ctx.edit_toml("Cargo.toml", |document, ctx| {
+        // Update to Rust 2024 edition (required by 0.8.0).
+        _ = document.table("package").insert("edition", "2024".to_string().into());
+        ctx.describe("Updated to Rust 2024 edition");
+
         let old_entry = document.get("dependencies").and_then(|d| d.get("vexide"));
 
         let old_features_array = old_entry
@@ -309,7 +313,7 @@ async fn update_vexide(ctx: &mut ChangesCtx, metadata: &Metadata) -> Result<(), 
             vexide["default-features"] = value(default_features);
         }
 
-        dependencies["vexide"] = vexide.into();
+        dependencies["vexide"] = vexide.into_inline_table().into();
 
         ctx.describe(format!("Updated to vexide v{latest}"));
     })
