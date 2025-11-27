@@ -20,7 +20,7 @@ mod source_code;
 mod vfs;
 
 /// Applies all available upgrades to the workspace.
-pub async fn upgrade_workspace(root: &Path) -> Result<(), CliError> {
+pub async fn migrate_workspace(root: &Path) -> Result<(), CliError> {
     let metadata_task = block_in_place(|| {
         cargo_metadata::MetadataCommand::new()
             .current_dir(root)
@@ -29,7 +29,7 @@ pub async fn upgrade_workspace(root: &Path) -> Result<(), CliError> {
     });
 
     let Some(metadata) = metadata_task else {
-        return Err(UpgradeError::Metadata.into());
+        return Err(MigrateError::Metadata.into());
     };
 
     let mut ctx = ChangesCtx::new(&metadata.workspace_root);
@@ -323,7 +323,7 @@ async fn update_vexide(ctx: &mut ChangesCtx, metadata: &Metadata) -> Result<(), 
 }
 
 #[derive(Debug, Error, Diagnostic)]
-pub enum UpgradeError {
+pub enum MigrateError {
     #[error("failed to parse toml file")]
     #[diagnostic(code(cargo_v5::upgrade::invalid_toml_file))]
     TomlParse(#[from] toml_edit::TomlError),
@@ -422,7 +422,7 @@ async fn open_or_create_toml(
         Ok(contents) => {
             let toml = contents
                 .parse::<DocumentMut>()
-                .map_err(UpgradeError::from)?;
+                .map_err(MigrateError::from)?;
             (toml, Some(contents))
         }
         Err(err) if err.kind() == ErrorKind::NotFound => (DocumentMut::new(), None),

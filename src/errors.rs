@@ -7,7 +7,7 @@ use miette::Diagnostic;
 use thiserror::Error;
 use vex_v5_serial::protocol::{FixedStringSizeError, cdc2::Cdc2Ack};
 
-use crate::commands::upgrade::UpgradeError;
+use crate::commands::migrate::MigrateError;
 
 #[non_exhaustive]
 #[derive(Error, Diagnostic, Debug)]
@@ -26,7 +26,7 @@ pub enum CliError {
 
     #[error(transparent)]
     #[diagnostic(transparent)]
-    UpgradeError(#[from] UpgradeError),
+    UpgradeError(#[from] MigrateError),
 
     #[cfg(feature = "fetch-template")]
     #[error(transparent)]
