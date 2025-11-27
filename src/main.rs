@@ -4,6 +4,7 @@ use cargo_v5::{
         cat::cat,
         devices::devices,
         dir::dir,
+        key_value::{kv_get, kv_set},
         log::log,
         new::new,
         rm::rm,
@@ -50,6 +51,17 @@ enum Cargo {
         #[arg(long, default_value = ".", global = true)]
         path: PathBuf,
     },
+}
+
+/// Access a brain's system key/value configuration.
+#[derive(Subcommand, Debug)]
+#[clap(name = "kv")]
+enum KeyValue {
+    /// Get the value of a system variable on a Brain.
+    Get { key: String },
+
+    /// Set a system variable on a Brain.
+    Set { key: String, value: String },
 }
 
 /// A possible `cargo v5` subcommand.
@@ -113,6 +125,8 @@ enum Command {
     /// Take a screen capture of the brain, saving the file to the current directory.
     #[clap(visible_alias = "sc")]
     Screenshot,
+    #[command(subcommand, visible_alias = "kv")]
+    KeyValue(KeyValue),
     /// Run a field control TUI.
     #[cfg(feature = "field-control")]
     #[clap(visible_aliases = ["fc", "comp-control"])]
@@ -197,6 +211,18 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
                     ).await;
 
                     std::process::exit(0);
+                }
+            }
+        }
+        Command::KeyValue(subcommand) => {
+            let mut connection = open_connection().await?;
+            match subcommand {
+                KeyValue::Get { key } => {
+                    println!("{}", kv_get(&mut connection, &key).await?);
+                }
+                KeyValue::Set { key, value } => {
+                    kv_set(&mut connection, &key, &value).await?;
+                    println!("{key} = {}", kv_get(&mut connection, &key).await?);
                 }
             }
         }

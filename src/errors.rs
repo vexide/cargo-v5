@@ -5,7 +5,7 @@ use image::ImageError;
 use inquire::InquireError;
 use miette::Diagnostic;
 use thiserror::Error;
-use vex_v5_serial::protocol::cdc2::Cdc2Ack;
+use vex_v5_serial::protocol::{FixedStringSizeError, cdc2::Cdc2Ack};
 
 use crate::commands::upgrade::UpgradeError;
 
@@ -45,6 +45,10 @@ pub enum CliError {
     #[error(transparent)]
     #[diagnostic(code(cargo_v5::inquire))]
     Inquire(#[from] InquireError),
+
+    #[error(transparent)]
+    #[diagnostic(code(cargo_v5::fixed_string_size_error))]
+    FixedStringSizeError(#[from] FixedStringSizeError),
 
     // TODO: Add source spans.
     #[error("Incorrect type for field `{field}` (expected {expected}, found {found}).")]
