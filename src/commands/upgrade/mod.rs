@@ -107,7 +107,7 @@ impl Display for ConfirmOptions {
 
 async fn update_rust(ctx: &mut ChangesCtx) -> Result<(), CliError> {
     ctx.edit_toml("rust-toolchain.toml", |document, ctx| {
-        let latest = "nightly-2025-09-26";
+        let latest = "nightly-2025-11-26";
 
         let toolchain = document.table("toolchain");
         let old_channel = toolchain.insert("channel", value(latest));
@@ -116,7 +116,7 @@ async fn update_rust(ctx: &mut ChangesCtx) -> Result<(), CliError> {
             && let Some(old_channel) = old_channel.as_str()
             && old_channel != latest
         {
-            ctx.describe("Updated to Rust 1.92");
+            ctx.describe(format!("Updated to Rust {}", latest));
         }
     })
     .await?;
@@ -251,7 +251,9 @@ async fn update_vexide(ctx: &mut ChangesCtx, metadata: &Metadata) -> Result<(), 
 
     ctx.edit_toml("Cargo.toml", |document, ctx| {
         // Update to Rust 2024 edition (required by 0.8.0).
-        _ = document.table("package").insert("edition", "2024".to_string().into());
+        _ = document
+            .table("package")
+            .insert("edition", "2024".to_string().into());
         ctx.describe("Updated to Rust 2024 edition");
 
         let old_entry = document.get("dependencies").and_then(|d| d.get("vexide"));
