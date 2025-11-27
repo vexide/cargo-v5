@@ -53,7 +53,7 @@ enum Cargo {
     },
 }
 
-/// Access a brain's system key/value configuration.
+/// Access a Brain's system key/value configuration.
 #[derive(Subcommand, Debug)]
 #[clap(name = "kv")]
 enum KeyValue {
@@ -67,7 +67,7 @@ enum KeyValue {
 /// A possible `cargo v5` subcommand.
 #[derive(Subcommand, Debug)]
 enum Command {
-    /// Build a project for the V5 brain.
+    /// Build a project for the V5 Brain.
     #[clap(visible_alias = "b")]
     Build {
         /// Arguments forwarded to `cargo`.
@@ -86,7 +86,7 @@ enum Command {
     /// Access a Brain's remote terminal I/O.
     #[clap(visible_alias = "t")]
     Terminal,
-    /// Build, upload, and run a program on a V5 brain, showing its output in the terminal.
+    /// Build, upload, and run a program on a V5 Brain, showing its output in the terminal.
     #[clap(visible_alias = "r")]
     Run(UploadOpts),
     /// Create a new vexide project with a given name.

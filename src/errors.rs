@@ -72,7 +72,7 @@ pub enum CliError {
     #[diagnostic(
         code(cargo_v5::slot_out_of_range),
         help(
-            "The V5 brain only has eight program slots. Adjust the `slot` field or argument to be a number from 1-8."
+            "The V5 Brain only has eight program slots. Adjust the `slot` field or argument to be a number from 1-8."
         )
     )]
     SlotOutOfRange,
@@ -114,7 +114,7 @@ pub enum CliError {
     #[diagnostic(
         code(cargo_v5::no_device),
         help(
-            "Ensure that a V5 brain or controller is plugged in and powered on with a stable USB connection, then try again."
+            "Ensure that a V5 Brain or controller is plugged in and powered on with a stable USB connection, then try again."
         )
     )]
     NoDevice,
