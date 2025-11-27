@@ -286,7 +286,9 @@ async fn update_vexide(ctx: &mut ChangesCtx, metadata: &Metadata) -> Result<(), 
                 feature = match feature {
                     "dangerous_motor_tuning" => "dangerous-motor-tuning",
                     "backtraces" => "backtrace",
-                    "force_rust_libm" => continue, // Removed
+                    "macro" => "macros",
+                    "display_panics" => "panic-hook",
+                    "force_rust_libm" | "smart_leds_trait" | "panic" => continue, // Removed
                     other => other,
                 };
 
@@ -299,8 +301,7 @@ async fn update_vexide(ctx: &mut ChangesCtx, metadata: &Metadata) -> Result<(), 
         }
 
         if include_sdk_features {
-            features.push("vex-sdk-jumptable".into());
-            features.push("vex-sdk-mock".into());
+            features.push("default-sdk".into());
         }
 
         let dependencies = document.table("dependencies");
