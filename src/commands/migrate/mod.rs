@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     env::{self, home_dir},
     fmt::Display,
     io::ErrorKind,
@@ -106,18 +107,12 @@ impl Display for ConfirmOptions {
 }
 
 async fn update_rust(ctx: &mut ChangesCtx) -> Result<(), CliError> {
-    ctx.edit_toml("rust-toolchain.toml", |document, ctx| {
+    ctx.edit_toml("rust-toolchain.toml", |mut ctx| {
         let latest = "nightly-2025-11-26";
 
-        let toolchain = document.table("toolchain");
-        let old_channel = toolchain.insert("channel", value(latest));
-
-        if let Some(old_channel) = old_channel
-            && let Some(old_channel) = old_channel.as_str()
-            && old_channel != latest
-        {
-            ctx.describe(format!("Updated to Rust {}", latest));
-        }
+        let toolchain = ctx.document.table("toolchain");
+        toolchain["channel"] = latest.into();
+        ctx.explain_change(format!("Updated to Rust {}", latest));
     })
     .await?;
 
@@ -155,21 +150,17 @@ async fn rustup_has_override_for_path(path: &Path) -> Option<bool> {
 /// Updates the user's Cargo config to use the Rust `armv7a-vex-v5` target
 /// and deletes their old target JSON file.
 async fn update_cargo_config(ctx: &mut ChangesCtx) -> Result<(), CliError> {
-    ctx.edit_toml(".cargo/config.toml", |document, ctx| {
+    ctx.edit_toml(".cargo/config.toml", |mut ctx| {
         // Disable forced target.
-
-        let build = document.table("build");
-        build.set_implicit(true);
-
-        let old_target = build.remove("target");
-        if old_target.is_some() {
-            ctx.describe("Enabled desktop unit testing");
-        }
+        let build = ctx.document.table("build");
+        build.remove("target");
+        ctx.explain_change("Enabled desktop unit testing");
 
         // Move/add all required rustflags to target config.
 
         let rustflags = vec!["-Clink-arg=-Tvexide.ld"];
 
+        let build = ctx.document.table("build");
         if let Some(old_rustflags) = build.get_mut("rustflags")
             && let Some(flag_array) = old_rustflags.as_array_mut()
         {
@@ -193,37 +184,19 @@ async fn update_cargo_config(ctx: &mut ChangesCtx) -> Result<(), CliError> {
         }
 
         // Now set up the target table and put the rustflags in.
-        let target = document.table("target");
-        target.set_implicit(true);
-        target.set_position(-1);
+        let target = ctx.document.table("target");
+        target.set_position(-1); // should be at start
 
         let this_target = target.table(r#"cfg(target_os = "vexos")"#);
+        this_target["rustflags"] = Value::from_iter(rustflags).into();
 
-        let rustflags_are_updated = toml_item_eq_strings(this_target.get("rustflags"), &rustflags);
-        if !rustflags_are_updated {
-            let rustflags = Value::from_iter(rustflags);
-            this_target["rustflags"] = value(rustflags);
-            ctx.describe("Enabled the vexide v0.8.0 memory layout");
-        }
+        ctx.explain_change("Enabled the vexide v0.8.0 memory layout");
 
         // Build-std config.
-        let unstable = document.table("unstable");
-
-        let build_std = vec!["std", "panic_abort"];
-        let build_std_features = vec!["compiler-builtins-mem"];
-
-        let unstable_is_updated = toml_item_eq_strings(unstable.get("build-std"), &build_std)
-            && toml_item_eq_strings(unstable.get("build-std-features"), &build_std_features);
-
-        if !unstable_is_updated {
-            let build_std = Value::from_iter(vec!["std", "panic_abort"]);
-            unstable["build-std"] = value(build_std);
-
-            let build_std_features = Value::from_iter(vec!["compiler-builtins-mem"]);
-            unstable["build-std-features"] = value(build_std_features);
-
-            ctx.describe("Added the Rust Standard Library as a dependency");
-        }
+        let unstable = ctx.document.table("unstable");
+        unstable["build-std"] = Value::from_iter(vec!["std", "panic_abort"]).into();
+        unstable["build-std-features"] = Value::from_iter(vec!["compiler-builtins-mem"]).into();
+        ctx.explain_change("Added the Rust Standard Library as a dependency");
     })
     .await?;
 
@@ -249,14 +222,18 @@ async fn update_vexide(ctx: &mut ChangesCtx, metadata: &Metadata) -> Result<(), 
         }
     }
 
-    ctx.edit_toml("Cargo.toml", |document, ctx| {
+    ctx.edit_toml("Cargo.toml", |mut ctx| {
         // Update to Rust 2024 edition (required by 0.8.0).
-        _ = document
+        _ = ctx
+            .document
             .table("package")
             .insert("edition", "2024".to_string().into());
-        ctx.describe("Updated to Rust 2024 edition");
+        ctx.explain_change("Updated to Rust 2024 edition");
 
-        let old_entry = document.get("dependencies").and_then(|d| d.get("vexide"));
+        let old_entry = ctx
+            .document
+            .get("dependencies")
+            .and_then(|d| d.get("vexide"));
 
         let old_features_array = old_entry
             .and_then(|v| v.get("features"))
@@ -304,21 +281,21 @@ async fn update_vexide(ctx: &mut ChangesCtx, metadata: &Metadata) -> Result<(), 
             features.push("default-sdk".into());
         }
 
-        let dependencies = document.table("dependencies");
+        let dependencies = ctx.document.table("dependencies");
 
         dependencies.remove("vexide");
 
         let mut vexide = Table::new();
 
-        vexide["version"] = value(latest);
-        vexide["features"] = value(Value::from_iter(features));
+        vexide["version"] = latest.into();
+        vexide["features"] = Value::from_iter(features).into();
         if !default_features {
-            vexide["default-features"] = value(default_features);
+            vexide["default-features"] = default_features.into();
         }
 
         dependencies["vexide"] = vexide.into_inline_table().into();
 
-        ctx.describe(format!("Updated to vexide v{latest}"));
+        ctx.explain_change(format!("Updated to vexide v{latest}"));
     })
     .await
 }
@@ -351,11 +328,17 @@ impl ChangesCtx {
     pub async fn edit_toml(
         &mut self,
         path: impl AsRef<Path>,
-        editor: impl FnOnce(&mut DocumentMut, &mut Self),
+        editor: impl for<'a> FnOnce(EditTomlCtx<'a>),
     ) -> Result<(), CliError> {
         let path = path.as_ref();
         let (mut doc, old_contents) = open_or_create_toml(&mut self.fs, path).await?;
-        editor(&mut doc, self);
+
+        let ctx = EditTomlCtx {
+            changes: self,
+            document: &mut doc,
+            previous_version: Cow::Borrowed(old_contents.as_deref().unwrap_or_default()),
+        };
+        editor(ctx);
 
         let new_file = doc.to_string();
         if old_contents.as_ref() == Some(&new_file) {
@@ -394,6 +377,29 @@ impl ChangesCtx {
     }
 }
 
+struct EditTomlCtx<'a> {
+    pub changes: &'a mut ChangesCtx,
+    pub document: &'a mut DocumentMut,
+    previous_version: Cow<'a, str>,
+}
+
+impl EditTomlCtx<'_> {
+    /// Describes the most recent changes to the document.
+    ///
+    /// If there were no changes since the last call to this function,
+    /// this is a no-op.
+    pub fn explain_change(&mut self, change: impl Into<String>) {
+        let new_version = self.document.to_string();
+
+        if self.previous_version == new_version {
+            return; // Avoid explaining changes if none were required.
+        }
+
+        self.changes.describe(change);
+        self.previous_version = Cow::Owned(new_version);
+    }
+}
+
 trait TableExt {
     fn table(&mut self, key: &str) -> &mut Table;
 }
@@ -408,7 +414,9 @@ impl TableExt for Table {
             .unwrap_or_default()
             .into();
 
-        value.as_table_mut().unwrap()
+        let table_ref = value.as_table_mut().unwrap();
+        table_ref.set_implicit(true);
+        table_ref
     }
 }
 
