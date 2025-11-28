@@ -206,7 +206,7 @@ async fn update_cargo_config(ctx: &mut ChangesCtx) -> Result<(), CliError> {
 }
 
 async fn update_vexide(ctx: &mut ChangesCtx, metadata: &Metadata) -> Result<(), CliError> {
-    let latest = "0.8.0-alpha.2";
+    let latest = "0.8.0-rc.1";
 
     let mut packages = metadata.packages.iter();
 
