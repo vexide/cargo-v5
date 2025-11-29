@@ -1,7 +1,6 @@
 #[cfg(feature = "clap")]
 use std::ffi::OsStr;
-use std::{path::PathBuf};
-use std::ffi::OsString;
+use std::path::PathBuf;
 
 #[cfg(feature = "clap")]
 use clap_complete::engine::{CompletionCandidate, ValueCompleter};
@@ -10,11 +9,8 @@ use directories::ProjectDirs;
 const CACHE_TTL_SECS: u64 = 600; // 10 minutes
 
 fn get_ls_cache_path() -> Option<PathBuf> {
-    dbg!(ProjectDirs::from("", "vexide", "cargo-v5").map(|dirs| {
-        dirs.cache_dir()
-            .to_owned()
-            .join("file-cache.json")
-    }))
+    ProjectDirs::from("", "vexide", "cargo-v5")
+        .map(|dirs| dirs.cache_dir().to_owned().join("file-cache.json"))
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
@@ -49,7 +45,7 @@ pub fn write_cache(files: &[String]) {
     };
     if let Ok(content) = serde_json::to_string(&cache) {
         let path = get_ls_cache_path().unwrap();
-    if let Some(parent) = path.parent() {
+        if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).unwrap();
         }
         let _ = std::fs::write(path, content);

@@ -2,6 +2,7 @@ use cargo_v5::{
     commands::{
         build::{CargoOpts, build},
         cat::cat,
+        completions::FileCompleter,
         devices::devices,
         dir::dir,
         log::log,
@@ -11,15 +12,14 @@ use cargo_v5::{
         terminal::terminal,
         upgrade,
         upload::{AfterUpload, UploadOpts, upload},
-        completions::FileCompleter
     },
     connection::{open_connection, switch_to_download_channel},
     errors::CliError,
     self_update::{self, SelfUpdateMode},
 };
-use clap_complete::ArgValueCompleter;
 use chrono::Utc;
 use clap::{Args, CommandFactory, Parser, Subcommand};
+use clap_complete::ArgValueCompleter;
 use flexi_logger::{AdaptiveFormat, FileSpec, LogfileSelector, LoggerHandle};
 use std::{env, num::NonZeroU32, panic, path::PathBuf};
 use vex_v5_serial::{

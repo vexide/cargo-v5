@@ -24,8 +24,9 @@ pub async fn rm(connection: &mut SerialConnection, files: Vec<PathBuf>) -> Resul
             ""
         });
 
-        let file_name = FixedString::from_str(file.file_name().unwrap_or_default().to_str().unwrap())
-            .map_err(|err| CliError::SerialError(SerialError::FixedStringSizeError(err)))?;
+        let file_name =
+            FixedString::from_str(file.file_name().unwrap_or_default().to_str().unwrap())
+                .map_err(|err| CliError::SerialError(SerialError::FixedStringSizeError(err)))?;
 
         connection
             .handshake::<FileEraseReplyPacket>(
