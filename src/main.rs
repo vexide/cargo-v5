@@ -11,13 +11,15 @@ use cargo_v5::{
         terminal::terminal,
         upgrade,
         upload::{AfterUpload, UploadOpts, upload},
+        completions::FileCompleter
     },
     connection::{open_connection, switch_to_download_channel},
     errors::CliError,
     self_update::{self, SelfUpdateMode},
 };
+use clap_complete::ArgValueCompleter;
 use chrono::Utc;
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, Parser, Subcommand};
 use flexi_logger::{AdaptiveFormat, FileSpec, LogfileSelector, LoggerHandle};
 use std::{env, num::NonZeroU32, panic, path::PathBuf};
 use vex_v5_serial::{
@@ -96,10 +98,12 @@ enum Command {
     Dir,
     /// Read a file from flash, then write its contents to stdout.
     Cat {
+        #[cfg_attr(feature = "clap", arg(add = ArgValueCompleter::new(FileCompleter)))]
         file: PathBuf,
     },
     /// Erase a file from flash.
     Rm {
+        #[cfg_attr(feature = "clap", arg(add = ArgValueCompleter::new(FileCompleter)))]
         files: Vec<PathBuf>,
     },
     /// Read a Brain's event log.
@@ -133,6 +137,8 @@ struct DownloadOpts {
 
 #[tokio::main]
 async fn main() -> miette::Result<()> {
+    clap_complete::env::CompleteEnv::with_factory(|| Cargo::command()).complete();
+
     // Parse CLI arguments
     let Cargo::V5 { command, path } = Cargo::parse();
 
