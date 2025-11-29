@@ -14,6 +14,14 @@ Before releasing:
 - update links at the end of the document
 -->
 
+## [0.12.0]
+
+### Added
+
+- Added a new `migrate` command that updates your project configuration to be compatible with vexide 0.8.0.
+- Added a new `kv` command for changing on-device configuration like team number or robot name.
+- Added support for the builtin `armv7a-vex-v5` target.
+
 ## [0.11.0]
 
 ### Added
@@ -44,6 +52,7 @@ Before releasing:
 
 ### Removed
 
+[0.12.0]: https://github.com/vexide/cargo-v5/compare/v0.11.0..v0.12.0
 [0.11.0]: https://github.com/vexide/cargo-v5/compare/v0.4.0..v0.11.0
 [0.4.0]: https://github.com/vexide/cargo-v5/compare/v0.3.0..v0.4.0
 [0.3.0]: https://github.com/vexide/cargo-v5/releases/tag/v0.3.0
