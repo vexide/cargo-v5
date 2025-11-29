@@ -16,37 +16,38 @@ use crate::errors::CliError;
 
 use super::cat::vendor_from_prefix;
 
-pub async fn rm(connection: &mut SerialConnection, file: PathBuf) -> Result<(), CliError> {
-    let vendor = vendor_from_prefix(if let Some(parent) = file.parent() {
-        parent.to_str().unwrap()
-    } else {
-        ""
-    });
+pub async fn rm(connection: &mut SerialConnection, files: Vec<PathBuf>) -> Result<(), CliError> {
+    for file in files {
+        let vendor = vendor_from_prefix(if let Some(parent) = file.parent() {
+            parent.to_str().unwrap()
+        } else {
+            ""
+        });
 
-    let file_name = FixedString::from_str(file.file_name().unwrap_or_default().to_str().unwrap())
-        .map_err(|err| CliError::SerialError(SerialError::FixedStringSizeError(err)))?;
+        let file_name = FixedString::from_str(file.file_name().unwrap_or_default().to_str().unwrap())
+            .map_err(|err| CliError::SerialError(SerialError::FixedStringSizeError(err)))?;
 
-    connection
-        .handshake::<FileEraseReplyPacket>(
-            Duration::from_millis(500),
-            1,
-            FileErasePacket::new(FileErasePayload {
-                vendor,
-                reserved: 0,
-                file_name,
-            }),
-        )
-        .await?
-        .payload?;
+        connection
+            .handshake::<FileEraseReplyPacket>(
+                Duration::from_millis(500),
+                1,
+                FileErasePacket::new(FileErasePayload {
+                    vendor,
+                    reserved: 0,
+                    file_name,
+                }),
+            )
+            .await?
+            .payload?;
 
-    connection
-        .handshake::<FileTransferExitReplyPacket>(
-            Duration::from_millis(500),
-            1,
-            FileTransferExitPacket::new(FileExitAction::DoNothing),
-        )
-        .await?
-        .payload?;
-
+        connection
+            .handshake::<FileTransferExitReplyPacket>(
+                Duration::from_millis(500),
+                1,
+                FileTransferExitPacket::new(FileExitAction::DoNothing),
+            )
+            .await?
+            .payload?;
+    }
     Ok(())
 }
