@@ -9,7 +9,7 @@ authors = [
     "Tropical",
 ]
 license = "MIT"
-description = "Cargo tool for working with VEX V5 Rust projects."
+description = "Cargo tool for working with VEX V5 Rust projects"
 homepage = "https://vexide.dev"
 repository = "https://github.com/vexide/cargo-v5"
 rust-version = "1.88" # let chains
