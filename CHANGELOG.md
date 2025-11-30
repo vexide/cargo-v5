@@ -16,6 +16,13 @@ Before releasing:
 
 ## [0.12.0]
 
+### Changed
+
+- Updated the builtin template to the latest version.
+- `cargo v5 migrate` will migrate to `vexide` 0.8.0 rather than 0.8.0-rc.1.
+
+## [0.12.0]
+
 ### Added
 
 - Added a new `migrate` command that updates your project configuration to be compatible with vexide 0.8.0.
