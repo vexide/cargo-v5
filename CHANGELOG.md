@@ -58,7 +58,7 @@ Before releasing:
 - Added `cargo pros sim` command to easily simulate the current project. Cargo-v5 will use Cargo's project metadata to provide a better simulator experience.
 
 ### Removed
-
+[0.12.0]: https://github.com/vexide/cargo-v5/compare/v0.12.0..v0.12.1
 [0.12.0]: https://github.com/vexide/cargo-v5/compare/v0.11.0..v0.12.0
 [0.11.0]: https://github.com/vexide/cargo-v5/compare/v0.4.0..v0.11.0
 [0.4.0]: https://github.com/vexide/cargo-v5/compare/v0.3.0..v0.4.0
