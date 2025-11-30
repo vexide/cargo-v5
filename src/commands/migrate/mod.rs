@@ -6,7 +6,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use cargo_metadata::Metadata;
 use fs_err::tokio as fs;
 use miette::Diagnostic;
 use semver::Version;
@@ -35,7 +34,7 @@ pub async fn migrate_workspace(root: &Path) -> Result<(), CliError> {
 
     let mut ctx = ChangesCtx::new(&metadata.workspace_root);
 
-    update_vexide(&mut ctx, &metadata).await?;
+    update_vexide(&mut ctx).await?;
     update_rust(&mut ctx).await?;
     update_cargo_config(&mut ctx).await?;
     source_code::update_targets(&mut ctx, &metadata).await?;
@@ -205,22 +204,8 @@ async fn update_cargo_config(ctx: &mut ChangesCtx) -> Result<(), CliError> {
     Ok(())
 }
 
-async fn update_vexide(ctx: &mut ChangesCtx, metadata: &Metadata) -> Result<(), CliError> {
+async fn update_vexide(ctx: &mut ChangesCtx) -> Result<(), CliError> {
     let latest = "0.8.0";
-
-    let mut packages = metadata.packages.iter();
-
-    if let Some(current_vexide) = packages.find(|p| p.name.as_str() == "vexide") {
-        let supported_by_tool = Version::new(0, 7, 0);
-        let latest = Version::parse(latest).unwrap();
-
-        let is_eligible =
-            current_vexide.version < latest && current_vexide.version >= supported_by_tool;
-        if !is_eligible {
-            log::warn!("vexide {} not eligible for upgrade", current_vexide.version);
-            return Ok(());
-        }
-    }
 
     ctx.edit_toml("Cargo.toml", |mut ctx| {
         // Update to Rust 2024 edition (required by 0.8.0).
@@ -235,6 +220,24 @@ async fn update_vexide(ctx: &mut ChangesCtx, metadata: &Metadata) -> Result<(), 
             .get("dependencies")
             .and_then(|d| d.get("vexide"));
 
+        let old_version = old_entry
+            .and_then(|v| v.get("version"))
+            .and_then(|d| d.as_str());
+
+        if let Some(old_version) = old_version
+            && let Ok(current) = Version::parse(old_version)
+        {
+            let supported_by_tool = Version::new(0, 7, 0);
+            let latest = Version::parse(latest).unwrap();
+
+            let is_eligible = current < latest && current >= supported_by_tool;
+            println!("eligible for upgrade: {is_eligible}");
+            if !is_eligible {
+                log::warn!("vexide v{current} not eligible for upgrade");
+                return;
+            }
+        }
+
         let old_features_array = old_entry
             .and_then(|v| v.get("features"))
             .and_then(|d| d.as_array());
@@ -245,7 +248,7 @@ async fn update_vexide(ctx: &mut ChangesCtx, metadata: &Metadata) -> Result<(), 
             .unwrap_or(true);
 
         let mut features = Vec::<Value>::new();
-        let mut include_sdk_features = default_features;
+        let mut use_default_sdk = default_features;
 
         if default_features {
             features.push("full".into());
@@ -270,16 +273,25 @@ async fn update_vexide(ctx: &mut ChangesCtx, metadata: &Metadata) -> Result<(), 
                 };
 
                 if feature == "startup" {
-                    include_sdk_features = true;
+                    use_default_sdk = true;
                 }
 
                 features.push(feature.into());
             }
         }
 
-        if include_sdk_features {
+        if use_default_sdk {
+            // Remove all vex-sdk features because we're going to use the default sdk
+            features.retain(|f| f.as_str().is_none_or(|s| !s.starts_with("vex-sdk")));
             features.push("default-sdk".into());
         }
+
+        // Remove any two features that are both the same string
+        features.dedup_by(|l_feature, r_feature| {
+            l_feature
+                .as_str()
+                .is_some_and(|l| r_feature.as_str() == Some(l))
+        });
 
         let dependencies = ctx.document.table("dependencies");
 
@@ -287,6 +299,7 @@ async fn update_vexide(ctx: &mut ChangesCtx, metadata: &Metadata) -> Result<(), 
 
         let mut vexide = Table::new();
 
+        println!("new version: {latest}");
         vexide["version"] = latest.into();
         vexide["features"] = Value::from_iter(features).into();
         if !default_features {
