@@ -13,7 +13,7 @@ use semver::Version;
 use supports_color::Stream;
 use thiserror::Error;
 use tokio::{process::Command, task::block_in_place};
-use toml_edit::{Document, DocumentMut, Item, Table, Value, table, value};
+use toml_edit::{Document, DocumentMut, Item, Table, Value, table};
 
 use crate::errors::CliError;
 
@@ -441,6 +441,7 @@ async fn open_or_create_toml(
     Ok(doc)
 }
 
+#[allow(unused)]
 fn toml_item_eq_strings(toml: Option<&Item>, strings: &[&str]) -> bool {
     toml.and_then(|f| f.as_array())
         .map(|array| {
