@@ -44,7 +44,7 @@ pub async fn migrate_workspace(root: &Path) -> Result<(), CliError> {
     let highlight = supports_color::on_cached(Stream::Stdout).is_some();
 
     println!(
-        "The upgrade tool will now update your project configuration to the vexide v0.8 recommended defaults."
+        "The upgrade tool will now update your project configuration to the vexide 0.8.0 recommended defaults."
     );
     println!(
         "After applying these changes, make sure to check out the upgrade guide on the vexide website"
@@ -295,7 +295,7 @@ async fn update_vexide(ctx: &mut ChangesCtx, metadata: &Metadata) -> Result<(), 
 
         dependencies["vexide"] = vexide.into_inline_table().into();
 
-        ctx.explain_change(format!("Updated to vexide v{latest}"));
+        ctx.explain_change(format!("Updated to vexide {latest}"));
     })
     .await
 }
