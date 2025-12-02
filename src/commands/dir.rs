@@ -63,11 +63,14 @@ pub async fn dir(connection: &mut SerialConnection) -> Result<(), CliError> {
         .await
         .unwrap();
 
+    let mut entries = Vec::new();
+
     write!(
         &mut tw,
         "\x1B[1mName\tSize\tLoad Address\tVendor\tType\tTimestamp\tVersion\tCRC32\n\x1B[0m"
     )
     .unwrap();
+
     for vid in USEFUL_VIDS {
         let file_count = connection
             .handshake::<DirectoryFileCountReplyPacket>(
@@ -92,7 +95,7 @@ pub async fn dir(connection: &mut SerialConnection) -> Result<(), CliError> {
                 )
                 .await?
                 .payload?;
-
+            entries.push(format!("{}{}", vendor_prefix(vid), &entry.file_name));
             writeln!(
                 &mut tw,
                 "{}{}\t{}\t{}\t{:?}\t{}\t{}\t{}\t{}",
@@ -142,6 +145,8 @@ pub async fn dir(connection: &mut SerialConnection) -> Result<(), CliError> {
     }
 
     tw.flush().unwrap();
+
+    super::completions::write_cache(&entries);
 
     Ok(())
 }

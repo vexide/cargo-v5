@@ -2,6 +2,7 @@ use cargo_v5::{
     commands::{
         build::{CargoOpts, build},
         cat::cat,
+        completions::FileCompleter,
         devices::devices,
         dir::dir,
         key_value::{kv_get, kv_set},
@@ -18,7 +19,8 @@ use cargo_v5::{
     self_update::{self, SelfUpdateMode},
 };
 use chrono::Utc;
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, Parser, Subcommand};
+use clap_complete::ArgValueCompleter;
 use flexi_logger::{AdaptiveFormat, FileSpec, LogfileSelector, LoggerHandle};
 use std::{env, num::NonZeroU32, panic, path::PathBuf};
 use vex_v5_serial::{
@@ -115,12 +117,14 @@ enum Command {
     
     /// Read a file from flash, then write its contents to stdout.
     Cat {
+        #[cfg_attr(feature = "clap", arg(add = ArgValueCompleter::new(FileCompleter)))]
         file: PathBuf,
     },
 
     /// Erase a file from flash.
     Rm {
-        file: PathBuf,
+        #[cfg_attr(feature = "clap", arg(add = ArgValueCompleter::new(FileCompleter)))]
+        files: Vec<PathBuf>,
     },
     
     /// Read a Brain's event log.
@@ -164,6 +168,8 @@ struct DownloadOpts {
 
 #[tokio::main]
 async fn main() -> miette::Result<()> {
+    clap_complete::env::CompleteEnv::with_factory(|| Cargo::command()).complete();
+
     // Parse CLI arguments
     let Cargo::V5 { command, path } = Cargo::parse();
 
@@ -206,7 +212,7 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
         Command::Dir => dir(&mut open_connection().await?).await?,
         Command::Devices => devices(&mut open_connection().await?).await?,
         Command::Cat { file } => cat(&mut open_connection().await?, file).await?,
-        Command::Rm { file } => rm(&mut open_connection().await?, file).await?,
+        Command::Rm { files } => rm(&mut open_connection().await?, files).await?,
         Command::Log { page } => log(&mut open_connection().await?, page).await?,
         Command::Screenshot => screenshot(&mut open_connection().await?).await?,
         Command::Run(opts) => {

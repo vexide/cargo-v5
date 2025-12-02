@@ -1,5 +1,6 @@
 pub mod build;
 pub mod cat;
+pub mod completions;
 pub mod devices;
 pub mod dir;
 #[cfg(feature = "field-control")]

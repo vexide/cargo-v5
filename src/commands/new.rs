@@ -57,8 +57,8 @@ async fn fetch_template() -> Result<Template, CliError> {
 async fn get_cached_template() -> Option<Template> {
     match cached_template_dir() {
         Some(dir) => {
-            let cache_file = dir.with_file_name(TEMPLATE_FILE_NAME);
-            let sha_file = dir.with_file_name(SHA_FILE_NAME);
+            let cache_file = dir.join(TEMPLATE_FILE_NAME);
+            let sha_file = dir.join(SHA_FILE_NAME);
             let sha = tokio::fs::read_to_string(sha_file).await.ok();
             let data = tokio::fs::read(cache_file).await.ok();
             data.map(|data| Template { data, sha })
@@ -70,8 +70,8 @@ async fn get_cached_template() -> Option<Template> {
 #[cfg(feature = "fetch-template")]
 async fn store_cached_template(template: Template) -> () {
     if let Some(dir) = cached_template_dir() {
-        let cache_file = dir.with_file_name(TEMPLATE_FILE_NAME);
-        let sha_file = dir.with_file_name(SHA_FILE_NAME);
+        let cache_file = dir.join(TEMPLATE_FILE_NAME);
+        let sha_file = dir.join(SHA_FILE_NAME);
         let _ = tokio::fs::write(cache_file, &template.data).await;
         if let Some(sha) = template.sha {
             let _ = tokio::fs::write(sha_file, sha).await;
