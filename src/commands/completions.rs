@@ -27,7 +27,12 @@ fn current_timestamp() -> u64 {
 }
 
 fn read_cache() -> Option<Vec<String>> {
-    let content = std::fs::read_to_string(get_ls_cache_path().unwrap()).ok()?;
+    let path = if let Some(v) = get_ls_cache_path() {
+        v
+    } else {
+        return None;
+    };
+    let content = std::fs::read_to_string(path).ok()?;
     let cache: FileCache = serde_json::from_str(&content).ok()?;
 
     if current_timestamp() - cache.timestamp < CACHE_TTL_SECS {
@@ -44,9 +49,13 @@ pub fn write_cache(files: &[String]) {
         files: files.to_vec(),
     };
     if let Ok(content) = serde_json::to_string(&cache) {
-        let path = get_ls_cache_path().unwrap();
+        let path = if let Some(v) = get_ls_cache_path() {
+            v
+        } else {
+            return;
+        };
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).unwrap();
+            let _ = std::fs::create_dir_all(parent);
         }
         let _ = std::fs::write(path, content);
     }
