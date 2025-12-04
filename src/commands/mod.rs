@@ -12,3 +12,4 @@ pub mod terminal;
 pub mod migrate;
 pub mod upload;
 pub mod key_value;
+pub mod toolchain;

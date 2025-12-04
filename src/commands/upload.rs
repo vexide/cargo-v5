@@ -648,21 +648,21 @@ pub async fn upload(
         package_id
             .as_ref()
             .and_then(|id| metadata.packages.iter().find(|p| &p.id == id))
-            .or_else(|| metadata.packages.first())
+            .or_else(|| metadata.workspace_packages().first().copied())
             .cloned()
     });
 
     // Uploading has the option to use the `package.metadata.v5` table for default configuration options.
     // Attempt to serialize `package.metadata.v5` into a [`Metadata`] struct. This will just Default::default to
     // all `None`s if it can't find a specific field, or error if the field is malformed.
-    let metadata = package.as_ref().map(Metadata::new).transpose()?;
+    let metadata = package.as_ref().map(Metadata::from_pkg).transpose()?;
 
     // The program's slot number is absolutely required for uploading. If the slot argument isn't directly provided:
     //
     // - Check for the `package.metadata.v5.slot` field in Cargo.toml.
     // - If that doesn't exist, directly prompt the user asking what slot to upload to.
     let slot = slot
-        .or(metadata.and_then(|m| m.slot))
+        .or(metadata.as_ref().and_then(|m| m.slot))
         .or_else(|| {
             CustomType::<u8>::new("Choose a program slot to upload to:")
                 .with_validator(|slot: &u8| {
@@ -694,18 +694,21 @@ pub async fn upload(
         description
             .or(package.as_ref().and_then(|pkg| pkg.description.clone()))
             .unwrap_or("Uploaded with cargo-v5.".to_string()),
-        icon.or(metadata.and_then(|metadata| metadata.icon))
+        icon.or(metadata.as_ref().and_then(|metadata| metadata.icon))
             .unwrap_or_default(),
         "Rust".to_string(), // `program_type` hardcoded for now, maybe configurable in the future.
         match uncompressed {
             Some(val) => !val,
             None => metadata
+                .as_ref()
                 .and_then(|metadata| metadata.compress)
                 .unwrap_or(true),
         },
         cold,
         upload_strategy
-            .or(metadata.and_then(|metadata| metadata.upload_strategy))
+            .or(metadata
+                .as_ref()
+                .and_then(|metadata| metadata.upload_strategy))
             .unwrap_or_default(),
     )
     .await?;
