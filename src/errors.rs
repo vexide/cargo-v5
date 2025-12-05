@@ -7,7 +7,7 @@ use miette::Diagnostic;
 use thiserror::Error;
 use vex_v5_serial::protocol::{FixedStringSizeError, cdc2::Cdc2Ack};
 
-use crate::commands::migrate::MigrateError;
+use crate::{commands::migrate::MigrateError, settings::BadFieldDataError};
 
 #[non_exhaustive]
 #[derive(Error, Diagnostic, Debug)]
@@ -47,6 +47,10 @@ pub enum CliError {
     Inquire(#[from] InquireError),
 
     #[error(transparent)]
+    #[diagnostic(transparent)]
+    ArmToolchainError(#[from] arm_toolchain::toolchain::ToolchainError),
+
+    #[error(transparent)]
     #[diagnostic(code(cargo_v5::fixed_string_size_error))]
     FixedStringSizeError(#[from] FixedStringSizeError),
 
@@ -54,7 +58,7 @@ pub enum CliError {
     #[error("Incorrect type for field `{field}` (expected {expected}, found {found}).")]
     #[diagnostic(
         code(cargo_v5::bad_field_type),
-        help("The `{field}` field should be of type {expected}.")
+        help("Update Cargo.toml to fix the invalid cargo-v5 metadata.")
     )]
     BadFieldType {
         /// Field name
@@ -66,6 +70,13 @@ pub enum CliError {
         /// Actual type
         found: String,
     },
+
+    #[error("Failed to parse cargo-v5 metadata")]
+    #[diagnostic(
+        code(cargo_v5::bad_field_data),
+        help("Update Cargo.toml to fix the invalid metadata.")
+    )]
+    BadFieldData(#[from] BadFieldDataError),
 
     // TODO: Add optional source spans.
     #[error("The provided slot should be in the range [1, 8] inclusive.")]
@@ -199,4 +210,25 @@ pub enum CliError {
         help("Try running a cold upload using `cargo v5 upload --cold`.")
     )]
     PatchTooLarge(usize),
+
+    #[error("This command must be run in a Cargo workspace")]
+    #[diagnostic(code(cargo_v5::cargo_workspace_missing))]
+    NoCargoProject,
+
+    #[error("No toolchains are configured for this project")]
+    #[diagnostic(
+        code(cargo_v5::no_toolchains_configured),
+        help("Set `package.metadata.v5.toolchain` to a toolchain version in Cargo.toml")
+    )]
+    NoToolchainConfigured,
+}
+
+impl From<arm_toolchain::cli::CliError> for CliError {
+    fn from(value: arm_toolchain::cli::CliError) -> Self {
+        match value {
+            arm_toolchain::cli::CliError::Toolchain(t) => t.into(),
+            arm_toolchain::cli::CliError::Inquire(i) => i.into(),
+            other => panic!("{other}"),
+        }
+    }
 }
