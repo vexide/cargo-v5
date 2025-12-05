@@ -1,4 +1,4 @@
-use arm_toolchain::toolchain::ToolchainClient;
+use arm_toolchain::toolchain::{ToolchainClient, ToolchainError};
 use cargo_metadata::{Message as CompileMsg, PackageId};
 use clap::Args;
 use object::{Object, ObjectSection, ObjectSegment};
@@ -17,9 +17,7 @@ use tokio::{
 };
 
 use crate::{
-    errors::CliError,
-    fs,
-    settings::{Settings, ToolchainType},
+    commands::toolchain::ToolchainCmd, errors::CliError, fs, settings::{Settings, ToolchainType}
 };
 
 /// Common Cargo options to forward.
@@ -95,7 +93,16 @@ pub async fn build(
         let ToolchainType::LLVM = toolchain_cfg.ty;
 
         let client = ToolchainClient::using_data_dir().await?;
-        let toolchain = client.toolchain(&toolchain_cfg.version).await?;
+
+        let mut toolchain = client.toolchain(&toolchain_cfg.version).await;
+
+        // If no toolchain installed, ask user to install it now. If they say "no",
+        // the `run()` call will return an error that we just propagate.
+        if matches!(toolchain, Err(ToolchainError::ToolchainNotInstalled { .. })) {
+            ToolchainCmd::Install.run().await?;
+            toolchain = client.toolchain(&toolchain_cfg.version).await;
+        }
+        let toolchain = toolchain?;
 
         let mut path = OsString::from(toolchain.host_bin_dir());
         if let Some(old_path) = env::var_os("PATH") {
