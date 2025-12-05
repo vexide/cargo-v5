@@ -84,7 +84,7 @@ pub async fn build(
         .any(|arg| arg == "--target" || arg.starts_with("--target="));
 
     if !explicit_target_specified {
-        build_cmd.args(["--target=armv7a-vex-v5"]);
+        build_cmd.arg("--target=armv7a-vex-v5");
     }
 
     // If there is a toolchain enabled, we need to put it in scope so that cc builds work correctly.
