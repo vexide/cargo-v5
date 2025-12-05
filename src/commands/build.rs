@@ -12,7 +12,7 @@ use std::{
     process::{Stdio, exit},
 };
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncBufReadExt, BufReader},
     process::Command,
 };
 

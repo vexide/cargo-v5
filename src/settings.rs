@@ -1,7 +1,7 @@
 use std::{fmt::{Display, Formatter}, str::FromStr};
 
 use arm_toolchain::toolchain::ToolchainVersion;
-use cargo_metadata::{Metadata, Package, PackageId};
+use cargo_metadata::{Metadata, Package};
 use clap::ValueEnum;
 use serde_json::Value;
 use thiserror::Error;
@@ -147,7 +147,7 @@ impl FromStr for ToolchainType {
     type Err = BadFieldDataError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let lower = s.to_lowercase();
-        match &*s {
+        match s {
             "llvm" => Ok(Self::LLVM),
             _ => Err(BadFieldDataError::ToolchainTypeUnsupported { request: lower }),
         }
