@@ -7,7 +7,7 @@ use miette::Diagnostic;
 use thiserror::Error;
 use vex_v5_serial::protocol::{FixedStringSizeError, cdc2::Cdc2Ack};
 
-use crate::{commands::migrate::MigrateError, metadata::BadFieldDataError};
+use crate::{commands::migrate::MigrateError, settings::BadFieldDataError};
 
 #[non_exhaustive]
 #[derive(Error, Diagnostic, Debug)]

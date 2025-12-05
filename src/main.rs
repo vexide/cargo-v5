@@ -17,6 +17,7 @@ use cargo_v5::{
     connection::{open_connection, switch_to_download_channel},
     errors::CliError,
     self_update::{self, SelfUpdateMode},
+    settings::{Settings, workspace_metadata},
 };
 use chrono::Utc;
 use clap::{Args, Parser, Subcommand};
@@ -199,10 +200,15 @@ async fn main() -> miette::Result<()> {
 async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miette::Result<()> {
     match command {
         Command::Build { cargo_opts } => {
-            build(&path, cargo_opts).await?;
+            let metadata = workspace_metadata().await;
+            let settings = Settings::for_root(metadata.as_ref())?;
+
+            build(&path, cargo_opts, settings.as_ref()).await?;
         }
         Command::Upload { upload_opts, after } => {
-            upload(&path, upload_opts, after).await?;
+            let metadata = workspace_metadata().await;
+
+            upload(&path, upload_opts, after, metadata).await?;
         }
         Command::Dir => dir(&mut open_connection().await?).await?,
         Command::Devices => devices(&mut open_connection().await?).await?,
@@ -211,7 +217,8 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
         Command::Log { page } => log(&mut open_connection().await?, page).await?,
         Command::Screenshot => screenshot(&mut open_connection().await?).await?,
         Command::Run(opts) => {
-            let mut connection = upload(&path, opts, AfterUpload::Run).await?;
+            let metadata = workspace_metadata().await;
+            let mut connection = upload(&path, opts, AfterUpload::Run, metadata).await?;
 
             tokio::select! {
                 () = terminal(&mut connection, logger) => {}

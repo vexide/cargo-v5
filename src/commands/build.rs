@@ -1,3 +1,4 @@
+use arm_toolchain::toolchain::ToolchainClient;
 use cargo_metadata::{Message as CompileMsg, PackageId};
 use clap::Args;
 use object::{Object, ObjectSection, ObjectSegment};
@@ -5,16 +6,21 @@ use owo_colors::OwoColorize;
 use serde::Deserialize;
 use serde_json::Deserializer;
 use std::{
-    ffi::OsStr,
+    env,
+    ffi::{OsStr, OsString},
     path::{Path, PathBuf},
     process::{Stdio, exit},
 };
 use tokio::{
-    io::{AsyncBufReadExt, BufReader},
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::Command,
 };
 
-use crate::errors::CliError;
+use crate::{
+    errors::CliError,
+    fs,
+    settings::{Settings, ToolchainType},
+};
 
 /// Common Cargo options to forward.
 #[derive(Args, Debug)]
@@ -29,7 +35,7 @@ pub struct CargoOpts {
 }
 
 pub fn cargo_bin() -> std::ffi::OsString {
-    std::env::var_os("CARGO").unwrap_or_else(|| "cargo".to_owned().into())
+    env::var_os("CARGO").unwrap_or_else(|| "cargo".to_owned().into())
 }
 
 async fn check_release_channel(cargo_bin: &OsStr) -> Result<(), CliError> {
@@ -49,12 +55,16 @@ async fn check_release_channel(cargo_bin: &OsStr) -> Result<(), CliError> {
 }
 
 pub struct BuildOutput {
-    pub elf_artifact: PathBuf,
+    pub elf_artifact_path: PathBuf,
     pub bin_artifact: PathBuf,
     pub package_id: PackageId,
 }
 
-pub async fn build(path: &Path, opts: CargoOpts) -> Result<Option<BuildOutput>, CliError> {
+pub async fn build(
+    workspace_dir: &Path,
+    opts: CargoOpts,
+    root_settings: Option<&Settings>,
+) -> Result<Option<BuildOutput>, CliError> {
     let cargo = cargo_bin();
     let CargoOpts { args } = opts;
 
@@ -63,11 +73,10 @@ pub async fn build(path: &Path, opts: CargoOpts) -> Result<Option<BuildOutput>, 
     // Delegate to cargo build as normal, with some different defaults for arguments.
 
     let mut build_cmd = Command::new(cargo);
-    build_cmd.current_dir(path).stdout(Stdio::piped()).args([
-        "build",
-        "--message-format",
-        "json-render-diagnostics",
-    ]);
+    build_cmd
+        .current_dir(workspace_dir)
+        .stdout(Stdio::piped())
+        .args(["build", "--message-format", "json-render-diagnostics"]);
 
     let explicit_target_specified = args
         .iter()
@@ -76,6 +85,26 @@ pub async fn build(path: &Path, opts: CargoOpts) -> Result<Option<BuildOutput>, 
 
     if !explicit_target_specified {
         build_cmd.args(["--target=armv7a-vex-v5"]);
+    }
+
+    // If there is a toolchain enabled, we need to put it in scope so that cc builds work correctly.
+
+    if let Some(settings) = root_settings
+        && let Some(toolchain_cfg) = &settings.toolchain
+    {
+        let ToolchainType::LLVM = toolchain_cfg.ty;
+        let client = ToolchainClient::using_data_dir().await?;
+        let toolchain = client.toolchain(&toolchain_cfg.version).await?;
+
+        let mut path = OsString::from(toolchain.host_bin_dir());
+        if let Some(old_path) = env::var_os("PATH") {
+            path.push(":");
+            path.push(old_path);
+        }
+
+        build_cmd.env("PATH", path);
+        build_cmd.env("armv7a-vex-v5_CC", "clang");
+        build_cmd.env("armv7a-vex-v5_AR", "llvm-ar");
     }
 
     build_cmd.args(args);
@@ -102,16 +131,12 @@ pub async fn build(path: &Path, opts: CargoOpts) -> Result<Option<BuildOutput>, 
         if let Some(CompileMsg::CompilerArtifact(artifact)) = msg
             && let Some(executable_path) = artifact.executable
         {
-            // Convert Elf -> Bin and write to file.
-            let binary = objcopy(&std::fs::read(&executable_path)?)?;
-            let binary_path = executable_path.with_extension("bin");
-
-            fs_err::tokio::write(&binary_path, binary).await?;
-            eprintln!("{:>12} {binary_path}", "Objcopy".green().bold());
+            let exe_path = executable_path.into_std_path_buf();
+            let (path, _) = objcopy_path(&exe_path).await?;
 
             build_output = Some(BuildOutput {
-                bin_artifact: binary_path.into_std_path_buf(),
-                elf_artifact: executable_path.into_std_path_buf(),
+                bin_artifact: path,
+                elf_artifact_path: exe_path,
                 package_id: artifact.package_id,
             });
         }
@@ -125,7 +150,36 @@ pub async fn build(path: &Path, opts: CargoOpts) -> Result<Option<BuildOutput>, 
     Ok(build_output)
 }
 
+/// Objcopy a path referencing an existing file.
+///
+/// Contains extra logic to pass-through `bin` files and
+/// print status.
+///
+/// The BIN file is written back to the filesystem. Its path and data is returned.
+pub async fn objcopy_path(path: &Path) -> Result<(PathBuf, Vec<u8>), CliError> {
+    let contents = fs::read(path).await?;
+
+    // Bin file: skip objcopy.
+    if path.extension() == Some(OsStr::new("bin")) {
+        return Ok((path.to_owned(), contents));
+    }
+
+    // Non-bin (elf) file: try to objcopy it to get a bin.
+    let binary = objcopy(&contents)?;
+    let binary_path = path.with_extension("bin");
+
+    fs::write(&binary_path, &binary).await?;
+    eprintln!("{:>12} {}", binary_path.display(), "Objcopy".green().bold());
+
+    Ok((binary_path, binary))
+}
+
 /// Implementation of `objcopy -O binary`.
+///
+/// This converts an ELF executable to a BIN file, which is a simple byte-by-byte
+/// representation of what the program will look like when loaded into memory.
+///
+/// This function will error if the ELF data is invalid.
 pub fn objcopy(elf: &[u8]) -> Result<Vec<u8>, CliError> {
     let elf = object::File::parse(elf)?; // parse ELF file
 

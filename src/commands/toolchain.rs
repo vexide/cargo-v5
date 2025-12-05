@@ -6,7 +6,7 @@ use owo_colors::OwoColorize;
 
 use crate::{
     errors::CliError,
-    metadata::{Metadata, ToolchainType},
+    settings::{Settings, ToolchainType, workspace_metadata},
 };
 
 #[derive(Debug, clap::Subcommand)]
@@ -17,18 +17,20 @@ pub enum ToolchainCmd {
 impl ToolchainCmd {
     pub async fn run(self) -> Result<(), CliError> {
         let client = ToolchainClient::using_data_dir().await?;
-        let metadata = Metadata::for_root().await?;
+
+        let metadata = workspace_metadata().await;
+        let settings = Settings::for_root(metadata.as_ref())?;
 
         match self {
-            Self::Install => Self::install(client, metadata).await,
+            Self::Install => Self::install(client, settings).await,
         }
     }
 
-    async fn install(client: ToolchainClient, metadata: Option<Metadata>) -> Result<(), CliError> {
-        let Some(metadata) = metadata else {
+    async fn install(client: ToolchainClient, settings: Option<Settings>) -> Result<(), CliError> {
+        let Some(settings) = settings else {
             return Err(CliError::NoCargoProject);
         };
-        let Some(cfg) = metadata.toolchain else {
+        let Some(cfg) = settings.toolchain else {
             return Err(CliError::NoToolchainConfigured);
         };
 

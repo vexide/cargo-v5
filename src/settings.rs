@@ -1,16 +1,23 @@
 use std::str::FromStr;
 
 use arm_toolchain::toolchain::ToolchainVersion;
-use cargo_metadata::{Package, PackageId};
+use cargo_metadata::{Metadata, Package, PackageId};
 use clap::ValueEnum;
 use serde_json::Value;
 use thiserror::Error;
-use tokio::task::{block_in_place, spawn_blocking};
+use tokio::task::{spawn_blocking};
 
 use crate::{
     commands::upload::{ProgramIcon, UploadStrategy},
     errors::CliError,
 };
+
+pub async fn workspace_metadata() -> Option<Metadata> {
+    spawn_blocking(|| cargo_metadata::MetadataCommand::new().no_deps().exec())
+        .await
+        .unwrap()
+        .ok()
+}
 
 fn field_type(field: &Value) -> &'static str {
     match field {
@@ -24,7 +31,7 @@ fn field_type(field: &Value) -> &'static str {
 }
 
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
-pub struct Metadata {
+pub struct Settings {
     pub slot: Option<u8>,
     pub icon: Option<ProgramIcon>,
     pub compress: Option<bool>,
@@ -32,18 +39,9 @@ pub struct Metadata {
     pub toolchain: Option<ToolchainCfg>,
 }
 
-impl Metadata {
-    pub async fn for_root() -> Result<Option<Self>, CliError> {
-        let Ok(metadata) =
-            spawn_blocking(|| cargo_metadata::MetadataCommand::new().no_deps().exec())
-                .await
-                .unwrap()
-        else {
-            return Ok(None);
-        };
-
-        let root_package = metadata.root_package();
-        root_package.map(Self::from_pkg).transpose()
+impl Settings {
+    pub fn for_root(m: Option<&Metadata>) -> Result<Option<Self>, CliError> {
+        m.and_then(|m| m.root_package()).map(Self::from_pkg).transpose()
     }
 
     pub fn from_pkg(pkg: &Package) -> Result<Self, CliError> {
