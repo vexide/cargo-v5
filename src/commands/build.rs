@@ -1,12 +1,18 @@
-use cargo_metadata::{Message, PackageId};
+use cargo_metadata::{Message as CompileMsg, PackageId};
 use clap::Args;
 use object::{Object, ObjectSection, ObjectSegment};
+use owo_colors::OwoColorize;
+use serde::Deserialize;
+use serde_json::Deserializer;
 use std::{
     ffi::OsStr,
     path::{Path, PathBuf},
     process::{Stdio, exit},
 };
-use tokio::{process::Command, task::block_in_place};
+use tokio::{
+    io::{AsyncBufReadExt, BufReader},
+    process::Command,
+};
 
 use crate::errors::CliError;
 
@@ -26,14 +32,20 @@ pub fn cargo_bin() -> std::ffi::OsString {
     std::env::var_os("CARGO").unwrap_or_else(|| "cargo".to_owned().into())
 }
 
-async fn is_supported_release_channel(cargo_bin: &OsStr) -> bool {
+async fn check_release_channel(cargo_bin: &OsStr) -> Result<(), CliError> {
     let rustc = Command::new(cargo_bin)
         .arg("--version")
         .output()
         .await
         .unwrap();
     let rustc = String::from_utf8(rustc.stdout).unwrap();
-    rustc.contains("nightly") || rustc.contains("-dev")
+    let supported = rustc.contains("nightly") || rustc.contains("-dev");
+
+    if !supported {
+        return Err(CliError::UnsupportedReleaseChannel)?;
+    }
+
+    Ok(())
 }
 
 pub struct BuildOutput {
@@ -44,65 +56,73 @@ pub struct BuildOutput {
 
 pub async fn build(path: &Path, opts: CargoOpts) -> Result<Option<BuildOutput>, CliError> {
     let cargo = cargo_bin();
+    let CargoOpts { args } = opts;
 
-    if !is_supported_release_channel(&cargo).await {
-        return Err(CliError::UnsupportedReleaseChannel)?;
-    }
+    check_release_channel(&cargo).await?;
 
-    let mut build_cmd = std::process::Command::new(cargo);
-    build_cmd
-        .current_dir(path)
-        .stdout(Stdio::piped())
-        .arg("build")
-        .arg("--message-format")
-        .arg("json-render-diagnostics");
+    // Delegate to cargo build as normal, with some different defaults for arguments.
 
-    let mut explicit_target_specified = false;
-    for arg in &opts.args {
-        if arg == "--target" || arg.starts_with("--target=") {
-            explicit_target_specified = true;
-            break;
-        }
-    }
+    let mut build_cmd = Command::new(cargo);
+    build_cmd.current_dir(path).stdout(Stdio::piped()).args([
+        "build",
+        "--message-format",
+        "json-render-diagnostics",
+    ]);
+
+    let explicit_target_specified = args
+        .iter()
+        .take_while(|&arg| *arg != "--")
+        .any(|arg| arg == "--target" || arg.starts_with("--target="));
 
     if !explicit_target_specified {
-        build_cmd.arg("--target").arg("armv7a-vex-v5");
+        build_cmd.args(["--target=armv7a-vex-v5"]);
     }
 
-    build_cmd.args(opts.args);
+    build_cmd.args(args);
 
-    block_in_place::<_, Result<Option<BuildOutput>, CliError>>(|| {
-        let mut out = build_cmd.spawn()?;
-        let reader = std::io::BufReader::new(out.stdout.take().unwrap());
+    let mut child = build_cmd.spawn()?;
+    let mut reader = BufReader::new(child.stdout.take().unwrap());
 
-        let mut output = None;
+    // Search for ELF executable outputs and objcopy them to the BIN format suitable for uploading.
+    // This is the primary feature that cargo v5 build has over cargo build.
 
-        for message in Message::parse_stream(reader) {
-            if let Message::CompilerArtifact(artifact) = message?
-                && let Some(elf_artifact_path) = artifact.executable
-            {
-                let binary = objcopy(&std::fs::read(&elf_artifact_path)?)?;
-                let binary_path = elf_artifact_path.with_extension("bin");
+    let mut build_output = None;
 
-                // Write the binary to a file.
-                std::fs::write(&binary_path, binary)?;
-                eprintln!("     \x1b[1;92mObjcopy\x1b[0m {binary_path}");
+    let mut line = String::new();
+    while reader.read_line(&mut line).await? != 0 {
+        // We attempt to interpret Cargo's stdout as a JSON message, but be forgiving for normal lines of text.
 
-                output = Some(BuildOutput {
-                    bin_artifact: binary_path.into_std_path_buf(),
-                    elf_artifact: elf_artifact_path.into_std_path_buf(),
-                    package_id: artifact.package_id,
-                });
-            }
+        let trimmed = line.strip_suffix('\n').unwrap_or(&line);
+        let mut deser = Deserializer::from_str(trimmed);
+        deser.disable_recursion_limit();
+
+        let msg = CompileMsg::deserialize(&mut deser).ok();
+        line.clear();
+
+        if let Some(CompileMsg::CompilerArtifact(artifact)) = msg
+            && let Some(executable_path) = artifact.executable
+        {
+            // Convert Elf -> Bin and write to file.
+            let binary = objcopy(&std::fs::read(&executable_path)?)?;
+            let binary_path = executable_path.with_extension("bin");
+
+            fs_err::tokio::write(&binary_path, binary).await?;
+            eprintln!("{:>12} {binary_path}", "Objcopy".green().bold());
+
+            build_output = Some(BuildOutput {
+                bin_artifact: binary_path.into_std_path_buf(),
+                elf_artifact: executable_path.into_std_path_buf(),
+                package_id: artifact.package_id,
+            });
         }
+    }
 
-        let status = out.wait()?;
-        if !status.success() {
-            exit(status.code().unwrap_or(1));
-        }
+    let status = child.wait().await?;
+    if !status.success() {
+        exit(status.code().unwrap_or(1));
+    }
 
-        Ok(output)
-    })
+    Ok(build_output)
 }
 
 /// Implementation of `objcopy -O binary`.

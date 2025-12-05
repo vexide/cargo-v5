@@ -1,6 +1,18 @@
 use cargo_v5::{
     commands::{
-        build::{CargoOpts, build}, cat::cat, devices::devices, dir::dir, key_value::{kv_get, kv_set}, log::log, migrate, new::new, rm::rm, screenshot::screenshot, terminal::terminal, toolchain::ToolchainCmd, upload::{AfterUpload, UploadOpts, upload}
+        build::{CargoOpts, build},
+        cat::cat,
+        devices::devices,
+        dir::dir,
+        key_value::{kv_get, kv_set},
+        log::log,
+        migrate,
+        new::new,
+        rm::rm,
+        screenshot::screenshot,
+        terminal::terminal,
+        toolchain::ToolchainCmd,
+        upload::{AfterUpload, UploadOpts, upload},
     },
     connection::{open_connection, switch_to_download_channel},
     errors::CliError,
@@ -103,14 +115,10 @@ enum Command {
     Dir,
 
     /// Read a file from flash, then write its contents to stdout.
-    Cat {
-        file: PathBuf,
-    },
+    Cat { file: PathBuf },
 
     /// Erase a file from flash.
-    Rm {
-        file: PathBuf,
-    },
+    Rm { file: PathBuf },
 
     /// Read a Brain's event log.
     Log {

@@ -1,7 +1,13 @@
-use arm_toolchain::{cli::{confirm_install, ctrl_c_cancel, install_with_progress_bar}, toolchain::ToolchainClient};
+use arm_toolchain::{
+    cli::{confirm_install, ctrl_c_cancel, install_with_progress_bar},
+    toolchain::ToolchainClient,
+};
 use owo_colors::OwoColorize;
 
-use crate::{errors::CliError, metadata::{Metadata, ToolchainType}};
+use crate::{
+    errors::CliError,
+    metadata::{Metadata, ToolchainType},
+};
 
 #[derive(Debug, clap::Subcommand)]
 pub enum ToolchainCmd {
@@ -48,7 +54,10 @@ impl ToolchainCmd {
         install_with_progress_bar(&client, &release, token.clone()).await?;
         token.cancel();
 
-        println!("Toolchain {} is ready for use.", format!("{ty:?} {version}").bold());
+        println!(
+            "Toolchain {} is ready for use.",
+            format!("{ty:?} {version}").bold()
+        );
 
         Ok(())
     }
