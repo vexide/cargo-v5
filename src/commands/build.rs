@@ -93,6 +93,7 @@ pub async fn build(
         && let Some(toolchain_cfg) = &settings.toolchain
     {
         let ToolchainType::LLVM = toolchain_cfg.ty;
+
         let client = ToolchainClient::using_data_dir().await?;
         let toolchain = client.toolchain(&toolchain_cfg.version).await?;
 
@@ -103,8 +104,72 @@ pub async fn build(
         }
 
         build_cmd.env("PATH", path);
-        build_cmd.env("armv7a-vex-v5_CC", "clang");
-        build_cmd.env("armv7a-vex-v5_AR", "llvm-ar");
+        build_cmd.env("CC_armv7a_vex_v5", "clang");
+        build_cmd.env("AR_armv7a_vex_v5", "llvm-ar");
+
+        let base_flags = [
+            "-mcpu=cortex-a9",
+            "-fno-pic",
+            "-fno-exceptions",
+            "-fno-rtti",
+        ];
+
+        let mut c_flags = OsString::from(base_flags.join(" "));
+        if let Some(old_flags) = env::var_os("armv7a_vex_v5_CFLAGS") {
+            c_flags.push(" ");
+            c_flags.push(old_flags);
+        }
+
+        // (Yes, this variable has a different order than the last two.)
+        build_cmd.env("armv7a_vex_v5_CFLAGS", c_flags);
+
+        // Configure clang's multilib: the reason we don't have to specify which
+        // libc sysroot we want (in the form of /path/to/sysroot/lib and …/include)
+        // is because ARM clang is shipped with a multilib.yaml file which maps
+        // target, CPU, and FPU flags to one of the many sysroots it bundles.
+        // The bundled sysroots and multilib.yaml file are the primary things
+        // that makes ARM clang distinct from upstream clang.
+
+        // Note that these target flags passed to the linker are for static-lib
+        // resolution only, not compiling C code. We have to set those flags
+        // separately.
+
+        // We use clang as a linker because ld.lld by itself doesn't include the
+        // multilib logic for resolving static libraries.
+        build_cmd.arg("--config=target.armv7a-vex-v5.linker='clang'");
+
+        // These flags are intended for use with LLVM 21.1.1, but may work on other
+        // versions.
+        let link_flags = base_flags
+            .into_iter()
+            .chain([
+                // These flags + the C flags resolve to this sysroot:
+                // `arm-none-eabi/armv7a_hard_vfpv3_d16_unaligned`
+                // (hard float / VFP version 3 with 16 regs / unaligned access)
+                "--target=armv7a-none-eabihf",
+                // Disable crt0, we have vexide-startup.
+                "-nostartfiles",
+                // Explicit `-lc` required because Rust calls the linker with
+                // `-nodefaultlibs` which disables libc, libm, etc.
+                "-lc",
+            ])
+            .map(|f| format!("'-Clink-arg={f}'"))
+            .collect::<Vec<String>>();
+
+        let mut rust_flags = link_flags;
+        rust_flags.push(format!(
+            "'--cfg=vexide_toolchain=\"{}\"'",
+            toolchain_cfg.ty
+        ));
+
+        // N.B. It's okay if the `target.<cfg>.rustflags` key is a duplicate to one in
+        // the cargo config, they will still merge as expected.
+        let flags_config = format!(
+            "--config=target.armv7a-vex-v5.rustflags=[{}]",
+            rust_flags.join(",")
+        );
+
+        build_cmd.arg(flags_config);
     }
 
     build_cmd.args(args);
@@ -169,7 +234,7 @@ pub async fn objcopy_path(path: &Path) -> Result<(PathBuf, Vec<u8>), CliError> {
     let binary_path = path.with_extension("bin");
 
     fs::write(&binary_path, &binary).await?;
-    eprintln!("{:>12} {}", binary_path.display(), "Objcopy".green().bold());
+    eprintln!("{:>12} {}", "Objcopy".green().bold(), binary_path.display());
 
     Ok((binary_path, binary))
 }

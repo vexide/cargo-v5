@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{fmt::{Display, Formatter}, str::FromStr};
 
 use arm_toolchain::toolchain::ToolchainVersion;
 use cargo_metadata::{Metadata, Package, PackageId};
@@ -150,6 +150,14 @@ impl FromStr for ToolchainType {
         match &*s {
             "llvm" => Ok(Self::LLVM),
             _ => Err(BadFieldDataError::ToolchainTypeUnsupported { request: lower }),
+        }
+    }
+}
+
+impl Display for ToolchainType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LLVM => write!(f, "llvm"),
         }
     }
 }
