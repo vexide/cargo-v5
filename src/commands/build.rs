@@ -17,7 +17,10 @@ use tokio::{
 };
 
 use crate::{
-    commands::toolchain::ToolchainCmd, errors::CliError, fs, settings::{Settings, ToolchainCfg, ToolchainType}
+    commands::toolchain::ToolchainCmd,
+    errors::CliError,
+    fs,
+    settings::{Settings, ToolchainCfg, ToolchainType},
 };
 
 /// Common Cargo options to forward.
@@ -90,9 +93,9 @@ pub async fn build(
 
     // If there is a toolchain enabled, we need to put it in scope so that cc builds work correctly.
 
-    let toolchain = root_settings
-        .and_then(|s| s.toolchain.as_ref())
-        .or(toolchain.as_ref());
+    let toolchain = toolchain
+        .as_ref()
+        .or(root_settings.and_then(|s| s.toolchain.as_ref()));
 
     if let Some(toolchain_cfg) = toolchain {
         let ToolchainType::LLVM = toolchain_cfg.ty;
@@ -172,10 +175,7 @@ pub async fn build(
             .collect::<Vec<String>>();
 
         let mut rust_flags = link_flags;
-        rust_flags.push(format!(
-            "'--cfg=vexide_toolchain=\"{}\"'",
-            toolchain_cfg.ty
-        ));
+        rust_flags.push(format!("'--cfg=vexide_toolchain=\"{}\"'", toolchain_cfg.ty));
 
         // N.B. It's okay if the `target.<cfg>.rustflags` key is a duplicate to one in
         // the cargo config, they will still merge as expected.
