@@ -6,7 +6,7 @@ use owo_colors::OwoColorize;
 
 use crate::{
     errors::CliError,
-    settings::{Settings, ToolchainType, workspace_metadata},
+    settings::{Settings, ToolchainCfg, ToolchainType, workspace_metadata},
 };
 
 #[derive(Debug, clap::Subcommand)]
@@ -22,24 +22,26 @@ impl ToolchainCmd {
         let settings = Settings::for_root(metadata.as_ref())?;
 
         match self {
-            Self::Install => Self::install(client, settings).await,
+            Self::Install => {
+                let Some(settings) = settings else {
+                    return Err(CliError::NoCargoProject);
+                };
+                let Some(cfg) = settings.toolchain else {
+                    return Err(CliError::NoToolchainConfigured);
+                };
+
+                Self::install(&client, &cfg).await
+            }
         }
     }
 
-    async fn install(client: ToolchainClient, settings: Option<Settings>) -> Result<(), CliError> {
-        let Some(settings) = settings else {
-            return Err(CliError::NoCargoProject);
-        };
-        let Some(cfg) = settings.toolchain else {
-            return Err(CliError::NoToolchainConfigured);
-        };
-
+    pub async fn install(client: &ToolchainClient, cfg: &ToolchainCfg) -> Result<(), CliError> {
         let ty = cfg.ty;
         let ToolchainType::LLVM = ty;
 
-        let version = cfg.version;
+        let version = &cfg.version;
 
-        let already_installed = client.install_path_for(&version);
+        let already_installed = client.install_path_for(version);
         if already_installed.exists() {
             println!(
                 "Toolchain already installed: {}",
@@ -48,12 +50,12 @@ impl ToolchainCmd {
             return Ok(());
         }
 
-        let release = client.get_release(&version).await?;
+        let release = client.get_release(version).await?;
 
-        confirm_install(&version, false).await?;
+        confirm_install(version, false).await?;
 
         let token = ctrl_c_cancel();
-        install_with_progress_bar(&client, &release, token.clone()).await?;
+        install_with_progress_bar(client, &release, token.clone()).await?;
         token.cancel();
 
         println!(

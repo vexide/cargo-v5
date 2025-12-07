@@ -104,7 +104,7 @@ pub async fn build(
         // If no toolchain installed, ask user to install it now. If they say "no",
         // the `run()` call will return an error that we just propagate.
         if matches!(toolchain, Err(ToolchainError::ToolchainNotInstalled { .. })) {
-            ToolchainCmd::Install.run().await?;
+            ToolchainCmd::install(&client, toolchain_cfg).await?;
             toolchain = client.toolchain(&toolchain_cfg.version).await;
         }
         let toolchain = toolchain?;

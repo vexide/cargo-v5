@@ -137,7 +137,7 @@ impl FromStr for ToolchainCfg {
     }
 }
 
-#[derive(Default, Debug, Clone, Eq, PartialEq)]
+#[derive(Default, Debug, Clone, Copy, Eq, PartialEq)]
 pub enum ToolchainType {
     #[default]
     LLVM,
