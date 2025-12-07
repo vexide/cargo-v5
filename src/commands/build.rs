@@ -17,12 +17,15 @@ use tokio::{
 };
 
 use crate::{
-    commands::toolchain::ToolchainCmd, errors::CliError, fs, settings::{Settings, ToolchainType}
+    commands::toolchain::ToolchainCmd, errors::CliError, fs, settings::{Settings, ToolchainCfg, ToolchainType}
 };
 
 /// Common Cargo options to forward.
 #[derive(Args, Debug)]
-pub struct CargoOpts {
+pub struct BuildOpts {
+    #[arg(short = 'T', long)]
+    toolchain: Option<ToolchainCfg>,
+
     /// Arguments forwarded to cargo.
     #[arg(
         trailing_var_arg = true,
@@ -60,11 +63,11 @@ pub struct BuildOutput {
 
 pub async fn build(
     workspace_dir: &Path,
-    opts: CargoOpts,
+    opts: BuildOpts,
     root_settings: Option<&Settings>,
 ) -> Result<Option<BuildOutput>, CliError> {
     let cargo = cargo_bin();
-    let CargoOpts { args } = opts;
+    let BuildOpts { args, toolchain } = opts;
 
     check_release_channel(&cargo).await?;
 
@@ -87,9 +90,11 @@ pub async fn build(
 
     // If there is a toolchain enabled, we need to put it in scope so that cc builds work correctly.
 
-    if let Some(settings) = root_settings
-        && let Some(toolchain_cfg) = &settings.toolchain
-    {
+    let toolchain = root_settings
+        .and_then(|s| s.toolchain.as_ref())
+        .or(toolchain.as_ref());
+
+    if let Some(toolchain_cfg) = toolchain {
         let ToolchainType::LLVM = toolchain_cfg.ty;
 
         let client = ToolchainClient::using_data_dir().await?;
@@ -115,20 +120,23 @@ pub async fn build(
         build_cmd.env("AR_armv7a_vex_v5", "llvm-ar");
 
         let base_flags = [
+            "--target=arm-none-eabi",
             "-mcpu=cortex-a9",
+            "-mfpu=neon",
+            "-mfloat-abi=hard",
             "-fno-pic",
             "-fno-exceptions",
             "-fno-rtti",
+            "-funwind-tables",
         ];
 
         let mut c_flags = OsString::from(base_flags.join(" "));
-        if let Some(old_flags) = env::var_os("armv7a_vex_v5_CFLAGS") {
+        if let Some(old_flags) = env::var_os("CFLAGS_armv7a_vex_v5") {
             c_flags.push(" ");
             c_flags.push(old_flags);
         }
 
-        // (Yes, this variable has a different order than the last two.)
-        build_cmd.env("armv7a_vex_v5_CFLAGS", c_flags);
+        build_cmd.env("CFLAGS_armv7a_vex_v5", c_flags);
 
         // Configure clang's multilib: the reason we don't have to specify which
         // libc sysroot we want (in the form of /path/to/sysroot/lib and …/include)

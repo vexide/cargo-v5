@@ -1,6 +1,6 @@
 use cargo_v5::{
     commands::{
-        build::{CargoOpts, build},
+        build::{BuildOpts, build},
         cat::cat,
         devices::devices,
         dir::dir,
@@ -74,7 +74,7 @@ enum Command {
     Build {
         /// Arguments forwarded to `cargo`.
         #[clap(flatten)]
-        cargo_opts: CargoOpts,
+        cargo_opts: BuildOpts,
     },
 
     /// Upload a project or file to a Brain.

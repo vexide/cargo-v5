@@ -40,7 +40,7 @@ use crate::{
     settings::Settings,
 };
 
-use super::build::{CargoOpts, build};
+use super::build::{BuildOpts, build};
 
 /// Options used to control the behavior of a program upload
 #[derive(Args, Debug)]
@@ -77,9 +77,9 @@ pub struct UploadOpts {
     #[arg(long)]
     pub cold: bool,
 
-    /// Arguments forwarded to `cargo`.
+    /// Arguments forwarded to `cargo`, and other build options.
     #[clap(flatten)]
-    pub cargo_opts: CargoOpts,
+    pub build_opts: BuildOpts,
 }
 
 /// Method used for uploading binaries
@@ -586,7 +586,7 @@ pub async fn upload(
         description,
         icon,
         uncompressed,
-        cargo_opts,
+        build_opts: cargo_opts,
         upload_strategy,
         cold,
     }: UploadOpts,
