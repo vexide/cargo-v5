@@ -34,7 +34,7 @@ use vex_v5_serial::{
 };
 
 use crate::{
-    commands::build::objcopy_path,
+    commands::build::{find_project_override, objcopy_path},
     connection::{open_connection, switch_to_download_channel},
     errors::CliError,
     settings::Settings,
@@ -593,6 +593,9 @@ pub async fn upload(
     after: AfterUpload,
     metadata: Option<Metadata>,
 ) -> miette::Result<SerialConnection> {
+    let project_override = find_project_override(&cargo_opts.args);
+    let settings = Settings::load(metadata.as_ref(), project_override)?.unwrap_or_default();
+
     // Try to open a serial port in the background while we build.
     let conn_fut = async {
         let mut connection = open_connection().await?;
@@ -618,8 +621,7 @@ pub async fn upload(
 
         // No file was explicitly passed, so we'll just build and see what Cargo gives us to work with.
 
-        let root_settings = Settings::for_root(metadata.as_ref())?;
-        let Some(output) = build(path, cargo_opts, root_settings.as_ref()).await? else {
+        let Some(output) = build(path, cargo_opts, Some(&settings)).await? else {
             return Err(CliError::NoArtifact);
         };
         Ok((output.bin_artifact, Some(output.package_id)))

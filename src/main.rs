@@ -1,6 +1,6 @@
 use cargo_v5::{
     commands::{
-        build::{BuildOpts, build},
+        build::{BuildOpts, build, find_project_override},
         cat::cat,
         devices::devices,
         dir::dir,
@@ -201,7 +201,8 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
     match command {
         Command::Build { cargo_opts } => {
             let metadata = workspace_metadata().await;
-            let settings = Settings::for_root(metadata.as_ref())?;
+            let project = find_project_override(&cargo_opts.args);
+            let settings = Settings::load(metadata.as_ref(), project)?;
 
             build(&path, cargo_opts, settings.as_ref()).await?;
         }

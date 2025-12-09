@@ -19,7 +19,7 @@ impl ToolchainCmd {
         let client = ToolchainClient::using_data_dir().await?;
 
         let metadata = workspace_metadata().await;
-        let settings = Settings::for_root(metadata.as_ref())?;
+        let settings = Settings::load(metadata.as_ref(), None)?;
 
         match self {
             Self::Install => {

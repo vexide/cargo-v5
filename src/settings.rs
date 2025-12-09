@@ -1,11 +1,14 @@
-use std::{fmt::{Display, Formatter}, str::FromStr};
+use std::{
+    fmt::{Display, Formatter},
+    str::FromStr,
+};
 
 use arm_toolchain::toolchain::ToolchainVersion;
 use cargo_metadata::{Metadata, Package};
 use clap::ValueEnum;
 use serde_json::Value;
 use thiserror::Error;
-use tokio::task::{spawn_blocking};
+use tokio::task::spawn_blocking;
 
 use crate::{
     commands::upload::{ProgramIcon, UploadStrategy},
@@ -40,8 +43,20 @@ pub struct Settings {
 }
 
 impl Settings {
-    pub fn for_root(m: Option<&Metadata>) -> Result<Option<Self>, CliError> {
-        m.and_then(|m| m.root_package()).map(Self::from_pkg).transpose()
+    pub fn load(
+        metadata: Option<&Metadata>,
+        pkg_override: Option<&str>,
+    ) -> Result<Option<Self>, CliError> {
+        metadata
+            .and_then(|m| {
+                if let Some(pkg_override) = pkg_override {
+                    m.packages.iter().find(|&m| &*m.name == pkg_override)
+                } else {
+                    m.workspace_default_packages().first().copied()
+                }
+            })
+            .map(Self::from_pkg)
+            .transpose()
     }
 
     pub fn from_pkg(pkg: &Package) -> Result<Self, CliError> {

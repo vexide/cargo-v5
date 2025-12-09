@@ -27,7 +27,7 @@ use crate::{
 #[derive(Args, Debug)]
 pub struct BuildOpts {
     #[arg(short = 'T', long)]
-    toolchain: Option<ToolchainCfg>,
+    pub toolchain: Option<ToolchainCfg>,
 
     /// Arguments forwarded to cargo.
     #[arg(
@@ -35,7 +35,7 @@ pub struct BuildOpts {
         allow_hyphen_values = true,
         value_name = "CARGO-OPTIONS"
     )]
-    args: Vec<String>,
+    pub args: Vec<String>,
 }
 
 pub fn cargo_bin() -> std::ffi::OsString {
@@ -58,6 +58,37 @@ async fn check_release_channel(cargo_bin: &OsStr) -> Result<(), CliError> {
     Ok(())
 }
 
+// It's possible to build a package in a different folder, and we need to know which package
+// that is to do things like setting toolchain configuration. This routine will extract the
+// requested package ID from the cargo invocation.
+pub fn find_project_override(args: &[String]) -> Option<&str>{
+    let mut was_p = false;
+
+    for argument in args {
+        if was_p {
+            return Some(argument);
+        }
+
+        if let Some(id) = argument.strip_prefix("-p=") {
+            return Some(id);
+        }
+
+        if let Some(id) = argument.strip_prefix("--project=") {
+            return Some(id);
+        }
+
+        if argument == "-p" || argument == "--project" {
+            was_p = true;
+        }
+
+        if argument == "--" {
+            break;
+        }
+    }
+
+    None
+}
+
 pub struct BuildOutput {
     pub elf_artifact_path: PathBuf,
     pub bin_artifact: PathBuf,
@@ -67,7 +98,7 @@ pub struct BuildOutput {
 pub async fn build(
     workspace_dir: &Path,
     opts: BuildOpts,
-    root_settings: Option<&Settings>,
+    settings: Option<&Settings>,
 ) -> Result<Option<BuildOutput>, CliError> {
     let cargo = cargo_bin();
     let BuildOpts { args, toolchain } = opts;
@@ -95,7 +126,7 @@ pub async fn build(
 
     let toolchain = toolchain
         .as_ref()
-        .or(root_settings.and_then(|s| s.toolchain.as_ref()));
+        .or(settings.and_then(|s| s.toolchain.as_ref()));
 
     if let Some(toolchain_cfg) = toolchain {
         let ToolchainType::LLVM = toolchain_cfg.ty;
