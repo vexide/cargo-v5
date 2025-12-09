@@ -1,21 +1,23 @@
 use cargo_v5::{
     commands::{
-        build::{CargoOpts, build},
+        build::{BuildOpts, build, find_project_override},
         cat::cat,
         devices::devices,
         dir::dir,
         key_value::{kv_get, kv_set},
         log::log,
+        migrate,
         new::new,
         rm::rm,
         screenshot::screenshot,
         terminal::terminal,
-        migrate,
+        toolchain::ToolchainCmd,
         upload::{AfterUpload, UploadOpts, upload},
     },
     connection::{open_connection, switch_to_download_channel},
     errors::CliError,
     self_update::{self, SelfUpdateMode},
+    settings::{Settings, workspace_metadata},
 };
 use chrono::Utc;
 use clap::{Args, Parser, Subcommand};
@@ -72,9 +74,9 @@ enum Command {
     Build {
         /// Arguments forwarded to `cargo`.
         #[clap(flatten)]
-        cargo_opts: CargoOpts,
+        cargo_opts: BuildOpts,
     },
-    
+
     /// Upload a project or file to a Brain.
     #[clap(visible_alias = "u")]
     Upload {
@@ -84,15 +86,15 @@ enum Command {
         #[clap(flatten)]
         upload_opts: UploadOpts,
     },
-    
+
     /// Access a Brain's remote terminal I/O.
     #[clap(visible_alias = "t")]
     Terminal,
-    
+
     /// Build, upload, and run a program on a V5 Brain, showing its output in the terminal.
     #[clap(visible_alias = "r")]
     Run(UploadOpts),
-    
+
     /// Create a new vexide project with a given name.
     #[clap(visible_alias = "n")]
     New {
@@ -102,33 +104,29 @@ enum Command {
         #[clap(flatten)]
         download_opts: DownloadOpts,
     },
-    
+
     /// Create a new vexide project in the current directory.
     Init {
         #[clap(flatten)]
         download_opts: DownloadOpts,
     },
-    
+
     /// List files on flash.
     #[clap(visible_alias = "ls")]
     Dir,
-    
+
     /// Read a file from flash, then write its contents to stdout.
-    Cat {
-        file: PathBuf,
-    },
+    Cat { file: PathBuf },
 
     /// Erase a file from flash.
-    Rm {
-        file: PathBuf,
-    },
-    
+    Rm { file: PathBuf },
+
     /// Read a Brain's event log.
     Log {
         #[arg(long, short, default_value = "1")]
         page: NonZeroU32,
     },
-    
+
     /// List devices connected to a Brain.
     #[clap(visible_alias = "lsdev")]
     Devices,
@@ -136,22 +134,26 @@ enum Command {
     /// Take a screen capture of the brain, saving the file to the current directory.
     #[clap(visible_alias = "sc")]
     Screenshot,
-    
+
     /// Access a Brain's system key/value configuration.
     #[command(subcommand, visible_alias = "kv")]
     KeyValue(KeyValue),
-    
+
     /// Run a field control TUI.
     #[cfg(feature = "field-control")]
     #[clap(visible_aliases = ["fc", "comp-control"])]
     FieldControl,
-    
+
     /// Update cargo-v5 to the latest version.
     #[clap(hide = matches!(*self_update::CURRENT_MODE, SelfUpdateMode::Unmanaged(_)))]
     SelfUpdate,
 
     /// Migrate an older project to vexide 0.8.0.
     Migrate,
+
+    /// Manage additional toolchains for vexide projects.
+    #[command(subcommand)]
+    Toolchain(ToolchainCmd),
 }
 
 #[derive(Args, Debug)]
@@ -198,10 +200,16 @@ async fn main() -> miette::Result<()> {
 async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miette::Result<()> {
     match command {
         Command::Build { cargo_opts } => {
-            build(&path, cargo_opts).await?;
+            let metadata = workspace_metadata().await;
+            let project = find_project_override(&cargo_opts.args);
+            let settings = Settings::load(metadata.as_ref(), project)?;
+
+            build(&path, cargo_opts, settings.as_ref()).await?;
         }
         Command::Upload { upload_opts, after } => {
-            upload(&path, upload_opts, after).await?;
+            let metadata = workspace_metadata().await;
+
+            upload(&path, upload_opts, after, metadata).await?;
         }
         Command::Dir => dir(&mut open_connection().await?).await?,
         Command::Devices => devices(&mut open_connection().await?).await?,
@@ -210,7 +218,8 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
         Command::Log { page } => log(&mut open_connection().await?, page).await?,
         Command::Screenshot => screenshot(&mut open_connection().await?).await?,
         Command::Run(opts) => {
-            let mut connection = upload(&path, opts, AfterUpload::Run).await?;
+            let metadata = workspace_metadata().await;
+            let mut connection = upload(&path, opts, AfterUpload::Run, metadata).await?;
 
             tokio::select! {
                 () = terminal(&mut connection, logger) => {}
@@ -284,6 +293,9 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
         }
         Command::Migrate => {
             migrate::migrate_workspace(&path).await?;
+        }
+        Command::Toolchain(toolchain) => {
+            toolchain.run().await?;
         }
     }
 

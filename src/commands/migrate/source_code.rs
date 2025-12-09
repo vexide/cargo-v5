@@ -47,7 +47,10 @@ pub async fn update_targets(ctx: &mut ChangesCtx, metadata: &Metadata) -> Result
                 continue;
             }
 
-            ctx.describe(format!("Enabled importing from the Standard Library (for {})", target.name));
+            ctx.describe(format!(
+                "Enabled importing from the Standard Library (for {})",
+                target.name
+            ));
 
             // Removing nodes can leave the line they are on, so remove any prefixed whitespace.
             let trimmed_len = new_contents.len() - new_contents.trim_start().len();

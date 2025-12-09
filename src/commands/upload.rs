@@ -1,3 +1,5 @@
+use bon::builder;
+use cargo_metadata::Metadata;
 use clap::{Args, ValueEnum};
 use flate2::{Compression, GzBuilder};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -5,10 +7,9 @@ use inquire::{
     CustomType,
     validator::{ErrorMessage, Validation},
 };
-use tokio::{fs::File, io::AsyncWriteExt, sync::Mutex, task::block_in_place, time::Instant};
+use tokio::{fs::File, io::AsyncWriteExt, sync::Mutex, time::Instant};
 
 use std::{
-    ffi::OsStr,
     io::{ErrorKind, Write},
     path::{Path, PathBuf},
     sync::Arc,
@@ -33,12 +34,13 @@ use vex_v5_serial::{
 };
 
 use crate::{
+    commands::build::{find_project_override, objcopy_path},
     connection::{open_connection, switch_to_download_channel},
     errors::CliError,
-    metadata::Metadata,
+    settings::Settings,
 };
 
-use super::build::{CargoOpts, build, objcopy};
+use super::build::{BuildOpts, build};
 
 /// Options used to control the behavior of a program upload
 #[derive(Args, Debug)]
@@ -75,9 +77,9 @@ pub struct UploadOpts {
     #[arg(long)]
     pub cold: bool,
 
-    /// Arguments forwarded to `cargo`.
+    /// Arguments forwarded to `cargo`, and other build options.
     #[clap(flatten)]
-    pub cargo_opts: CargoOpts,
+    pub build_opts: BuildOpts,
 }
 
 /// Method used for uploading binaries
@@ -156,9 +158,10 @@ pub const PROGRESS_CHARS: &str = "⣿⣦⣀";
 const DIFFERENTIAL_UPLOAD_MAX_SIZE: usize = 0x200000;
 
 /// Upload a program to the brain.
+#[builder]
 pub async fn upload_program(
-    connection: &mut SerialConnection,
-    path: &Path,
+    #[builder(start_fn)] connection: &mut SerialConnection,
+    #[builder(start_fn)] path: &Path,
     after: AfterUpload,
     slot: u8,
     name: String,
@@ -205,7 +208,7 @@ description={}",
     if needs_ini_upload {
         let ini_timestamp = Arc::new(Mutex::new(None));
         // Progress bars
-        let ini_progress = Arc::new(Mutex::new(
+        let ini_progress =
             multi_progress
                 .add(ProgressBar::new(10000))
                 .with_style(
@@ -215,8 +218,7 @@ description={}",
                     .unwrap() // Okay to unwrap, since this just validates style formatting.
                     .progress_chars(PROGRESS_CHARS),
                 )
-                .with_message(ini_file_name.clone()),
-        ));
+                .with_message(ini_file_name.clone());
 
         connection
             .execute_command(UploadFile {
@@ -245,7 +247,7 @@ description={}",
             })
             .await?;
 
-        ini_progress.lock().await.finish();
+        ini_progress.finish();
     }
 
     match upload_strategy {
@@ -254,18 +256,16 @@ description={}",
             // which unfortunately requires us to juggle timestamps across threads.
             let bin_timestamp = Arc::new(Mutex::new(None));
 
-            let bin_progress = Arc::new(Mutex::new(
-                multi_progress
-                    .add(ProgressBar::new(10000))
-                    .with_style(
-                        ProgressStyle::with_template(
-                            "   \x1b[1;96mUploading\x1b[0m {percent_precise:>7}% {bar:40.red} {msg} ({prefix})",
-                        )
-                        .unwrap() // Okay to unwrap, since this just validates style formatting.
-                        .progress_chars(PROGRESS_CHARS),
+            let bin_progress = multi_progress
+                .add(ProgressBar::new(10000))
+                .with_style(
+                    ProgressStyle::with_template(
+                        "\x1b[1;96mUploading\x1b[0m  {percent_precise:>7}% {bar:40.red} {msg} ({prefix})",
                     )
-                    .with_message(slot_file_name.clone()),
-            ));
+                    .unwrap() // Okay to unwrap, since this just validates style formatting.
+                    .progress_chars(PROGRESS_CHARS),
+                )
+                .with_message(slot_file_name.clone());
 
             // Upload the program.
             connection
@@ -307,8 +307,7 @@ description={}",
                 })
                 .await?;
 
-            // Tell the progressbars that we're done once uploading is complete, allowing further messages to be printed to stdout.
-            bin_progress.lock().await.finish();
+            bin_progress.finish();
         }
         UploadStrategy::Differential => {
             let base_file_name = format!("slot_{slot}.base.bin");
@@ -349,7 +348,7 @@ description={}",
             if !needs_cold_upload {
                 let base = base.unwrap();
                 let patch_timestamp = Arc::new(Mutex::new(None));
-                let patch_progress = Arc::new(Mutex::new(
+                let patch_progress =
                     multi_progress
                         .add(ProgressBar::new(10000))
                         .with_style(
@@ -359,8 +358,7 @@ description={}",
                             .unwrap() // Okay to unwrap, since this just validates style formatting.
                             .progress_chars(PROGRESS_CHARS),
                         )
-                        .with_message(slot_file_name.clone()),
-                ));
+                        .with_message(slot_file_name.clone());
 
                 let new = tokio::fs::read(path).await?;
 
@@ -412,13 +410,13 @@ description={}",
                     })
                     .await?;
 
-                patch_progress.lock().await.finish();
+                patch_progress.finish();
             } else {
                 // indicatif is a little dumb with timestamp handling, so we're going to do this all custom,
                 // which unfortunately requires us to juggle timestamps across threads.
                 let base_timestamp = Arc::new(Mutex::new(None));
 
-                let base_progress = Arc::new(Mutex::new(
+                let base_progress =
                     multi_progress
                         .add(ProgressBar::new(10000))
                         .with_style(
@@ -428,8 +426,7 @@ description={}",
                             .unwrap() // Okay to unwrap, since this just validates style formatting.
                             .progress_chars(PROGRESS_CHARS),
                         )
-                        .with_message(base_file_name.clone()),
-                ));
+                        .with_message(base_file_name.clone());
 
                 let mut base_data = tokio::fs::read(path).await?;
 
@@ -477,7 +474,7 @@ description={}",
                         )),
                     })
                     .await?;
-                base_progress.lock().await.finish();
+                base_progress.finish();
 
                 connection
                     .execute_command(UploadFile {
@@ -559,11 +556,10 @@ async fn brain_file_metadata(
 }
 
 fn build_progress_callback(
-    progress: Arc<Mutex<ProgressBar>>,
+    progress: ProgressBar,
     timestamp: Arc<Mutex<Option<Instant>>>,
 ) -> Box<dyn FnMut(f32) + Send> {
     Box::new(move |percent| {
-        let progress = progress.try_lock().unwrap();
         let mut timestamp = timestamp.try_lock().unwrap();
 
         if timestamp.is_none() {
@@ -590,79 +586,74 @@ pub async fn upload(
         description,
         icon,
         uncompressed,
-        cargo_opts,
+        build_opts: cargo_opts,
         upload_strategy,
         cold,
     }: UploadOpts,
     after: AfterUpload,
+    metadata: Option<Metadata>,
 ) -> miette::Result<SerialConnection> {
-    // Try to open a serialport in the background while we build.
-    let (mut connection, (artifact, package_id)) = tokio::try_join!(
-        async {
-            let mut connection = open_connection().await?;
+    let project_override = find_project_override(&cargo_opts.args);
+    let settings = Settings::load(metadata.as_ref(), project_override)?.unwrap_or_default();
 
-            // Switch the radio to the download channel if the controller is wireless.
-            switch_to_download_channel(&mut connection).await?;
+    // Try to open a serial port in the background while we build.
+    let conn_fut = async {
+        let mut connection = open_connection().await?;
 
-            Ok::<SerialConnection, CliError>(connection)
-        },
-        async {
-            // Get the build artifact we'll be uploading with.
-            //
-            // The user either directly passed an file through the `--file` argument, or they didn't and we need to run
-            // `cargo build`.
-            Ok(if let Some(file) = file {
-                if file.extension() == Some(OsStr::new("bin")) {
-                    (file, None)
-                } else {
-                    // If a BIN file wasn't provided, we'll attempt to objcopy it as if it were an ELF.
-                    let binary =
-                        objcopy(&tokio::fs::read(&file).await.map_err(CliError::IoError)?)?;
-                    let binary_path = file.with_extension("bin");
+        // Switch the radio to the download channel if the controller is wireless.
+        switch_to_download_channel(&mut connection).await?;
 
-                    // Write the binary to a file.
-                    tokio::fs::write(&binary_path, binary)
-                        .await
-                        .map_err(CliError::IoError)?;
-                    eprintln!("     \x1b[1;92mObjcopy\x1b[0m {}", binary_path.display());
+        Ok::<SerialConnection, CliError>(connection)
+    };
 
-                    (binary_path, None)
-                }
-            } else {
-                // Run cargo build, then objcopy.
-                build(path, cargo_opts)
-                    .await?
-                    .map(|output| (output.bin_artifact, Some(output.package_id)))
-                    .ok_or(CliError::NoArtifact)?
-            })
+    let artifact_fut = async {
+        // Get the build artifact we'll be uploading with.
+        //
+        // The user either directly passed an file through the `--file` argument, or they didn't and we need to run
+        // `cargo build`.
+        if let Some(path) = file {
+            // The user directly passed a file through the `--file` argument, so there's
+            // no need to build anything. We may need to objcopy though.
+
+            let (path, _) = objcopy_path(&path).await?;
+            return Ok((path, None));
         }
-    )?;
 
-    // We'll use `cargo-metadata` to parse the output of `cargo metadata` and find valid `Cargo.toml`
-    // files in the workspace directory.
-    let cargo_metadata =
-        block_in_place(|| cargo_metadata::MetadataCommand::new().no_deps().exec()).ok();
+        // No file was explicitly passed, so we'll just build and see what Cargo gives us to work with.
+
+        let Some(output) = build(path, cargo_opts, Some(&settings)).await? else {
+            return Err(CliError::NoArtifact);
+        };
+        Ok((output.bin_artifact, Some(output.package_id)))
+    };
+
+    let (mut connection, build) = tokio::try_join!(conn_fut, artifact_fut)?;
+    let (artifact, package_id) = build;
 
     // Find which package we're being built from, if we're being built from a package at all.
-    let package = cargo_metadata.and_then(|metadata| {
+    let package = metadata.and_then(|metadata| {
         package_id
             .as_ref()
             .and_then(|id| metadata.packages.iter().find(|p| &p.id == id))
-            .or_else(|| metadata.packages.first())
+            .or_else(|| metadata.root_package())
             .cloned()
     });
 
     // Uploading has the option to use the `package.metadata.v5` table for default configuration options.
-    // Attempt to serialize `package.metadata.v5` into a [`Metadata`] struct. This will just Default::default to
+    // Attempt to serialize `package.metadata.v5` into a [`Settings`] struct. This will just Default::default to
     // all `None`s if it can't find a specific field, or error if the field is malformed.
-    let metadata = package.as_ref().map(Metadata::new).transpose()?;
+    let settings = package
+        .as_ref()
+        .map(Settings::from_pkg)
+        .transpose()?
+        .unwrap_or_default();
 
     // The program's slot number is absolutely required for uploading. If the slot argument isn't directly provided:
     //
     // - Check for the `package.metadata.v5.slot` field in Cargo.toml.
     // - If that doesn't exist, directly prompt the user asking what slot to upload to.
     let slot = slot
-        .or(metadata.and_then(|m| m.slot))
+        .or(settings.slot)
         .or_else(|| {
             CustomType::<u8>::new("Choose a program slot to upload to:")
                 .with_validator(|slot: &u8| {
@@ -684,31 +675,32 @@ pub async fn upload(
     }
 
     // Pass information to the upload routine.
-    upload_program(
-        &mut connection,
-        &artifact,
-        after,
-        slot,
-        name.or(package.as_ref().map(|pkg| pkg.name.to_string()))
-            .unwrap_or("cargo-v5".to_string()),
-        description
-            .or(package.as_ref().and_then(|pkg| pkg.description.clone()))
-            .unwrap_or("Uploaded with cargo-v5.".to_string()),
-        icon.or(metadata.and_then(|metadata| metadata.icon))
-            .unwrap_or_default(),
-        "Rust".to_string(), // `program_type` hardcoded for now, maybe configurable in the future.
-        match uncompressed {
+    upload_program(&mut connection, &artifact)
+        .after(after)
+        .slot(slot)
+        .name(
+            name.or(package.as_ref().map(|pkg| pkg.name.to_string()))
+                .unwrap_or("cargo-v5".to_string()),
+        )
+        .description(
+            description
+                .or(package.as_ref().and_then(|pkg| pkg.description.clone()))
+                .unwrap_or("Uploaded with cargo-v5.".to_string()),
+        )
+        .icon(icon.or(settings.icon).unwrap_or_default())
+        .program_type("Rust".to_string()) // `program_type` hardcoded for now, maybe configurable in the future.
+        .compress(match uncompressed {
             Some(val) => !val,
-            None => metadata
-                .and_then(|metadata| metadata.compress)
-                .unwrap_or(true),
-        },
-        cold,
-        upload_strategy
-            .or(metadata.and_then(|metadata| metadata.upload_strategy))
-            .unwrap_or_default(),
-    )
-    .await?;
+            None => settings.compress.unwrap_or(true),
+        })
+        .cold(cold)
+        .upload_strategy(
+            upload_strategy
+                .or(settings.upload_strategy)
+                .unwrap_or_default(),
+        )
+        .call()
+        .await?;
 
     Ok(connection)
 }

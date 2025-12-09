@@ -1,11 +1,26 @@
-use cargo_metadata::Package;
+use std::{
+    fmt::{Display, Formatter},
+    str::FromStr,
+};
+
+use arm_toolchain::toolchain::ToolchainVersion;
+use cargo_metadata::{Metadata, Package};
 use clap::ValueEnum;
 use serde_json::Value;
+use thiserror::Error;
+use tokio::task::spawn_blocking;
 
 use crate::{
     commands::upload::{ProgramIcon, UploadStrategy},
     errors::CliError,
 };
+
+pub async fn workspace_metadata() -> Option<Metadata> {
+    spawn_blocking(|| cargo_metadata::MetadataCommand::new().no_deps().exec())
+        .await
+        .unwrap()
+        .ok()
+}
 
 fn field_type(field: &Value) -> &'static str {
     match field {
@@ -18,16 +33,33 @@ fn field_type(field: &Value) -> &'static str {
     }
 }
 
-#[derive(Default, Debug, Clone, Copy, Eq, PartialEq)]
-pub struct Metadata {
+#[derive(Default, Debug, Clone, Eq, PartialEq)]
+pub struct Settings {
     pub slot: Option<u8>,
     pub icon: Option<ProgramIcon>,
     pub compress: Option<bool>,
     pub upload_strategy: Option<UploadStrategy>,
+    pub toolchain: Option<ToolchainCfg>,
 }
 
-impl Metadata {
-    pub fn new(pkg: &Package) -> Result<Self, CliError> {
+impl Settings {
+    pub fn load(
+        metadata: Option<&Metadata>,
+        pkg_override: Option<&str>,
+    ) -> Result<Option<Self>, CliError> {
+        metadata
+            .and_then(|m| {
+                if let Some(pkg_override) = pkg_override {
+                    m.packages.iter().find(|&m| &*m.name == pkg_override)
+                } else {
+                    m.workspace_default_packages().first().copied()
+                }
+            })
+            .map(Self::from_pkg)
+            .transpose()
+    }
+
+    pub fn from_pkg(pkg: &Package) -> Result<Self, CliError> {
         if let Some(metadata) = pkg.metadata.as_object()
             && let Some(v5_metadata) = metadata.get("v5").and_then(|m| m.as_object())
         {
@@ -82,9 +114,73 @@ impl Metadata {
                 } else {
                     None
                 },
+                toolchain: if let Some(toolchain) = v5_metadata.get("toolchain") {
+                    let str = toolchain.as_str().ok_or(CliError::BadFieldType {
+                        field: "toolchain".to_string(),
+                        expected: "table".to_string(),
+                        found: field_type(toolchain).to_string(),
+                    })?;
+
+                    Some(ToolchainCfg::from_str(str)?)
+                } else {
+                    None
+                },
             });
         }
 
         Ok(Self::default())
     }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ToolchainCfg {
+    pub ty: ToolchainType,
+    pub version: ToolchainVersion,
+}
+
+impl FromStr for ToolchainCfg {
+    type Err = BadFieldDataError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let Some((left, right)) = s.split_once('-') else {
+            return Err(BadFieldDataError::ToolchainMissingDash);
+        };
+
+        let ty = ToolchainType::from_str(left)?;
+        let version = ToolchainVersion::from(right);
+
+        Ok(Self { ty, version })
+    }
+}
+
+#[derive(Default, Debug, Clone, Copy, Eq, PartialEq)]
+pub enum ToolchainType {
+    #[default]
+    LLVM,
+}
+
+impl FromStr for ToolchainType {
+    type Err = BadFieldDataError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let lower = s.to_lowercase();
+        match s {
+            "llvm" => Ok(Self::LLVM),
+            _ => Err(BadFieldDataError::ToolchainTypeUnsupported { request: lower }),
+        }
+    }
+}
+
+impl Display for ToolchainType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LLVM => write!(f, "llvm"),
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum BadFieldDataError {
+    #[error("The `toolchain` type {request:?} is not supported [allowed values: llvm]")]
+    ToolchainTypeUnsupported { request: String },
+    #[error("`toolchain`s must have a type and version separated by a dash (e.g. llvm-21.1.1)")]
+    ToolchainMissingDash,
 }
