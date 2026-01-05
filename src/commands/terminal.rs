@@ -22,7 +22,9 @@ pub async fn terminal(connection: &mut SerialConnection, logger: &mut LoggerHand
         select! {
             read = connection.read_user(&mut program_output) => {
                 if let Ok(size) = read {
-                    stdout().write_all(&program_output[..size]).await.unwrap();
+                    let mut stdout = stdout();
+                    stdout.write_all(&program_output[..size]).await.unwrap();
+                    stdout.flush().await.unwrap();
                 }
             },
             read = stdin.read(&mut program_input) => {
