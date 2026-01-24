@@ -4,10 +4,7 @@ use vex_v5_serial::{
     Connection,
     protocol::{
         FixedString,
-        cdc2::file::{
-            FileErasePacket, FileErasePayload, FileEraseReplyPacket, FileExitAction,
-            FileTransferExitPacket, FileTransferExitReplyPacket,
-        },
+        cdc2::file::{FileErasePacket, FileExitAction, FileTransferExitPacket},
     },
     serial::{SerialConnection, SerialError},
 };
@@ -27,26 +24,26 @@ pub async fn rm(connection: &mut SerialConnection, file: PathBuf) -> Result<(), 
         .map_err(|err| CliError::SerialError(SerialError::FixedStringSizeError(err)))?;
 
     connection
-        .handshake::<FileEraseReplyPacket>(
-            Duration::from_millis(500),
-            1,
-            FileErasePacket::new(FileErasePayload {
+        .handshake(
+            FileErasePacket {
                 vendor,
                 reserved: 0,
                 file_name,
-            }),
-        )
-        .await?
-        .payload?;
-
-    connection
-        .handshake::<FileTransferExitReplyPacket>(
+            },
             Duration::from_millis(500),
             1,
-            FileTransferExitPacket::new(FileExitAction::DoNothing),
         )
-        .await?
-        .payload?;
+        .await??;
+
+    connection
+        .handshake(
+            FileTransferExitPacket {
+                action: FileExitAction::DoNothing,
+            },
+            Duration::from_millis(500),
+            1,
+        )
+        .await??;
 
     Ok(())
 }

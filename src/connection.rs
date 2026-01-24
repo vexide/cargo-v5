@@ -6,13 +6,10 @@ use tokio::{task::spawn_blocking, time::sleep};
 use vex_v5_serial::{
     Connection,
     protocol::{
-        cdc::{ProductType, SystemVersionPacket, SystemVersionReplyPacket},
+        cdc::{ProductType, SystemVersionPacket},
         cdc2::{
-            file::{FileControlGroup, FileControlPacket, FileControlReplyPacket, RadioChannel},
-            system::{
-                RadioStatusPacket, RadioStatusReplyPacket, SystemFlagsPacket,
-                SystemFlagsReplyPacket,
-            },
+            file::{FileControlGroup, FileControlPacket, RadioChannel},
+            system::{RadioStatusPacket, SystemFlagsPacket},
         },
     },
     serial::{self, SerialConnection, SerialDevice},
@@ -81,31 +78,24 @@ pub async fn open_connection() -> Result<SerialConnection, CliError> {
 
 async fn is_connection_wireless(connection: &mut SerialConnection) -> Result<bool, CliError> {
     let version = connection
-        .handshake::<SystemVersionReplyPacket>(
-            Duration::from_millis(500),
-            1,
-            SystemVersionPacket::new(()),
-        )
+        .handshake(SystemVersionPacket {}, Duration::from_millis(500), 1)
         .await?;
     let system_flags = connection
-        .handshake::<SystemFlagsReplyPacket>(
-            Duration::from_millis(500),
-            1,
-            SystemFlagsPacket::new(()),
-        )
-        .await?
-        .payload?;
-    let controller = matches!(version.payload.product_type, ProductType::Controller);
+        .handshake(SystemFlagsPacket {}, Duration::from_millis(500), 1)
+        .await??;
+    let is_controller = matches!(
+        version.product_type,
+        ProductType::V5Controller | ProductType::ExpController | ProductType::ExpControllerVariant // | ProductType::AirController
+    );
 
     let tethered = system_flags.flags & (1 << 8) != 0;
-    Ok(!tethered && controller)
+    Ok(!tethered && is_controller)
 }
 
 pub async fn switch_to_download_channel(connection: &mut SerialConnection) -> Result<(), CliError> {
     let radio_status = connection
-        .handshake::<RadioStatusReplyPacket>(Duration::from_secs(2), 3, RadioStatusPacket::new(()))
-        .await?
-        .payload?;
+        .handshake(RadioStatusPacket {}, Duration::from_secs(2), 3)
+        .await??;
 
     log::debug!("Radio channel: {}", radio_status.channel);
 
@@ -131,23 +121,20 @@ pub async fn switch_to_download_channel(connection: &mut SerialConnection) -> Re
 
         // Tell the controller to switch to the download channel.
         connection
-            .handshake::<FileControlReplyPacket>(
+            .handshake(
+                FileControlPacket {
+                    group: FileControlGroup::Radio(RadioChannel::Download),
+                },
                 Duration::from_secs(2),
                 3,
-                FileControlPacket::new(FileControlGroup::Radio(RadioChannel::Download)),
             )
-            .await?
-            .payload?;
+            .await??;
 
         // Wait for the controller to disconnect by spamming it with a packet and waiting until that packet
         // doesn't go through. This indicates that the radio has actually started to switch channels.
         tokio::time::timeout(Duration::from_secs(8), async {
             while connection
-                .handshake::<RadioStatusReplyPacket>(
-                    Duration::from_millis(250),
-                    0,
-                    RadioStatusPacket::new(()),
-                )
+                .handshake(RadioStatusPacket {}, Duration::from_millis(250), 0)
                 .await
                 .is_ok()
             {
@@ -166,17 +153,13 @@ pub async fn switch_to_download_channel(connection: &mut SerialConnection) -> Re
         tokio::time::timeout(Duration::from_secs(8), async {
             loop {
                 let Ok(pkt) = connection
-                    .handshake::<RadioStatusReplyPacket>(
-                        Duration::from_millis(250),
-                        0,
-                        RadioStatusPacket::new(()),
-                    )
+                    .handshake(RadioStatusPacket {}, Duration::from_millis(250), 0)
                     .await
                 else {
                     continue;
                 };
 
-                match pkt.payload {
+                match pkt {
                     // We have successfully switched to the download channel.
                     Ok(payload) if payload.channel == 5 => return Ok(()),
 

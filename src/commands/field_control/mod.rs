@@ -18,11 +18,8 @@ use tui_term::{
 use vex_v5_serial::{
     Connection,
     protocol::{
-        cdc::{ProductType, SystemVersionPacket, SystemVersionReplyPacket},
-        cdc2::controller::{
-            CompetitionControlPacket, CompetitionControlPayload, CompetitionControlReplyPacket,
-            MatchMode, UserDataPacket, UserDataPayload, UserDataReplyPacket,
-        },
+        cdc::{ProductType, SystemVersionPacket},
+        cdc2::controller::{CompetitionControlPacket, CompetitionMode, UserDataPacket},
     },
     serial::{SerialConnection, SerialError},
 };
@@ -34,34 +31,29 @@ mod widgets;
 
 async fn set_match_mode(
     connection: &mut SerialConnection,
-    match_mode: MatchMode,
+    mode: CompetitionMode,
 ) -> Result<(), SerialError> {
     connection
-        .handshake::<CompetitionControlReplyPacket>(
+        .handshake(
+            CompetitionControlPacket { mode, time: 0 },
             Duration::from_millis(500),
             10,
-            CompetitionControlPacket::new(CompetitionControlPayload {
-                match_mode,
-                match_time: 0,
-            }),
         )
-        .await?
-        .payload?;
+        .await??;
     Ok(())
 }
 
 async fn try_read_terminal(connection: &mut SerialConnection) -> Result<Vec<u8>, CliError> {
     let read = connection
-        .handshake::<UserDataReplyPacket>(
-            Duration::from_millis(100),
-            1,
-            UserDataPacket::new(UserDataPayload {
+        .handshake(
+            UserDataPacket {
                 channel: 1, // stdio channel
                 write: None,
-            }),
+            },
+            Duration::from_millis(100),
+            1,
         )
-        .await?
-        .payload?;
+        .await??;
 
     let mut data = Vec::new();
     if let Some(read) = read.data {
@@ -72,15 +64,15 @@ async fn try_read_terminal(connection: &mut SerialConnection) -> Result<Vec<u8>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum MatchModeFocus {
-    Auto,
+enum CompetitionModeFocus {
+    Autonomous,
     Driver,
     Disabled,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Focus {
-    MatchMode(MatchModeFocus),
+    CompetitionMode(CompetitionModeFocus),
     Countdown,
     Help { return_focus: Box<Focus> },
 }
@@ -111,17 +103,17 @@ struct CountdownState {
     running: bool,
 }
 impl CountdownState {
-    fn current_set_time(&self, match_mode: MatchMode) -> Duration {
+    fn current_set_time(&self, match_mode: CompetitionMode) -> Duration {
         match match_mode {
-            MatchMode::Auto => self.auto_set_time,
-            MatchMode::Driver => self.driver_set_time,
-            MatchMode::Disabled => self.disabled_set_time,
+            CompetitionMode::Autonomous => self.auto_set_time,
+            CompetitionMode::Driver => self.driver_set_time,
+            CompetitionMode::Disabled => self.disabled_set_time,
         }
     }
 }
 
 struct TuiState {
-    current_mode: MatchMode,
+    current_mode: CompetitionMode,
     focus: Focus,
     parser: vt100::Parser,
 
@@ -180,26 +172,26 @@ fn draw_tui(frame: &mut Frame, state: &mut TuiState) {
     let mut disabled = Mode::new(String::from("Disabled"), state.countdown.disabled_set_time);
     disabled.set_cursor_position(state.countdown.disabled_cursor_pos.0);
 
-    if let Focus::MatchMode(mode) = &state.focus {
+    if let Focus::CompetitionMode(mode) = &state.focus {
         match mode {
-            MatchModeFocus::Auto => {
+            CompetitionModeFocus::Autonomous => {
                 auto.select();
                 auto.place_cursor(frame, auto_area);
             }
-            MatchModeFocus::Driver => {
+            CompetitionModeFocus::Driver => {
                 driver.select();
                 driver.place_cursor(frame, driver_area);
             }
-            MatchModeFocus::Disabled => {
+            CompetitionModeFocus::Disabled => {
                 disabled.select();
                 disabled.place_cursor(frame, disabled_area);
             }
         }
     }
     match state.current_mode {
-        MatchMode::Auto => auto.current = true,
-        MatchMode::Driver => driver.current = true,
-        MatchMode::Disabled => disabled.current = true,
+        CompetitionMode::Autonomous => auto.current = true,
+        CompetitionMode::Driver => driver.current = true,
+        CompetitionMode::Disabled => disabled.current = true,
     }
 
     frame.render_widget(driver, driver_area);
@@ -240,7 +232,7 @@ fn draw_tui(frame: &mut Frame, state: &mut TuiState) {
 enum Control {
     None,
     Exit,
-    ChangeMode(MatchMode),
+    ChangeMode(CompetitionMode),
 }
 
 fn handle_events(tui_state: &mut TuiState) -> io::Result<Control> {
@@ -267,14 +259,16 @@ fn handle_events(tui_state: &mut TuiState) -> io::Result<Control> {
             }
             KeyCode::Char('j') | KeyCode::Down => {
                 match tui_state.focus {
-                    Focus::Countdown => tui_state.focus = Focus::MatchMode(MatchModeFocus::Driver),
-                    Focus::MatchMode(MatchModeFocus::Driver) => {
-                        tui_state.focus = Focus::MatchMode(MatchModeFocus::Auto)
+                    Focus::Countdown => {
+                        tui_state.focus = Focus::CompetitionMode(CompetitionModeFocus::Driver)
                     }
-                    Focus::MatchMode(MatchModeFocus::Auto) => {
-                        tui_state.focus = Focus::MatchMode(MatchModeFocus::Disabled)
+                    Focus::CompetitionMode(CompetitionModeFocus::Driver) => {
+                        tui_state.focus = Focus::CompetitionMode(CompetitionModeFocus::Autonomous)
                     }
-                    Focus::MatchMode(MatchModeFocus::Disabled) => {
+                    Focus::CompetitionMode(CompetitionModeFocus::Autonomous) => {
+                        tui_state.focus = Focus::CompetitionMode(CompetitionModeFocus::Disabled)
+                    }
+                    Focus::CompetitionMode(CompetitionModeFocus::Disabled) => {
                         tui_state.focus = Focus::Countdown
                     }
                     _ => {}
@@ -284,14 +278,16 @@ fn handle_events(tui_state: &mut TuiState) -> io::Result<Control> {
             KeyCode::Char('k') | KeyCode::Up => {
                 match tui_state.focus {
                     Focus::Countdown => {
-                        tui_state.focus = Focus::MatchMode(MatchModeFocus::Disabled)
+                        tui_state.focus = Focus::CompetitionMode(CompetitionModeFocus::Disabled)
                     }
-                    Focus::MatchMode(MatchModeFocus::Driver) => tui_state.focus = Focus::Countdown,
-                    Focus::MatchMode(MatchModeFocus::Auto) => {
-                        tui_state.focus = Focus::MatchMode(MatchModeFocus::Driver)
+                    Focus::CompetitionMode(CompetitionModeFocus::Driver) => {
+                        tui_state.focus = Focus::Countdown
                     }
-                    Focus::MatchMode(MatchModeFocus::Disabled) => {
-                        tui_state.focus = Focus::MatchMode(MatchModeFocus::Auto)
+                    Focus::CompetitionMode(CompetitionModeFocus::Autonomous) => {
+                        tui_state.focus = Focus::CompetitionMode(CompetitionModeFocus::Driver)
+                    }
+                    Focus::CompetitionMode(CompetitionModeFocus::Disabled) => {
+                        tui_state.focus = Focus::CompetitionMode(CompetitionModeFocus::Autonomous)
                     }
                     _ => {}
                 }
@@ -300,25 +296,29 @@ fn handle_events(tui_state: &mut TuiState) -> io::Result<Control> {
             KeyCode::Char(' ') | KeyCode::Enter => {
                 match tui_state.focus {
                     Focus::Countdown => tui_state.countdown.running = !tui_state.countdown.running,
-                    Focus::MatchMode(MatchModeFocus::Driver) => {
-                        tui_state.current_mode = MatchMode::Driver;
+                    Focus::CompetitionMode(CompetitionModeFocus::Driver) => {
+                        tui_state.current_mode = CompetitionMode::Driver;
                     }
-                    Focus::MatchMode(MatchModeFocus::Auto) => {
-                        tui_state.current_mode = MatchMode::Auto;
+                    Focus::CompetitionMode(CompetitionModeFocus::Autonomous) => {
+                        tui_state.current_mode = CompetitionMode::Autonomous;
                     }
-                    Focus::MatchMode(MatchModeFocus::Disabled) => {
-                        tui_state.current_mode = MatchMode::Disabled;
+                    Focus::CompetitionMode(CompetitionModeFocus::Disabled) => {
+                        tui_state.current_mode = CompetitionMode::Disabled;
                     }
                     _ => {}
                 }
                 Control::ChangeMode(tui_state.current_mode)
             }
             KeyCode::Char('h') | KeyCode::Left => {
-                if let Focus::MatchMode(mode) = tui_state.focus {
+                if let Focus::CompetitionMode(mode) = tui_state.focus {
                     match mode {
-                        MatchModeFocus::Auto => tui_state.countdown.auto_cursor_pos.move_left(),
-                        MatchModeFocus::Driver => tui_state.countdown.driver_cursor_pos.move_left(),
-                        MatchModeFocus::Disabled => {
+                        CompetitionModeFocus::Autonomous => {
+                            tui_state.countdown.auto_cursor_pos.move_left()
+                        }
+                        CompetitionModeFocus::Driver => {
+                            tui_state.countdown.driver_cursor_pos.move_left()
+                        }
+                        CompetitionModeFocus::Disabled => {
                             tui_state.countdown.disabled_cursor_pos.move_left()
                         }
                     }
@@ -327,13 +327,15 @@ fn handle_events(tui_state: &mut TuiState) -> io::Result<Control> {
                 Control::None
             }
             KeyCode::Char('l') | KeyCode::Right => {
-                if let Focus::MatchMode(mode) = tui_state.focus {
+                if let Focus::CompetitionMode(mode) = tui_state.focus {
                     match mode {
-                        MatchModeFocus::Auto => tui_state.countdown.auto_cursor_pos.move_right(),
-                        MatchModeFocus::Driver => {
+                        CompetitionModeFocus::Autonomous => {
+                            tui_state.countdown.auto_cursor_pos.move_right()
+                        }
+                        CompetitionModeFocus::Driver => {
                             tui_state.countdown.driver_cursor_pos.move_right()
                         }
-                        MatchModeFocus::Disabled => {
+                        CompetitionModeFocus::Disabled => {
                             tui_state.countdown.disabled_cursor_pos.move_right()
                         }
                     }
@@ -344,9 +346,9 @@ fn handle_events(tui_state: &mut TuiState) -> io::Result<Control> {
             KeyCode::Char(ch) if ch.is_numeric() => {
                 let digit = ch.to_digit(10).unwrap() as u8;
 
-                if let Focus::MatchMode(mode) = tui_state.focus {
+                if let Focus::CompetitionMode(mode) = tui_state.focus {
                     match mode {
-                        MatchModeFocus::Auto => {
+                        CompetitionModeFocus::Autonomous => {
                             tui_state.countdown.auto_set_time = set_duration_digit(
                                 digit,
                                 tui_state.countdown.auto_cursor_pos.0,
@@ -354,7 +356,7 @@ fn handle_events(tui_state: &mut TuiState) -> io::Result<Control> {
                             );
                             tui_state.countdown.auto_cursor_pos.move_right();
                         }
-                        MatchModeFocus::Driver => {
+                        CompetitionModeFocus::Driver => {
                             tui_state.countdown.driver_set_time = set_duration_digit(
                                 digit,
                                 tui_state.countdown.driver_cursor_pos.0,
@@ -362,7 +364,7 @@ fn handle_events(tui_state: &mut TuiState) -> io::Result<Control> {
                             );
                             tui_state.countdown.driver_cursor_pos.move_right()
                         }
-                        MatchModeFocus::Disabled => {
+                        CompetitionModeFocus::Disabled => {
                             tui_state.countdown.disabled_set_time = set_duration_digit(
                                 digit,
                                 tui_state.countdown.disabled_cursor_pos.0,
@@ -391,18 +393,18 @@ fn handle_countdown(tui_state: &mut TuiState) -> Control {
         if tui_state.countdown.current_time.as_secs() == 0 {
             tui_state.countdown.start_time = Instant::now();
             match tui_state.current_mode {
-                MatchMode::Auto => {
-                    tui_state.current_mode = MatchMode::Driver;
-                    return Control::ChangeMode(MatchMode::Driver);
+                CompetitionMode::Autonomous => {
+                    tui_state.current_mode = CompetitionMode::Driver;
+                    return Control::ChangeMode(CompetitionMode::Driver);
                 }
-                MatchMode::Driver => {
-                    tui_state.current_mode = MatchMode::Disabled;
+                CompetitionMode::Driver => {
+                    tui_state.current_mode = CompetitionMode::Disabled;
                     tui_state.countdown.running = false;
-                    return Control::ChangeMode(MatchMode::Disabled);
+                    return Control::ChangeMode(CompetitionMode::Disabled);
                 }
-                MatchMode::Disabled => {
-                    tui_state.current_mode = MatchMode::Auto;
-                    return Control::ChangeMode(MatchMode::Auto);
+                CompetitionMode::Disabled => {
+                    tui_state.current_mode = CompetitionMode::Autonomous;
+                    return Control::ChangeMode(CompetitionMode::Autonomous);
                 }
             }
         }
@@ -417,20 +419,15 @@ fn handle_countdown(tui_state: &mut TuiState) -> Control {
 
 pub async fn run_field_control_tui(connection: &mut SerialConnection) -> Result<(), CliError> {
     let response = connection
-        .handshake::<SystemVersionReplyPacket>(
-            Duration::from_millis(700),
-            5,
-            SystemVersionPacket::new(()),
-        )
-        .await?
-        .payload;
-    if response.product_type != ProductType::Controller {
+        .handshake(SystemVersionPacket {}, Duration::from_millis(700), 5)
+        .await?;
+    if response.product_type != ProductType::V5Controller {
         return Err(CliError::BrainConnectionSetMatchMode);
     }
 
     let mut tui_state = TuiState {
-        current_mode: MatchMode::Disabled,
-        focus: Focus::MatchMode(MatchModeFocus::Driver),
+        current_mode: CompetitionMode::Disabled,
+        focus: Focus::CompetitionMode(CompetitionModeFocus::Driver),
         parser: vt100::Parser::new(1, 1, 0),
         countdown: CountdownState {
             auto_set_time: Duration::from_secs(15),
@@ -477,6 +474,6 @@ pub async fn run_field_control_tui(connection: &mut SerialConnection) -> Result<
         }
     }
     ratatui::restore();
-    set_match_mode(connection, MatchMode::Disabled).await?;
+    set_match_mode(connection, CompetitionMode::Disabled).await?;
     Ok(())
 }

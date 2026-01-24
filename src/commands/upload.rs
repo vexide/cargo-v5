@@ -17,15 +17,14 @@ use std::{
 
 use vex_v5_serial::{
     Connection,
-    commands::file::{LinkedFile, USER_PROGRAM_LOAD_ADDR, UploadFile, j2000_timestamp},
+    commands::file::{LinkedFile, USER_PROGRAM_LOAD_ADDR, j2000_timestamp, upload_file},
     protocol::{
         FixedString, VEX_CRC32, Version,
         cdc2::{
             Cdc2Ack,
             file::{
                 ExtensionType, FileExitAction, FileMetadata, FileMetadataPacket,
-                FileMetadataPayload, FileMetadataReplyPacket, FileMetadataReplyPayload,
-                FileTransferTarget, FileVendor,
+                FileMetadataReplyPacket, FileTransferTarget, FileVendor,
             },
         },
     },
@@ -218,32 +217,32 @@ description={}",
                 .with_message(ini_file_name.clone()),
         ));
 
-        connection
-            .execute_command(UploadFile {
-                file_name: FixedString::new(ini_file_name).unwrap(),
-                metadata: FileMetadata {
-                    extension: FixedString::new("ini").unwrap(),
-                    extension_type: ExtensionType::default(),
-                    timestamp: j2000_timestamp(),
-                    version: Version {
-                        major: 1,
-                        minor: 0,
-                        build: 0,
-                        beta: 0,
-                    },
+        upload_file(
+            connection,
+            FixedString::new(ini_file_name).unwrap(),
+            FileMetadata {
+                extension: FixedString::new("ini").unwrap(),
+                extension_type: ExtensionType::default(),
+                timestamp: j2000_timestamp(),
+                version: Version {
+                    major: 1,
+                    minor: 0,
+                    build: 0,
+                    beta: 0,
                 },
-                vendor: FileVendor::User,
-                data: ini.as_bytes(),
-                target: FileTransferTarget::Qspi,
-                load_address: USER_PROGRAM_LOAD_ADDR,
-                linked_file: None,
-                after_upload: FileExitAction::DoNothing,
-                progress_callback: Some(build_progress_callback(
-                    ini_progress.clone(),
-                    ini_timestamp.clone(),
-                )),
-            })
-            .await?;
+            },
+            FileVendor::User,
+            ini.as_bytes(),
+            FileTransferTarget::Qspi,
+            USER_PROGRAM_LOAD_ADDR,
+            None,
+            FileExitAction::DoNothing,
+            Some(build_progress_callback(
+                ini_progress.clone(),
+                ini_timestamp.clone(),
+            )),
+        )
+        .await?;
 
         ini_progress.lock().await.finish();
     }
@@ -268,44 +267,44 @@ description={}",
             ));
 
             // Upload the program.
-            connection
-                .execute_command(UploadFile {
-                    file_name: FixedString::new(slot_file_name.clone()).unwrap(),
-                    metadata: FileMetadata {
-                        extension: FixedString::new("bin").unwrap(),
-                        extension_type: ExtensionType::default(),
-                        timestamp: j2000_timestamp(),
-                        version: Version {
-                            major: 1,
-                            minor: 0,
-                            build: 0,
-                            beta: 0,
-                        },
+            upload_file(
+                connection,
+                FixedString::new(slot_file_name.clone()).unwrap(),
+                FileMetadata {
+                    extension: FixedString::new("bin").unwrap(),
+                    extension_type: ExtensionType::default(),
+                    timestamp: j2000_timestamp(),
+                    version: Version {
+                        major: 1,
+                        minor: 0,
+                        build: 0,
+                        beta: 0,
                     },
-                    vendor: FileVendor::User,
-                    data: &{
-                        let mut data = tokio::fs::read(path).await?;
+                },
+                FileVendor::User,
+                &{
+                    let mut data = tokio::fs::read(path).await?;
 
-                        if compress {
-                            gzip_compress(&mut data);
-                        }
+                    if compress {
+                        gzip_compress(&mut data);
+                    }
 
-                        data
-                    },
-                    target: FileTransferTarget::Qspi,
-                    load_address: USER_PROGRAM_LOAD_ADDR,
-                    linked_file: None,
-                    after_upload: match after {
-                        AfterUpload::None => FileExitAction::DoNothing,
-                        AfterUpload::ShowScreen => FileExitAction::ShowRunScreen,
-                        AfterUpload::Run => FileExitAction::RunProgram,
-                    },
-                    progress_callback: Some(build_progress_callback(
-                        bin_progress.clone(),
-                        bin_timestamp.clone(),
-                    )),
-                })
-                .await?;
+                    data
+                },
+                FileTransferTarget::Qspi,
+                USER_PROGRAM_LOAD_ADDR,
+                None,
+                match after {
+                    AfterUpload::None => FileExitAction::DoNothing,
+                    AfterUpload::ShowScreen => FileExitAction::ShowRunScreen,
+                    AfterUpload::Run => FileExitAction::RunProgram,
+                },
+                Some(build_progress_callback(
+                    bin_progress.clone(),
+                    bin_timestamp.clone(),
+                )),
+            )
+            .await?;
 
             // Tell the progressbars that we're done once uploading is complete, allowing further messages to be printed to stdout.
             bin_progress.lock().await.finish();
@@ -378,39 +377,47 @@ description={}",
 
                 gzip_compress(&mut patch);
 
-                connection
-                    .execute_command(UploadFile {
-                        file_name: FixedString::new(slot_file_name.clone()).unwrap(),
-                        metadata: FileMetadata {
-                            extension: FixedString::new("bin").unwrap(),
-                            extension_type: ExtensionType::default(),
-                            timestamp: j2000_timestamp(),
-                            version: Version {
-                                major: 1,
-                                minor: 0,
-                                build: 0,
-                                beta: 0,
-                            },
+                upload_file(
+                    connection,
+                    FixedString::new(slot_file_name.clone()).unwrap(),
+                    FileMetadata {
+                        extension: FixedString::new("bin").unwrap(),
+                        extension_type: ExtensionType::default(),
+                        timestamp: j2000_timestamp(),
+                        version: Version {
+                            major: 1,
+                            minor: 0,
+                            build: 0,
+                            beta: 0,
                         },
+                    },
+                    FileVendor::User,
+                    &{
+                        let mut data = tokio::fs::read(path).await?;
+
+                        if compress {
+                            gzip_compress(&mut data);
+                        }
+
+                        data
+                    },
+                    FileTransferTarget::Qspi,
+                    0x07A00000,
+                    Some(LinkedFile {
+                        file_name: FixedString::new(base_file_name.clone()).unwrap(),
                         vendor: FileVendor::User,
-                        data: &patch,
-                        target: FileTransferTarget::Qspi,
-                        load_address: 0x07A00000,
-                        linked_file: Some(LinkedFile {
-                            file_name: FixedString::new(base_file_name.clone()).unwrap(),
-                            vendor: FileVendor::User,
-                        }),
-                        after_upload: match after {
-                            AfterUpload::None => FileExitAction::DoNothing,
-                            AfterUpload::ShowScreen => FileExitAction::ShowRunScreen,
-                            AfterUpload::Run => FileExitAction::RunProgram,
-                        },
-                        progress_callback: Some(build_progress_callback(
-                            patch_progress.clone(),
-                            patch_timestamp.clone(),
-                        )),
-                    })
-                    .await?;
+                    }),
+                    match after {
+                        AfterUpload::None => FileExitAction::DoNothing,
+                        AfterUpload::ShowScreen => FileExitAction::ShowRunScreen,
+                        AfterUpload::Run => FileExitAction::RunProgram,
+                    },
+                    Some(build_progress_callback(
+                        patch_progress.clone(),
+                        patch_timestamp.clone(),
+                    )),
+                )
+                .await?;
 
                 patch_progress.lock().await.finish();
             } else {
@@ -437,78 +444,79 @@ description={}",
                     return Err(CliError::ProgramTooLarge(base_data.len()));
                 }
 
-                connection
-                    .execute_command(UploadFile {
-                        file_name: FixedString::new(base_file_name.clone()).unwrap(),
-                        metadata: FileMetadata {
-                            extension: FixedString::new("bin").unwrap(),
-                            extension_type: ExtensionType::default(),
-                            timestamp: j2000_timestamp(),
-                            version: Version {
-                                major: 1,
-                                minor: 0,
-                                build: 0,
-                                beta: 0,
-                            },
+                upload_file(
+                    connection,
+                    FixedString::new(base_file_name.clone()).unwrap(),
+                    FileMetadata {
+                        extension: FixedString::new("bin").unwrap(),
+                        extension_type: ExtensionType::default(),
+                        timestamp: j2000_timestamp(),
+                        version: Version {
+                            major: 1,
+                            minor: 0,
+                            build: 0,
+                            beta: 0,
                         },
-                        vendor: FileVendor::User,
-                        data: {
-                            let mut base_file =
-                                File::create(path.with_file_name(&base_file_name)).await?;
-                            base_file.write_all(&base_data).await?;
+                    },
+                    FileVendor::User,
+                    {
+                        let mut base_file =
+                            File::create(path.with_file_name(&base_file_name)).await?;
+                        base_file.write_all(&base_data).await?;
 
-                            if compress {
-                                gzip_compress(&mut base_data);
-                            }
+                        if compress {
+                            gzip_compress(&mut base_data);
+                        }
 
-                            base_file
-                                .write_all(&VEX_CRC32.checksum(&base_data).to_le_bytes())
-                                .await?;
+                        base_file
+                            .write_all(&VEX_CRC32.checksum(&base_data).to_le_bytes())
+                            .await?;
 
-                            &base_data
-                        },
-                        target: FileTransferTarget::Qspi,
-                        load_address: USER_PROGRAM_LOAD_ADDR,
-                        linked_file: None,
-                        after_upload: FileExitAction::DoNothing,
-                        progress_callback: Some(build_progress_callback(
-                            base_progress.clone(),
-                            base_timestamp.clone(),
-                        )),
-                    })
-                    .await?;
+                        &base_data
+                    },
+                    FileTransferTarget::Qspi,
+                    USER_PROGRAM_LOAD_ADDR,
+                    None,
+                    FileExitAction::DoNothing,
+                    Some(build_progress_callback(
+                        base_progress.clone(),
+                        base_timestamp.clone(),
+                    )),
+                )
+                .await?;
+
                 base_progress.lock().await.finish();
 
-                connection
-                    .execute_command(UploadFile {
-                        file_name: FixedString::new(slot_file_name.clone()).unwrap(),
-                        metadata: FileMetadata {
-                            extension: FixedString::new("bin").unwrap(),
-                            extension_type: ExtensionType::default(),
-                            timestamp: j2000_timestamp(),
-                            version: Version {
-                                major: 1,
-                                minor: 0,
-                                build: 0,
-                                beta: 0,
-                            },
+                upload_file(
+                    connection,
+                    FixedString::new(slot_file_name.clone()).unwrap(),
+                    FileMetadata {
+                        extension: FixedString::new("bin").unwrap(),
+                        extension_type: ExtensionType::default(),
+                        timestamp: j2000_timestamp(),
+                        version: Version {
+                            major: 1,
+                            minor: 0,
+                            build: 0,
+                            beta: 0,
                         },
+                    },
+                    FileVendor::User,
+                    &u32::to_le_bytes(0xB2DF),
+                    FileTransferTarget::Qspi,
+                    0x07A00000,
+                    Some(LinkedFile {
+                        file_name: FixedString::new(base_file_name.clone()).unwrap(),
                         vendor: FileVendor::User,
-                        data: &u32::to_le_bytes(0xB2DF),
-                        target: FileTransferTarget::Qspi,
-                        load_address: 0x07A00000,
-                        linked_file: Some(LinkedFile {
-                            file_name: FixedString::new(base_file_name).unwrap(),
-                            vendor: FileVendor::User,
-                        }),
-                        after_upload: match after {
-                            AfterUpload::None => FileExitAction::DoNothing,
-                            AfterUpload::ShowScreen => FileExitAction::ShowRunScreen,
-                            AfterUpload::Run => FileExitAction::RunProgram,
-                        },
-                        progress_callback: None,
-                    })
-                    .await?;
+                    }),
+                    match after {
+                        AfterUpload::None => FileExitAction::DoNothing,
+                        AfterUpload::ShowScreen => FileExitAction::ShowRunScreen,
+                        AfterUpload::Run => FileExitAction::RunProgram,
+                    },
+                    None::<fn(f32)>,
+                )
+                .await?;
             };
         }
     }
@@ -538,20 +546,20 @@ async fn brain_file_metadata(
     connection: &mut SerialConnection,
     file_name: FixedString<23>,
     vendor: FileVendor,
-) -> Result<Option<FileMetadataReplyPayload>, SerialError> {
+) -> Result<Option<FileMetadataReplyPacket>, SerialError> {
     let reply = connection
-        .handshake::<FileMetadataReplyPacket>(
-            Duration::from_millis(1000),
-            2,
-            FileMetadataPacket::new(FileMetadataPayload {
+        .handshake(
+            FileMetadataPacket {
                 vendor,
                 reserved: 0,
                 file_name,
-            }),
+            },
+            Duration::from_millis(1000),
+            2,
         )
         .await?;
 
-    match reply.payload {
+    match reply {
         Ok(payload) => Ok(payload),
         Err(Cdc2Ack::NackProgramFile) => Ok(None),
         Err(nack) => Err(SerialError::Nack(nack)),
