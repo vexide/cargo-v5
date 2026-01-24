@@ -569,8 +569,8 @@ async fn brain_file_metadata(
 fn build_progress_callback(
     progress: Arc<Mutex<ProgressBar>>,
     timestamp: Arc<Mutex<Option<Instant>>>,
-) -> Box<dyn FnMut(f32) + Send> {
-    Box::new(move |percent| {
+) -> impl FnMut(f32) + Send {
+    move |percent| {
         let progress = progress.try_lock().unwrap();
         let mut timestamp = timestamp.try_lock().unwrap();
 
@@ -579,7 +579,7 @@ fn build_progress_callback(
         }
         progress.set_prefix(format!("{:.2?}", timestamp.unwrap().elapsed()));
         progress.set_position((percent * 100.0) as u64);
-    })
+    }
 }
 
 /// Apply gzip compression to the given data
