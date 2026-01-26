@@ -110,6 +110,8 @@ pub async fn dir(connection: &mut SerialConnection) -> Result<(), CliError> {
                         ExtensionType::Binary => "binary",
                         ExtensionType::EncryptedBinary => "encrypted",
                         ExtensionType::Vm => "vm",
+                        ExtensionType::Zipped => "zipped",
+                        _ => "unknown",
                     })
                     .unwrap_or("system"),
                 entry
