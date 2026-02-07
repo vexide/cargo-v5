@@ -7,7 +7,7 @@ use serde::Deserialize;
 use serde_json::Deserializer;
 use std::{
     env,
-    ffi::{OsStr, OsString},
+    ffi::OsStr,
     path::{Path, PathBuf},
     process::{Stdio, exit},
 };
@@ -17,7 +17,7 @@ use tokio::{
 };
 
 use crate::{
-    commands::toolchain::ToolchainCmd,
+    commands::toolchain::{ToolchainCmd, env_vars},
     errors::CliError,
     fs,
     settings::{Settings, ToolchainCfg, ToolchainType},
@@ -61,7 +61,7 @@ async fn check_release_channel(cargo_bin: &OsStr) -> Result<(), CliError> {
 // It's possible to build a package in a different folder, and we need to know which package
 // that is to do things like setting toolchain configuration. This routine will extract the
 // requested package ID from the cargo invocation.
-pub fn find_project_override(args: &[String]) -> Option<&str>{
+pub fn find_project_override(args: &[String]) -> Option<&str> {
     let mut was_p = false;
 
     for argument in args {
@@ -143,79 +143,11 @@ pub async fn build(
         }
         let toolchain = toolchain?;
 
-        let mut path = OsString::from(toolchain.host_bin_dir());
-        if let Some(old_path) = env::var_os("PATH") {
-            path.push(":");
-            path.push(old_path);
+        for (key, value) in
+            env_vars(toolchain.host_bin_dir().as_os_str(), toolchain_cfg.ty).into_iter()
+        {
+            build_cmd.env(key, value);
         }
-
-        build_cmd.env("PATH", path);
-        build_cmd.env("CC_armv7a_vex_v5", "clang");
-        build_cmd.env("AR_armv7a_vex_v5", "llvm-ar");
-
-        let base_flags = [
-            "--target=arm-none-eabi",
-            "-mcpu=cortex-a9",
-            "-mfpu=neon",
-            "-mfloat-abi=hard",
-            "-fno-pic",
-            "-fno-exceptions",
-            "-fno-rtti",
-            "-funwind-tables",
-        ];
-
-        let mut c_flags = OsString::from(base_flags.join(" "));
-        if let Some(old_flags) = env::var_os("CFLAGS_armv7a_vex_v5") {
-            c_flags.push(" ");
-            c_flags.push(old_flags);
-        }
-
-        build_cmd.env("CFLAGS_armv7a_vex_v5", c_flags);
-
-        // Configure clang's multilib: the reason we don't have to specify which
-        // libc sysroot we want (in the form of /path/to/sysroot/lib and …/include)
-        // is because ARM clang is shipped with a multilib.yaml file which maps
-        // target, CPU, and FPU flags to one of the many sysroots it bundles.
-        // The bundled sysroots and multilib.yaml file are the primary things
-        // that makes ARM clang distinct from upstream clang.
-
-        // Note that these target flags passed to the linker are for static-lib
-        // resolution only, not compiling C code. We have to set those flags
-        // separately.
-
-        // We use clang as a linker because ld.lld by itself doesn't include the
-        // multilib logic for resolving static libraries.
-        build_cmd.arg("--config=target.armv7a-vex-v5.linker='clang'");
-
-        // These flags are intended for use with LLVM 21.1.1, but may work on other
-        // versions.
-        let link_flags = base_flags
-            .into_iter()
-            .chain([
-                // These flags + the C flags resolve to this sysroot:
-                // `arm-none-eabi/armv7a_hard_vfpv3_d16_unaligned`
-                // (hard float / VFP version 3 with 16 regs / unaligned access)
-                "--target=armv7a-none-eabihf",
-                // Disable crt0, we have vexide-startup.
-                "-nostartfiles",
-                // Explicit `-lc` required because Rust calls the linker with
-                // `-nodefaultlibs` which disables libc, libm, etc.
-                "-lc",
-            ])
-            .map(|f| format!("'-Clink-arg={f}'"))
-            .collect::<Vec<String>>();
-
-        let mut rust_flags = link_flags;
-        rust_flags.push(format!("'--cfg=vexide_toolchain=\"{}\"'", toolchain_cfg.ty));
-
-        // N.B. It's okay if the `target.<cfg>.rustflags` key is a duplicate to one in
-        // the cargo config, they will still merge as expected.
-        let flags_config = format!(
-            "--config=target.armv7a-vex-v5.rustflags=[{}]",
-            rust_flags.join(",")
-        );
-
-        build_cmd.arg(flags_config);
     }
 
     build_cmd.args(args);
