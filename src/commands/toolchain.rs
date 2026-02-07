@@ -14,6 +14,7 @@ use crate::{
 #[derive(Debug, clap::Subcommand)]
 pub enum ToolchainCmd {
     Install,
+    Env,
 }
 
 #[must_use]
@@ -111,6 +112,16 @@ impl ToolchainCmd {
 
                 Self::install(&client, &cfg).await
             }
+            Self::Env => {
+                let Some(settings) = settings else {
+                    return Err(CliError::NoCargoProject);
+                };
+                let Some(cfg) = settings.toolchain else {
+                    return Err(CliError::NoToolchainConfigured);
+                };
+
+                Self::env(&cfg).await
+            }
         }
     }
 
@@ -141,6 +152,19 @@ impl ToolchainCmd {
             "Toolchain {} is ready for use.",
             format!("{ty:?} {version}").bold()
         );
+
+        Ok(())
+    }
+
+    pub async fn env(cfg: &ToolchainCfg) -> Result<(), CliError> {
+        let ToolchainType::LLVM = cfg.ty;
+
+        let client = ToolchainClient::using_data_dir().await?;
+        let toolchain = client.toolchain(&cfg.version).await?;
+
+        for (key, value) in env_vars(toolchain.host_bin_dir().as_os_str(), cfg.ty).into_iter() {
+            println!("export {key}=\"{}\"", value.display());
+        }
 
         Ok(())
     }
