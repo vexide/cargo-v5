@@ -8,11 +8,7 @@ use inquire::{
 use tokio::{fs::File, io::AsyncWriteExt, sync::Mutex, task::block_in_place, time::Instant};
 
 use std::{
-    ffi::OsStr,
-    io::{ErrorKind, Write},
-    path::{Path, PathBuf},
-    sync::Arc,
-    time::Duration,
+    cell::RefCell, ffi::OsStr, io::{ErrorKind, Write}, path::{Path, PathBuf}, rc::Rc, sync::Arc, time::Duration
 };
 
 use vex_v5_serial::{
@@ -221,7 +217,7 @@ description={}",
     if needs_ini_upload {
         let ini_timestamp = Arc::new(Mutex::new(None));
         // Progress bars
-        let ini_progress = Arc::new(Mutex::new(
+        let ini_progress =
             multi_progress
                 .add(ProgressBar::new(10000))
                 .with_style(
@@ -231,8 +227,7 @@ description={}",
                     .unwrap() // Okay to unwrap, since this just validates style formatting.
                     .progress_chars(PROGRESS_CHARS),
                 )
-                .with_message(ini_file_name.clone()),
-        ));
+                .with_message(ini_file_name.clone());
 
         upload_file(
             connection,
@@ -261,7 +256,7 @@ description={}",
         )
         .await?;
 
-        ini_progress.lock().await.finish();
+        ini_progress.finish();
     }
 
     // Logic for uploading the actual program binaries.
@@ -274,7 +269,7 @@ description={}",
             // custom, which unfortunately requires us to juggle timestamps across threads.
             let bin_timestamp = Arc::new(Mutex::new(None));
 
-            let bin_progress = Arc::new(Mutex::new(
+            let bin_progress =
                 multi_progress
                     .add(ProgressBar::new(10000))
                     .with_style(
@@ -284,8 +279,7 @@ description={}",
                         .unwrap() // Okay to unwrap, since this just validates style formatting.
                         .progress_chars(PROGRESS_CHARS),
                     )
-                    .with_message(slot_file_name.clone()),
-            ));
+                    .with_message(slot_file_name.clone());
 
             // Upload the program.
             upload_file(
@@ -330,7 +324,7 @@ description={}",
 
             // Tell the progressbars that we're done once uploading is complete, allowing further
             // messages to be printed to stdout.
-            bin_progress.lock().await.finish();
+            bin_progress.finish();
         }
 
         // Before you try to dissect this, please go and read
@@ -406,7 +400,7 @@ description={}",
             if !needs_cold_upload {
                 let base = base.unwrap();
                 let patch_timestamp = Arc::new(Mutex::new(None));
-                let patch_progress = Arc::new(Mutex::new(
+                let patch_progress = 
                     multi_progress
                         .add(ProgressBar::new(10000))
                         .with_style(
@@ -416,8 +410,7 @@ description={}",
                             .unwrap() // Okay to unwrap, since this just validates style formatting.
                             .progress_chars(PROGRESS_CHARS),
                         )
-                        .with_message(slot_file_name.clone()),
-                ));
+                        .with_message(slot_file_name.clone());
 
                 // The "new" file is the file that the user requested to upload, as opposed to the
                 // "base" file which is the program that the brain already has.
@@ -489,7 +482,7 @@ description={}",
                 )
                 .await?;
 
-                patch_progress.lock().await.finish();
+                patch_progress.finish();
             } else {
                 // MARK: Cold upload
 
@@ -497,7 +490,7 @@ description={}",
                 // custom, which unfortunately requires us to juggle timestamps across threads.
                 let base_timestamp = Arc::new(Mutex::new(None));
 
-                let base_progress = Arc::new(Mutex::new(
+                let base_progress =
                     multi_progress
                         .add(ProgressBar::new(10000))
                         .with_style(
@@ -507,8 +500,7 @@ description={}",
                             .unwrap() // Okay to unwrap, since this just validates style formatting.
                             .progress_chars(PROGRESS_CHARS),
                         )
-                        .with_message(base_file_name.clone()),
-                ));
+                        .with_message(base_file_name.clone());
 
                 let mut base_data = tokio::fs::read(path).await?;
 
@@ -559,12 +551,12 @@ description={}",
                     FileExitAction::DoNothing,
                     Some(build_progress_callback(
                         base_progress.clone(),
-                        base_timestamp.clone(),
+                        base_timestamp,
                     )),
                 )
                 .await?;
 
-                base_progress.lock().await.finish();
+                base_progress.finish();
 
                 // We have to get rid of any old patch files that may or may not be there after a
                 // cold upload, so we overwrite them with a placeholder patch with an intentionally
@@ -654,12 +646,10 @@ async fn brain_file_metadata(
     }
 }
 
-fn build_progress_callback(
-    progress: Arc<Mutex<ProgressBar>>,
-    timestamp: Arc<Mutex<Option<Instant>>>,
-) -> impl FnMut(f32) + Send {
+fn build_progress_callback(progress: ProgressBar, timestamp: Arc<Mutex<Option<Instant>>>) -> impl FnMut(f32) {
+    let timestamp = timestamp.clone();
+
     move |percent| {
-        let progress = progress.try_lock().unwrap();
         let mut timestamp = timestamp.try_lock().unwrap();
 
         if timestamp.is_none() {
