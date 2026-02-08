@@ -4,11 +4,11 @@ pub mod devices;
 pub mod dir;
 #[cfg(feature = "field-control")]
 pub mod field_control;
+pub mod key_value;
 pub mod log;
+pub mod migrate;
 pub mod new;
 pub mod rm;
 pub mod screenshot;
 pub mod terminal;
-pub mod migrate;
 pub mod upload;
-pub mod key_value;

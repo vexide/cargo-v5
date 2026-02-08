@@ -3137,9 +3137,8 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "vex-cdc"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f47736ee80c41f91a7c935e98f12a27188788a4f17354506a328b09bd6ae42e1"
+version = "0.1.0"
+source = "git+https://github.com/vexide/vex-v5-serial.git#0301395a9ad51c60a6112d0b489d8d609f24f2f0"
 dependencies = [
  "bitflags 2.10.0",
  "crc",
@@ -3148,11 +3147,11 @@ dependencies = [
 
 [[package]]
 name = "vex-v5-serial"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e11d55c94f7abb8f9a0dd048c61dd4e9e92b823431a30036337f5778b245e2f"
+version = "0.5.1"
+source = "git+https://github.com/vexide/vex-v5-serial.git#0301395a9ad51c60a6112d0b489d8d609f24f2f0"
 dependencies = [
  "flate2",
+ "image",
  "log",
  "serialport",
  "thiserror",

@@ -2,11 +2,7 @@ use std::io::{self, Write};
 use std::num::NonZeroU32;
 use std::time::Duration;
 use tabwriter::{Alignment, TabWriter};
-use vex_v5_serial::{
-    Connection,
-    protocol::cdc2::system::{LogReadPacket, LogReadPayload, LogReadReplyPacket},
-    serial::SerialConnection,
-};
+use vex_v5_serial::{Connection, protocol::cdc2::system::LogReadPacket, serial::SerialConnection};
 
 use crate::errors::CliError;
 
@@ -21,16 +17,15 @@ pub async fn log(connection: &mut SerialConnection, page: NonZeroU32) -> Result<
     let mut entries = Vec::new();
     entries.extend(
         connection
-            .handshake::<LogReadReplyPacket>(
-                Duration::from_millis(500),
-                10,
-                LogReadPacket::new(LogReadPayload {
+            .handshake(
+                LogReadPacket {
                     offset: MAX_LOGS_PER_PAGE * page.get(),
                     count: MAX_LOGS_PER_PAGE,
-                }),
+                },
+                Duration::from_millis(500),
+                10,
             )
-            .await?
-            .payload?
+            .await??
             .entries,
     );
 

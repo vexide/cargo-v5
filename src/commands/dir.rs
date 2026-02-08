@@ -1,17 +1,14 @@
 use chrono::{TimeZone, Utc};
 use std::io::{self, Write};
 use std::time::Duration;
+use vex_v5_serial::commands::file::J2000_EPOCH;
+use vex_v5_serial::protocol::cdc2::file::DirectoryFileCountPacket;
 
 use vex_v5_serial::{
     Connection,
-    commands::file::J2000_EPOCH,
     protocol::cdc2::{
-        factory::{FactoryEnablePacket, FactoryEnableReplyPacket},
-        file::{
-            DirectoryEntryPacket, DirectoryEntryPayload, DirectoryEntryReplyPacket,
-            DirectoryFileCountPacket, DirectoryFileCountPayload, DirectoryFileCountReplyPacket,
-            ExtensionType, FileVendor,
-        },
+        factory::FactoryEnablePacket,
+        file::{DirectoryEntryPacket, ExtensionType, FileVendor},
     },
     serial::SerialConnection,
 };
@@ -55,13 +52,14 @@ pub async fn dir(connection: &mut SerialConnection) -> Result<(), CliError> {
     ];
 
     connection
-        .handshake::<FactoryEnableReplyPacket>(
+        .handshake(
+            FactoryEnablePacket {
+                magic: FactoryEnablePacket::MAGIC,
+            },
             Duration::from_millis(500),
             1,
-            FactoryEnablePacket::new(FactoryEnablePacket::MAGIC),
         )
-        .await
-        .unwrap();
+        .await??;
 
     write!(
         &mut tw,
@@ -70,28 +68,28 @@ pub async fn dir(connection: &mut SerialConnection) -> Result<(), CliError> {
     .unwrap();
     for vid in USEFUL_VIDS {
         let file_count = connection
-            .handshake::<DirectoryFileCountReplyPacket>(
-                Duration::from_millis(500),
-                1,
-                DirectoryFileCountPacket::new(DirectoryFileCountPayload {
+            .handshake(
+                DirectoryFileCountPacket {
                     vendor: vid,
                     reserved: 0,
-                }),
+                },
+                Duration::from_millis(500),
+                1,
             )
-            .await?;
+            .await??
+            .count;
 
-        for n in 0..file_count.payload? {
+        for n in 0..file_count {
             let entry = connection
-                .handshake::<DirectoryEntryReplyPacket>(
-                    Duration::from_millis(500),
-                    1,
-                    DirectoryEntryPacket::new(DirectoryEntryPayload {
+                .handshake(
+                    DirectoryEntryPacket {
                         file_index: n as u8,
                         reserved: 0,
-                    }),
+                    },
+                    Duration::from_millis(500),
+                    1,
                 )
-                .await?
-                .payload?;
+                .await??;
 
             writeln!(
                 &mut tw,
@@ -112,6 +110,8 @@ pub async fn dir(connection: &mut SerialConnection) -> Result<(), CliError> {
                         ExtensionType::Binary => "binary",
                         ExtensionType::EncryptedBinary => "encrypted",
                         ExtensionType::Vm => "vm",
+                        ExtensionType::Zipped => "zipped",
+                        _ => "unknown",
                     })
                     .unwrap_or("system"),
                 entry

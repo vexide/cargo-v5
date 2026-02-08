@@ -6,11 +6,11 @@ use cargo_v5::{
         dir::dir,
         key_value::{kv_get, kv_set},
         log::log,
+        migrate,
         new::new,
         rm::rm,
         screenshot::screenshot,
         terminal::terminal,
-        migrate,
         upload::{AfterUpload, UploadOpts, upload},
     },
     connection::{open_connection, switch_to_download_channel},
@@ -25,7 +25,7 @@ use vex_v5_serial::{
     Connection,
     protocol::{
         FixedString,
-        cdc2::file::{FileLoadAction, FileLoadActionPacket, FileLoadActionPayload, FileVendor},
+        cdc2::file::{FileLoadAction, FileLoadActionPacket, FileVendor},
     },
     serial::{self, SerialConnection, SerialDevice},
 };
@@ -74,7 +74,7 @@ enum Command {
         #[clap(flatten)]
         cargo_opts: CargoOpts,
     },
-    
+
     /// Upload a project or file to a Brain.
     #[clap(visible_alias = "u")]
     Upload {
@@ -84,15 +84,15 @@ enum Command {
         #[clap(flatten)]
         upload_opts: UploadOpts,
     },
-    
+
     /// Access a Brain's remote terminal I/O.
     #[clap(visible_alias = "t")]
     Terminal,
-    
+
     /// Build, upload, and run a program on a V5 Brain, showing its output in the terminal.
     #[clap(visible_alias = "r")]
     Run(UploadOpts),
-    
+
     /// Create a new vexide project with a given name.
     #[clap(visible_alias = "n")]
     New {
@@ -102,33 +102,29 @@ enum Command {
         #[clap(flatten)]
         download_opts: DownloadOpts,
     },
-    
+
     /// Create a new vexide project in the current directory.
     Init {
         #[clap(flatten)]
         download_opts: DownloadOpts,
     },
-    
+
     /// List files on flash.
     #[clap(visible_alias = "ls")]
     Dir,
-    
+
     /// Read a file from flash, then write its contents to stdout.
-    Cat {
-        file: PathBuf,
-    },
+    Cat { file: PathBuf },
 
     /// Erase a file from flash.
-    Rm {
-        file: PathBuf,
-    },
-    
+    Rm { file: PathBuf },
+
     /// Read a Brain's event log.
     Log {
         #[arg(long, short, default_value = "1")]
         page: NonZeroU32,
     },
-    
+
     /// List devices connected to a Brain.
     #[clap(visible_alias = "lsdev")]
     Devices,
@@ -136,16 +132,16 @@ enum Command {
     /// Take a screen capture of the brain, saving the file to the current directory.
     #[clap(visible_alias = "sc")]
     Screenshot,
-    
+
     /// Access a Brain's system key/value configuration.
     #[command(subcommand, visible_alias = "kv")]
     KeyValue(KeyValue),
-    
+
     /// Run a field control TUI.
     #[cfg(feature = "field-control")]
     #[clap(visible_aliases = ["fc", "comp-control"])]
     FieldControl,
-    
+
     /// Update cargo-v5 to the latest version.
     #[clap(hide = matches!(*self_update::CURRENT_MODE, SelfUpdateMode::Unmanaged(_)))]
     SelfUpdate,
@@ -220,11 +216,11 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
                     // Don't bother waiting for a response, since the brain could
                     // be locked up and prevent the program from exiting.
                     _ = connection.send(
-                        FileLoadActionPacket::new(FileLoadActionPayload {
+                        FileLoadActionPacket {
                             vendor: FileVendor::User,
                             action: FileLoadAction::Stop,
                             file_name: FixedString::default(),
-                        })
+                        }
                     ).await;
 
                     std::process::exit(0);
