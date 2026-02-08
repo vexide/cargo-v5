@@ -307,6 +307,7 @@ description={}",
                     let mut data = tokio::fs::read(path).await?;
 
                     if compress {
+                        // <https://media1.tenor.com/m/cjSTJh8J3QcAAAAd/cat-cat-sink.gif>
                         gzip_compress(&mut data);
                     }
 
@@ -354,7 +355,7 @@ description={}",
             let mut base = match tokio::fs::read(&path.with_file_name(&base_file_name)).await {
                 Ok(contents) => Some(contents),
                 Err(e) if e.kind() == ErrorKind::NotFound => None,
-                _ => None,
+                _ => None, // TODO: maybe throw an error here. that's better than a fallthrough.
             };
 
             // Next we need to determine if a cold upload is required.
@@ -389,10 +390,12 @@ description={}",
                     // Compare the CRC32 of our local file with the one on the Brain. If they don't
                     // match, then the brain has different base file and we need to cold upload.
                     if base.len() >= 4 {
+                        // When we store the base binary to the local machine, we append its crc32
+                        // to the last four bytes of the file, which saves the trouble of us
+                        // recomputing it on every upload. This is kinda a gross hack, but whatevs.
                         let crc_metadata =
                             u32::from_le_bytes(base.split_off(base.len() - 4).try_into().unwrap());
 
-                        // last four bytes of base file contain the crc32 at time of upload
                         brain_metadata.crc32 != crc_metadata
                     } else {
                         true
@@ -532,14 +535,18 @@ description={}",
                     },
                     FileVendor::User,
                     {
+                        // Save the base file to the local machine.
                         let mut base_file =
                             File::create(path.with_file_name(&base_file_name)).await?;
                         base_file.write_all(&base_data).await?;
 
                         if compress {
+                            // <https://media1.tenor.com/m/cjSTJh8J3QcAAAAd/cat-cat-sink.gif>
                             gzip_compress(&mut base_data);
                         }
 
+                        // If you've been reading these comments, you should already know why we do
+                        // this :3
                         base_file
                             .write_all(&VEX_CRC32.checksum(&base_data).to_le_bytes())
                             .await?;
