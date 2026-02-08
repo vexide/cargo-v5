@@ -1,6 +1,6 @@
 use clap::{Args, ValueEnum};
 use flate2::{Compression, GzBuilder};
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressState, ProgressStyle};
 use inquire::{
     CustomType,
     validator::{ErrorMessage, Validation},
@@ -8,7 +8,13 @@ use inquire::{
 use tokio::{fs::File, io::AsyncWriteExt, sync::Mutex, task::block_in_place, time::Instant};
 
 use std::{
-    cell::RefCell, ffi::OsStr, io::{ErrorKind, Write}, path::{Path, PathBuf}, rc::Rc, sync::Arc, time::Duration
+    cell::RefCell,
+    ffi::OsStr,
+    io::{ErrorKind, Write},
+    path::{Path, PathBuf},
+    rc::Rc,
+    sync::Arc,
+    time::Duration,
 };
 
 use vex_v5_serial::{
@@ -215,19 +221,10 @@ description={}",
     };
 
     if needs_ini_upload {
-        let ini_timestamp = Arc::new(Mutex::new(None));
-        // Progress bars
-        let ini_progress =
-            multi_progress
-                .add(ProgressBar::new(10000))
-                .with_style(
-                    ProgressStyle::with_template(
-                        "   \x1b[1;96mUploading\x1b[0m {percent_precise:>7}% {bar:40.green} {msg} ({prefix})",
-                    )
-                    .unwrap() // Okay to unwrap, since this just validates style formatting.
-                    .progress_chars(PROGRESS_CHARS),
-                )
-                .with_message(ini_file_name.clone());
+        let (progress, callback) = make_progress_callback(&mut multi_progress, ProgressStyle::with_template(
+                        "   \x1b[1;96mUploading\x1b[0m {percent_precise:>7}% {bar:40.green} {msg} ({elapsed_duration})",
+                            )
+                            .unwrap(), ini_file_name.clone());
 
         upload_file(
             connection,
@@ -249,14 +246,11 @@ description={}",
             USER_PROGRAM_LOAD_ADDR,
             None,
             FileExitAction::DoNothing,
-            Some(build_progress_callback(
-                ini_progress.clone(),
-                ini_timestamp.clone(),
-            )),
+            Some(callback),
         )
         .await?;
 
-        ini_progress.finish();
+        progress.finish();
     }
 
     // Logic for uploading the actual program binaries.
@@ -265,21 +259,10 @@ description={}",
         //
         // This one is really simple, we just upload the binary in full.
         UploadStrategy::Monolith => {
-            // indicatif is a little dumb with timestamp handling, so we're going to do this all
-            // custom, which unfortunately requires us to juggle timestamps across threads.
-            let bin_timestamp = Arc::new(Mutex::new(None));
-
-            let bin_progress =
-                multi_progress
-                    .add(ProgressBar::new(10000))
-                    .with_style(
-                        ProgressStyle::with_template(
-                            "   \x1b[1;96mUploading\x1b[0m {percent_precise:>7}% {bar:40.red} {msg} ({prefix})",
-                        )
-                        .unwrap() // Okay to unwrap, since this just validates style formatting.
-                        .progress_chars(PROGRESS_CHARS),
-                    )
-                    .with_message(slot_file_name.clone());
+            let (progress, callback) = make_progress_callback(&mut multi_progress, ProgressStyle::with_template(
+                            "   \x1b[1;96mUploading\x1b[0m {percent_precise:>7}% {bar:40.red} {msg} ({elapsed_duration})",
+                            )
+                            .unwrap(), slot_file_name.clone());
 
             // Upload the program.
             upload_file(
@@ -315,16 +298,13 @@ description={}",
                     AfterUpload::ShowScreen => FileExitAction::ShowRunScreen,
                     AfterUpload::Run => FileExitAction::RunProgram,
                 },
-                Some(build_progress_callback(
-                    bin_progress.clone(),
-                    bin_timestamp.clone(),
-                )),
+                Some(callback),
             )
             .await?;
 
             // Tell the progressbars that we're done once uploading is complete, allowing further
             // messages to be printed to stdout.
-            bin_progress.finish();
+            progress.finish();
         }
 
         // Before you try to dissect this, please go and read
@@ -399,18 +379,10 @@ description={}",
             // MARK: Patch upload
             if !needs_cold_upload {
                 let base = base.unwrap();
-                let patch_timestamp = Arc::new(Mutex::new(None));
-                let patch_progress = 
-                    multi_progress
-                        .add(ProgressBar::new(10000))
-                        .with_style(
-                            ProgressStyle::with_template(
-                                "    \x1b[1;96mPatching\x1b[0m {percent_precise:>7}% {bar:40.red} {msg} ({prefix})",
+                let (progress, callback) = make_progress_callback(&mut multi_progress, ProgressStyle::with_template(
+                                "    \x1b[1;96mPatching\x1b[0m {percent_precise:>7}% {bar:40.red} {msg} ({elapsed_duration})",
                             )
-                            .unwrap() // Okay to unwrap, since this just validates style formatting.
-                            .progress_chars(PROGRESS_CHARS),
-                        )
-                        .with_message(slot_file_name.clone());
+                            .unwrap(), slot_file_name.clone());
 
                 // The "new" file is the file that the user requested to upload, as opposed to the
                 // "base" file which is the program that the brain already has.
@@ -475,14 +447,11 @@ description={}",
                         AfterUpload::ShowScreen => FileExitAction::ShowRunScreen,
                         AfterUpload::Run => FileExitAction::RunProgram,
                     },
-                    Some(build_progress_callback(
-                        patch_progress.clone(),
-                        patch_timestamp.clone(),
-                    )),
+                    Some(callback),
                 )
                 .await?;
 
-                patch_progress.finish();
+                progress.finish();
             } else {
                 // MARK: Cold upload
 
@@ -490,17 +459,10 @@ description={}",
                 // custom, which unfortunately requires us to juggle timestamps across threads.
                 let base_timestamp = Arc::new(Mutex::new(None));
 
-                let base_progress =
-                    multi_progress
-                        .add(ProgressBar::new(10000))
-                        .with_style(
-                            ProgressStyle::with_template(
-                                "   \x1b[1;96mUploading\x1b[0m {percent_precise:>7}% {bar:40.blue} {msg} ({prefix})",
+                let (progress, callback) = make_progress_callback(&mut multi_progress, ProgressStyle::with_template(
+                                "   \x1b[1;96mUploading\x1b[0m {percent_precise:>7}% {bar:40.blue} {msg} ({elapsed_duration})",
                             )
-                            .unwrap() // Okay to unwrap, since this just validates style formatting.
-                            .progress_chars(PROGRESS_CHARS),
-                        )
-                        .with_message(base_file_name.clone());
+                            .unwrap(), base_file_name.clone());
 
                 let mut base_data = tokio::fs::read(path).await?;
 
@@ -549,10 +511,7 @@ description={}",
                     USER_PROGRAM_LOAD_ADDR,
                     None,
                     FileExitAction::DoNothing,
-                    Some(build_progress_callback(
-                        base_progress.clone(),
-                        base_timestamp,
-                    )),
+                    Some(callback),
                 )
                 .await?;
 
@@ -596,7 +555,7 @@ description={}",
                 )
                 .await?;
 
-                base_progress.finish();
+                progress.finish();
             }
         }
     }
@@ -646,18 +605,30 @@ async fn brain_file_metadata(
     }
 }
 
-fn build_progress_callback(progress: ProgressBar, timestamp: Arc<Mutex<Option<Instant>>>) -> impl FnMut(f32) {
-    let timestamp = timestamp.clone();
+fn make_progress_callback(
+    multi: &mut MultiProgress,
+    style: ProgressStyle,
+    file_name: String,
+) -> (ProgressBar, impl FnMut(f32)) {
+    let bar = multi
+        .add(ProgressBar::new(10000))
+        .with_style(
+            style
+                .with_key(
+                    "elapsed_duration",
+                    |state: &ProgressState, buf: &mut dyn std::fmt::Write| {
+                        write!(buf, "{:?}", state.elapsed()).unwrap()
+                    },
+                )
+                .progress_chars(PROGRESS_CHARS),
+        )
+        .with_message(file_name);
 
-    move |percent| {
-        let mut timestamp = timestamp.try_lock().unwrap();
-
-        if timestamp.is_none() {
-            *timestamp = Some(Instant::now());
+    (bar.clone(), {
+        move |percent| {
+            bar.set_position((percent * 100.0) as u64);
         }
-        progress.set_prefix(format!("{:.2?}", timestamp.unwrap().elapsed()));
-        progress.set_position((percent * 100.0) as u64);
-    }
+    })
 }
 
 /// Apply gzip compression to the given data
