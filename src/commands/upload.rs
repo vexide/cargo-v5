@@ -170,9 +170,21 @@ pub async fn upload_program(
 ) -> Result<(), CliError> {
     let multi_progress = MultiProgress::new();
 
+    // Filenames for the program in the device's filesystem. These are the same ones used by
+    // VEXcode/vexcom by convention, and strange things will happen if we have conflicting catalog
+    // entries, so we keep the `slot_n` naming to ensure that old files will be properly
+    // overwritten.
     let slot_file_name = format!("slot_{slot}.bin");
     let ini_file_name = format!("slot_{slot}.ini");
 
+    // MARK: Metadata upload
+    //
+    // Every program binary uploaded to the brain is accompanied by an INI file describing the
+    // program's metadata. This is where we communicate to VEXos what name, slot, icon, etc... the
+    // program should have.
+    //
+    // For example, the program binary `slot_1.bin` will have an accompanying `slot_1.ini` that
+    // VEXos will consult to build a catalog entry that's accessible in the UI.
     let ini = format!(
         "[project]
 ide={}
@@ -189,6 +201,11 @@ description={}",
         description
     );
 
+    // Determine if the program metadata file needs to be reuploaded.
+    //
+    // We only reupload slot_n.ini if there's a checksum mismatch between the INI generated from the
+    // current arguments to this function and the INI on the brain, indicating that something has
+    // changed. Otherwise, we save the overhead of another file transfer on every upload.
     let needs_ini_upload = if let Some(brain_metadata) = brain_file_metadata(
         connection,
         FixedString::new(ini_file_name.clone()).unwrap(),
@@ -247,10 +264,14 @@ description={}",
         ini_progress.lock().await.finish();
     }
 
+    // Logic for uploading the actual program binaries.
     match upload_strategy {
+        // MARK: Monolith upload
+        //
+        // This one is really simple, we just upload the binary in full.
         UploadStrategy::Monolith => {
-            // indicatif is a little dumb with timestamp handling, so we're going to do this all custom,
-            // which unfortunately requires us to juggle timestamps across threads.
+            // indicatif is a little dumb with timestamp handling, so we're going to do this all
+            // custom, which unfortunately requires us to juggle timestamps across threads.
             let bin_timestamp = Arc::new(Mutex::new(None));
 
             let bin_progress = Arc::new(Mutex::new(
@@ -306,24 +327,54 @@ description={}",
             )
             .await?;
 
-            // Tell the progressbars that we're done once uploading is complete, allowing further messages to be printed to stdout.
+            // Tell the progressbars that we're done once uploading is complete, allowing further
+            // messages to be printed to stdout.
             bin_progress.lock().await.finish();
         }
+
+        // Before you try to dissect this, please go and read
+        // <https://github.com/vexide/vexide/pull/269> and also maybe
+        // <https://github.com/vexide/vexide/blob/main/packages/vexide-startup/src/patcher/mod.rs>
+        // (which is probably more up to date if the implementation changes).
+        //
+        // This code is commented to the best of my ability, but there's a lot of pretty complex
+        // logic and guardrails here to ensure that the Brain will never get de-synced with local
+        // copies of base file and whatnot.
         UploadStrategy::Differential => {
             let base_file_name = format!("slot_{slot}.base.bin");
 
+            // cargo-v5 stores the last cold uploaded binary locally (called the "base binary"),
+            // which is used as a reference point for building patches off of.
+            //
+            // essentially: `patch = diff(base, new)`
+            //
+            // This base file MUST exist on both the brain and the local machine for a patch upload
+            // to take place, but it obviously won't be on either if this is our first time
+            // uploading, so this is optional and we'll handle that case in a sec.
             let mut base = match tokio::fs::read(&path.with_file_name(&base_file_name)).await {
                 Ok(contents) => Some(contents),
                 Err(e) if e.kind() == ErrorKind::NotFound => None,
                 _ => None,
             };
 
+            // Next we need to determine if a cold upload is required.
+            //
+            // A "cold upload" is a case where a new base binary must be uploaded in its entirety to
+            // the brain. This should happen in three cases:
+            //
+            // - A base binary doesn't exist, either on the local machine or on the Brain's
+            //   filesystem.
+            // - The base binary on the local filesystem differs from the base binary on the Brain
+            //   (can happen when switching projects or computers).
+            // - The user explicitly requested a cold reupload with `cargo v5 upload --cold ...`.
             let needs_cold_upload = cold
                 || 'check: {
+                    // If the base doesn't exist on the local machine, a cold upload is needed.
                     let Some(base) = base.as_mut() else {
                         break 'check true;
                     };
 
+                    // Attempt to get metadata for the base binary off the Brain's internal flash.
                     let Some(brain_metadata) = brain_file_metadata(
                         connection,
                         FixedString::new(base_file_name.clone()).unwrap(),
@@ -331,9 +382,12 @@ description={}",
                     )
                     .await?
                     else {
+                        // This usually means that the file doesn't exist on the Brain.
                         break 'check true;
                     };
 
+                    // Compare the CRC32 of our local file with the one on the Brain. If they don't
+                    // match, then the brain has different base file and we need to cold upload.
                     if base.len() >= 4 {
                         let crc_metadata =
                             u32::from_le_bytes(base.split_off(base.len() - 4).try_into().unwrap());
@@ -345,6 +399,7 @@ description={}",
                     }
                 };
 
+            // MARK: Patch upload
             if !needs_cold_upload {
                 let base = base.unwrap();
                 let patch_timestamp = Arc::new(Mutex::new(None));
@@ -361,22 +416,34 @@ description={}",
                         .with_message(slot_file_name.clone()),
                 ));
 
+                // The "new" file is the file that the user requested to upload, as opposed to the
+                // "base" file which is the program that the brain already has.
                 let new = tokio::fs::read(path).await?;
 
+                // Some sanity checks to make sure that the patch and base file fit inside the 2mb
+                // subregions that we allocate in program memory before compression. This also
+                // ensures that VEXos won't data abort on CPU0, since there's a buffer overflow that
+                // can occur in the file transfer logic when uploading very large compressed
+                // programs.
                 if base.len() > DIFFERENTIAL_UPLOAD_MAX_SIZE {
                     return Err(CliError::ProgramTooLarge(base.len()));
                 } else if new.len() > DIFFERENTIAL_UPLOAD_MAX_SIZE {
                     return Err(CliError::ProgramTooLarge(new.len()));
                 }
 
+                // Generate a patch (binary diff) using the base binary and the new file.
                 let mut patch = build_patch(&base, &new);
-
                 if patch.len() > DIFFERENTIAL_UPLOAD_MAX_SIZE {
                     return Err(CliError::PatchTooLarge(patch.len()));
                 }
 
+                // We ignore compression preferences and always gzip here, since bidiff NEEDS a
+                // compression algorithm to gain any advantage on size at all. Uncompressed patches
+                // in memory are larger than both the base and new file. We have plenty of memory to
+                // go around, and only care about upload bandwidth.
                 gzip_compress(&mut patch);
 
+                // Upload the patch
                 upload_file(
                     connection,
                     FixedString::new(slot_file_name.clone()).unwrap(),
@@ -392,17 +459,17 @@ description={}",
                         },
                     },
                     FileVendor::User,
-                    &{
-                        let mut data = tokio::fs::read(path).await?;
-
-                        if compress {
-                            gzip_compress(&mut data);
-                        }
-
-                        data
-                    },
+                    &patch,
                     FileTransferTarget::Qspi,
+                    // See <https://github.com/vexide/vexide/blob/main/packages/vexide-startup/src/patcher/mod.rs#L38>
+                    // and <https://github.com/vexide/vexide/blob/main/packages/vexide-startup/link/vexide.ld#L41>
+                    // if you're confused about why we're loading this file to that address.
                     0x07A00000,
+                    // This patch file is the binary that has the actual catalog entry (it's the
+                    // file that VEXos actually treats as "a program"). We do it this way since it's
+                    // impossible to edit a file link after a program has been uploaded. So, the
+                    // base file at 0x03800000 is what's linked to the patch rather than the other
+                    // way around.
                     Some(LinkedFile {
                         file_name: FixedString::new(base_file_name.clone()).unwrap(),
                         vendor: FileVendor::User,
@@ -421,8 +488,10 @@ description={}",
 
                 patch_progress.lock().await.finish();
             } else {
-                // indicatif is a little dumb with timestamp handling, so we're going to do this all custom,
-                // which unfortunately requires us to juggle timestamps across threads.
+                // MARK: Cold upload
+
+                // indicatif is a little dumb with timestamp handling, so we're going to do this all
+                // custom, which unfortunately requires us to juggle timestamps across threads.
                 let base_timestamp = Arc::new(Mutex::new(None));
 
                 let base_progress = Arc::new(Mutex::new(
@@ -444,6 +513,9 @@ description={}",
                     return Err(CliError::ProgramTooLarge(base_data.len()));
                 }
 
+                // Upload the entire base file during a cold upload. This is pretty much the same as
+                // a normal monolith upload, but the file is named `slot_n.base.bin` rather than
+                // `slot_n.bin` and will be linked by the dummy patch to correct load address below.
                 upload_file(
                     connection,
                     FixedString::new(base_file_name.clone()).unwrap(),
@@ -487,6 +559,12 @@ description={}",
 
                 base_progress.lock().await.finish();
 
+                // We have to get rid of any old patch files that may or may not be there after a
+                // cold upload, so we overwrite them with a placeholder patch with an intentionally
+                // invalid header so that vexide-startup skips it.
+                //
+                // We also need this because the patch binary is the one that VEXos actually treats
+                // as "a program", and therefore is the one with the file link (as discussed above).
                 upload_file(
                     connection,
                     FixedString::new(slot_file_name.clone()).unwrap(),
@@ -502,6 +580,9 @@ description={}",
                         },
                     },
                     FileVendor::User,
+                    // An obviously invalid patch header that'll bail out early (valid would be
+                    // 0xB1DF). We use 0xB2DF to indicate that the patch is already applied on the
+                    // second _vexide_boot round, so we can just reuse that here.
                     &u32::to_le_bytes(0xB2DF),
                     FileTransferTarget::Qspi,
                     0x07A00000,
@@ -533,7 +614,7 @@ fn build_patch(old: &[u8], new: &[u8]) -> Vec<u8> {
 
     bidiff::simple_diff(old, new, &mut patch).unwrap();
 
-    // Insert important metadata for the patcher to use when constructing a new binary
+    // Insert some important metadata for the patcher to use when constructing a new binary.
     patch.reserve(12);
     patch.splice(8..8, ((patch.len() + 12) as u32).to_le_bytes());
     patch.splice(12..12, (old.len() as u32).to_le_bytes());
