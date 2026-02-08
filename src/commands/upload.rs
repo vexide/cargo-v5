@@ -5,15 +5,12 @@ use inquire::{
     CustomType,
     validator::{ErrorMessage, Validation},
 };
-use tokio::{fs::File, io::AsyncWriteExt, sync::Mutex, task::block_in_place, time::Instant};
+use tokio::{fs::File, io::AsyncWriteExt, task::block_in_place};
 
 use std::{
-    cell::RefCell,
     ffi::OsStr,
     io::{ErrorKind, Write},
     path::{Path, PathBuf},
-    rc::Rc,
-    sync::Arc,
     time::Duration,
 };
 
@@ -170,7 +167,7 @@ pub async fn upload_program(
     cold: bool,
     upload_strategy: UploadStrategy,
 ) -> Result<(), CliError> {
-    let multi_progress = MultiProgress::new();
+    let mut multi_progress = MultiProgress::new();
 
     // Filenames for the program in the device's filesystem. These are the same ones used by
     // VEXcode/vexcom by convention, and strange things will happen if we have conflicting catalog
@@ -221,10 +218,13 @@ description={}",
     };
 
     if needs_ini_upload {
-        let (progress, callback) = make_progress_callback(&mut multi_progress, ProgressStyle::with_template(
-                        "   \x1b[1;96mUploading\x1b[0m {percent_precise:>7}% {bar:40.green} {msg} ({elapsed_duration})",
-                            )
-                            .unwrap(), ini_file_name.clone());
+        let (progress, callback) = make_progress_callback(
+            &mut multi_progress,
+            ProgressStyle::with_template(
+                "   \x1b[1;96mUploading\x1b[0m {percent_precise:>7}% {bar:40.green} {msg} ({elapsed_duration})",
+            ).unwrap(),
+            ini_file_name.clone()
+        );
 
         upload_file(
             connection,
@@ -259,10 +259,13 @@ description={}",
         //
         // This one is really simple, we just upload the binary in full.
         UploadStrategy::Monolith => {
-            let (progress, callback) = make_progress_callback(&mut multi_progress, ProgressStyle::with_template(
-                            "   \x1b[1;96mUploading\x1b[0m {percent_precise:>7}% {bar:40.red} {msg} ({elapsed_duration})",
-                            )
-                            .unwrap(), slot_file_name.clone());
+            let (progress, callback) = make_progress_callback(
+                &mut multi_progress,
+                ProgressStyle::with_template(
+                    "   \x1b[1;96mUploading\x1b[0m {percent_precise:>7}% {bar:40.red} {msg} ({elapsed_duration})",
+                ).unwrap(),
+                slot_file_name.clone(),
+            );
 
             // Upload the program.
             upload_file(
@@ -293,11 +296,7 @@ description={}",
                 FileTransferTarget::Qspi,
                 USER_PROGRAM_LOAD_ADDR,
                 None,
-                match after {
-                    AfterUpload::None => FileExitAction::DoNothing,
-                    AfterUpload::ShowScreen => FileExitAction::ShowRunScreen,
-                    AfterUpload::Run => FileExitAction::RunProgram,
-                },
+                after.into(),
                 Some(callback),
             )
             .await?;
@@ -378,15 +377,18 @@ description={}",
 
             // MARK: Patch upload
             if !needs_cold_upload {
-                let base = base.unwrap();
-                let (progress, callback) = make_progress_callback(&mut multi_progress, ProgressStyle::with_template(
-                                "    \x1b[1;96mPatching\x1b[0m {percent_precise:>7}% {bar:40.red} {msg} ({elapsed_duration})",
-                            )
-                            .unwrap(), slot_file_name.clone());
+                let (progress, callback) = make_progress_callback(
+                    &mut multi_progress,
+                    ProgressStyle::with_template(
+                        "    \x1b[1;96mPatching\x1b[0m {percent_precise:>7}% {bar:40.red} {msg} ({elapsed_duration})",
+                    ).unwrap(),
+                    slot_file_name.clone()
+                );
 
                 // The "new" file is the file that the user requested to upload, as opposed to the
                 // "base" file which is the program that the brain already has.
                 let new = tokio::fs::read(path).await?;
+                let base = base.unwrap();
 
                 // Some sanity checks to make sure that the patch and base file fit inside the 2mb
                 // subregions that we allocate in program memory before compression. This also
@@ -442,11 +444,7 @@ description={}",
                         file_name: FixedString::new(base_file_name.clone()).unwrap(),
                         vendor: FileVendor::User,
                     }),
-                    match after {
-                        AfterUpload::None => FileExitAction::DoNothing,
-                        AfterUpload::ShowScreen => FileExitAction::ShowRunScreen,
-                        AfterUpload::Run => FileExitAction::RunProgram,
-                    },
+                    after.into(),
                     Some(callback),
                 )
                 .await?;
@@ -454,15 +452,13 @@ description={}",
                 progress.finish();
             } else {
                 // MARK: Cold upload
-
-                // indicatif is a little dumb with timestamp handling, so we're going to do this all
-                // custom, which unfortunately requires us to juggle timestamps across threads.
-                let base_timestamp = Arc::new(Mutex::new(None));
-
-                let (progress, callback) = make_progress_callback(&mut multi_progress, ProgressStyle::with_template(
-                                "   \x1b[1;96mUploading\x1b[0m {percent_precise:>7}% {bar:40.blue} {msg} ({elapsed_duration})",
-                            )
-                            .unwrap(), base_file_name.clone());
+                let (progress, callback) = make_progress_callback(
+                    &mut multi_progress,
+                    ProgressStyle::with_template(
+                        "   \x1b[1;96mUploading\x1b[0m {percent_precise:>7}% {bar:40.blue} {msg} ({elapsed_duration})",
+                    ).unwrap(),
+                    base_file_name.clone()
+                );
 
                 let mut base_data = tokio::fs::read(path).await?;
 
@@ -546,11 +542,7 @@ description={}",
                         file_name: FixedString::new(base_file_name.clone()).unwrap(),
                         vendor: FileVendor::User,
                     }),
-                    match after {
-                        AfterUpload::None => FileExitAction::DoNothing,
-                        AfterUpload::ShowScreen => FileExitAction::ShowRunScreen,
-                        AfterUpload::Run => FileExitAction::RunProgram,
-                    },
+                    after.into(),
                     None::<fn(f32)>,
                 )
                 .await?;

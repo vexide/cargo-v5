@@ -95,9 +95,10 @@ async fn is_connection_wireless(connection: &mut SerialConnection) -> Result<boo
 pub async fn switch_to_download_channel(connection: &mut SerialConnection) -> Result<(), CliError> {
     let Ok(radio_status) = connection
         .handshake(RadioStatusPacket {}, Duration::from_secs(2), 3)
-        .await? else {
-            return Ok(()); // likely unsupported
-        };
+        .await?
+    else {
+        return Ok(()); // likely unsupported
+    };
 
     log::debug!("Radio channel: {}", radio_status.channel);
 
