@@ -556,8 +556,6 @@ description={}",
                 )
                 .await?;
 
-                base_progress.finish();
-
                 // We have to get rid of any old patch files that may or may not be there after a
                 // cold upload, so we overwrite them with a placeholder patch with an intentionally
                 // invalid header so that vexide-startup skips it.
@@ -597,7 +595,9 @@ description={}",
                     None::<fn(f32)>,
                 )
                 .await?;
-            };
+
+                base_progress.finish();
+            }
         }
     }
 
