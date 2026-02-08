@@ -17,20 +17,29 @@ pub enum ToolchainCmd {
     Env,
 }
 
+/// An environment variable key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnvVarKey {
+    /// The `PATH` environment variable.
+    Path,
+    /// Other environment variable.
+    Other(&'static str),
+}
+
+impl From<&'static str> for EnvVarKey {
+    fn from(value: &'static str) -> Self {
+        Self::Other(value)
+    }
+}
+
 pub fn setup_env(
     bin_dir: &OsStr,
     toolchain_type: ToolchainType,
-    mut set_env_var: impl FnMut(&'static str, &OsStr),
+    mut set_env_var: impl FnMut(EnvVarKey, &OsStr),
 ) {
-    let mut path = OsString::from(bin_dir);
-    if let Some(old_path) = env::var_os("PATH") {
-        path.push(":");
-        path.push(old_path);
-    }
-
-    set_env_var("PATH", &path);
-    set_env_var("CC_armv7a_vex_v5", OsStr::new("clang"));
-    set_env_var("AR_armv7a_vex_v5", OsStr::new("llvm-ar"));
+    set_env_var(EnvVarKey::Path, bin_dir);
+    set_env_var("CC_armv7a_vex_v5".into(), OsStr::new("clang"));
+    set_env_var("AR_armv7a_vex_v5".into(), OsStr::new("llvm-ar"));
 
     let base_flags = [
         "--target=arm-none-eabi",
@@ -49,7 +58,7 @@ pub fn setup_env(
         c_flags.push(old_flags);
     }
 
-    set_env_var("CFLAGS_armv7a_vex_v5", &c_flags);
+    set_env_var("CFLAGS_armv7a_vex_v5".into(), &c_flags);
 
     // Configure clang's multilib: the reason we don't have to specify which
     // libc sysroot we want (in the form of /path/to/sysroot/lib and …/include)
@@ -64,7 +73,7 @@ pub fn setup_env(
 
     // We use clang as a linker because ld.lld by itself doesn't include the
     // multilib logic for resolving static libraries.
-    set_env_var("CARGO_TARGET_ARMV7A_VEX_V5_LINKER", OsStr::new("clang"));
+    set_env_var("CARGO_TARGET_ARMV7A_VEX_V5_LINKER".into(), OsStr::new("clang"));
 
     // These flags are intended for use with LLVM 21.1.1, but may work on other
     // versions.
@@ -87,7 +96,7 @@ pub fn setup_env(
     let mut rust_flags = link_flags;
     rust_flags.push(format!("--cfg=vexide_toolchain=\"{}\"", toolchain_type));
 
-    set_env_var("CARGO_TARGET_ARMV7A_VEX_V5_RUSTFLAGS", OsStr::new(&rust_flags.join(" ")));
+    set_env_var("CARGO_TARGET_ARMV7A_VEX_V5_RUSTFLAGS".into(), OsStr::new(&rust_flags.join(" ")));
 }
 
 impl ToolchainCmd {
@@ -161,7 +170,10 @@ impl ToolchainCmd {
         setup_env(
             toolchain.host_bin_dir().as_os_str(),
             cfg.ty,
-            |k, v| println!("export {k}='{}';", v.display()),
+            |k, v| match k {
+                EnvVarKey::Path => println!("PATH_add '{}'", v.display()),
+                EnvVarKey::Other(key) => println!("export {key}='{}'", v.display()),
+            }
         );
 
         Ok(())

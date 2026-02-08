@@ -7,9 +7,9 @@ use serde::Deserialize;
 use serde_json::Deserializer;
 use std::{
     env,
-    ffi::OsStr,
+    ffi::{OsStr, OsString},
     path::{Path, PathBuf},
-    process::{Stdio, exit},
+    process::{exit, Stdio},
 };
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
@@ -17,7 +17,7 @@ use tokio::{
 };
 
 use crate::{
-    commands::toolchain::{ToolchainCmd, setup_env},
+    commands::toolchain::{setup_env, EnvVarKey, ToolchainCmd},
     errors::CliError,
     fs,
     settings::{Settings, ToolchainCfg, ToolchainType},
@@ -146,7 +146,17 @@ pub async fn build(
         setup_env(
             toolchain.host_bin_dir().as_os_str(),
             toolchain_cfg.ty,
-            |k, v| _ = build_cmd.env(k, v),
+            |k, v| match k {
+                EnvVarKey::Other(key) => _ = build_cmd.env(key, v),
+                EnvVarKey::Path => {
+                    let mut path = OsString::from(v);
+                    if let Some(old_path) = env::var_os("PATH") {
+                        path.push(":");
+                        path.push(old_path);
+                    }
+                    build_cmd.env("PATH", path);
+                }
+            },
         );
     }
 
