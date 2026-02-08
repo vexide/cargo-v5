@@ -17,7 +17,7 @@ use tokio::{
 };
 
 use crate::{
-    commands::toolchain::{ToolchainCmd, env_vars},
+    commands::toolchain::{ToolchainCmd, setup_env},
     errors::CliError,
     fs,
     settings::{Settings, ToolchainCfg, ToolchainType},
@@ -143,11 +143,11 @@ pub async fn build(
         }
         let toolchain = toolchain?;
 
-        for (key, value) in
-            env_vars(toolchain.host_bin_dir().as_os_str(), toolchain_cfg.ty).into_iter()
-        {
-            build_cmd.env(key, value);
-        }
+        setup_env(
+            toolchain.host_bin_dir().as_os_str(),
+            toolchain_cfg.ty,
+            |k, v| _ = build_cmd.env(k, v),
+        );
     }
 
     build_cmd.args(args);
