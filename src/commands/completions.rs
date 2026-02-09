@@ -27,11 +27,7 @@ fn current_timestamp() -> u64 {
 }
 
 fn read_cache() -> Option<Vec<String>> {
-    let path = if let Some(v) = get_ls_cache_path() {
-        v
-    } else {
-        return None;
-    };
+    let path = get_ls_cache_path()?;
     let content = std::fs::read_to_string(path).ok()?;
     let cache: FileCache = serde_json::from_str(&content).ok()?;
 
@@ -49,9 +45,7 @@ pub fn write_cache(files: &[String]) {
         files: files.to_vec(),
     };
     if let Ok(content) = serde_json::to_string(&cache) {
-        let path = if let Some(v) = get_ls_cache_path() {
-            v
-        } else {
+        let Some(path) = get_ls_cache_path() else {
             return;
         };
         if let Some(parent) = path.parent() {
