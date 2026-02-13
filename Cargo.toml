@@ -44,7 +44,7 @@ reqwest = { version = "0.12.23", optional = true, default-features = false, feat
     "rustls-tls",
 ] }
 flate2 = "1.1.2"
-tar = "0.4.44"
+tar = { version = "0.4.44", default-features = false }
 flexi_logger = { version = "0.31.4", default-features = false, features = [
     "colors",
 ] }
