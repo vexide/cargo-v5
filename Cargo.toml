@@ -1,6 +1,6 @@
 [package]
 name = "cargo-pros"
-version = "0.6.0"
+version = "0.6.2"
 edition = "2021"
 authors = [
     "pros-rs",
@@ -31,3 +31,6 @@ legacy-pros-rs-support = []
 [[bin]]
 name = "cargo-pros"
 required-features = ["clap"]
+
+[badges]
+maintenance.status = "deprecated"
