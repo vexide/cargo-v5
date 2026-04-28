@@ -10,12 +10,12 @@ use log::info;
 use tokio::sync::Mutex;
 use vex_v5_serial::{
     Connection,
-    commands::file::DownloadFile,
+    commands::file::download_file,
     protocol::{
         FixedString,
         cdc2::{
             file::{FileTransferTarget, FileVendor},
-            system::{ScreenCapturePacket, ScreenCapturePayload, ScreenCaptureReplyPacket},
+            system::ScreenCapturePacket,
         },
     },
     serial::SerialConnection,
@@ -41,41 +41,39 @@ pub async fn screenshot(connection: &mut SerialConnection) -> Result<(), CliErro
 
     // Tell the brain we want to take a screenshot
     connection
-        .handshake::<ScreenCaptureReplyPacket>(
+        .handshake(
+            ScreenCapturePacket { layer: None },
             Duration::from_millis(100),
             5,
-            ScreenCapturePacket::new(ScreenCapturePayload { layer: None }),
         )
-        .await?
-        .payload?;
+        .await??;
 
     // Grab the image data
-    let cap = connection
-        .execute_command(DownloadFile {
-            file_name: FixedString::new("screen").unwrap(),
-            vendor: FileVendor::Sys,
-            target: FileTransferTarget::Cbuf,
-            address: 0,
-            size: 512 * 272 * 4,
-            progress_callback: Some({
-                let progress = progress.clone();
-                let timestamp = timestamp.clone();
+    let cap = download_file(
+        connection,
+        FixedString::new("screen").unwrap(),
+        512 * 272 * 4,
+        FileVendor::Sys,
+        FileTransferTarget::Cbuf,
+        0x0,
+        Some({
+            let progress = progress.clone();
+            let timestamp = timestamp.clone();
 
-                Box::new(move |percent| {
-                    let progress = progress.try_lock().unwrap();
-                    let mut timestamp = timestamp.try_lock().unwrap();
+            move |percent| {
+                let progress = progress.try_lock().unwrap();
+                let mut timestamp = timestamp.try_lock().unwrap();
 
-                    if timestamp.is_none() {
-                        *timestamp = Some(Instant::now());
-                    }
+                if timestamp.is_none() {
+                    *timestamp = Some(Instant::now());
+                }
 
-                    progress.set_prefix(format!("{:.2?}", timestamp.unwrap().elapsed()));
-                    progress.set_position((percent * 100.0) as u64);
-                })
-            }),
-        })
-        .await
-        .unwrap();
+                progress.set_prefix(format!("{:.2?}", timestamp.unwrap().elapsed()));
+                progress.set_position((percent * 100.0) as u64);
+            }
+        }),
+    )
+    .await?;
 
     progress.lock().await.finish();
 

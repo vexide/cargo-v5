@@ -1,10 +1,7 @@
 use std::time::Duration;
 use vex_v5_serial::Connection;
 use vex_v5_serial::protocol::FixedString;
-use vex_v5_serial::protocol::cdc2::system::{
-    KeyValueLoadPacket, KeyValueLoadReplyPacket, KeyValueSavePacket, KeyValueSavePayload,
-    KeyValueSaveReplyPacket,
-};
+use vex_v5_serial::protocol::cdc2::system::{KeyValueLoadPacket, KeyValueSavePacket};
 use vex_v5_serial::serial::SerialConnection;
 
 use crate::errors::CliError;
@@ -15,28 +12,29 @@ pub async fn kv_set(
     value: &str,
 ) -> Result<(), CliError> {
     connection
-        .handshake::<KeyValueSaveReplyPacket>(
-            Duration::from_millis(500),
-            1,
-            KeyValueSavePacket::new(KeyValueSavePayload {
+        .handshake(
+            KeyValueSavePacket {
                 key: FixedString::new(key)?,
                 value: FixedString::new(value)?,
-            }),
+            },
+            Duration::from_millis(500),
+            1,
         )
-        .await?
-        .payload?;
+        .await??;
 
     Ok(())
 }
 
 pub async fn kv_get(connection: &mut SerialConnection, key: &str) -> Result<String, CliError> {
     Ok(connection
-        .handshake::<KeyValueLoadReplyPacket>(
+        .handshake(
+            KeyValueLoadPacket {
+                key: FixedString::new(key)?,
+            },
             Duration::from_millis(500),
             1,
-            KeyValueLoadPacket::new(FixedString::new(key)?),
         )
-        .await?
-        .payload?
+        .await??
+        .value
         .to_string())
 }

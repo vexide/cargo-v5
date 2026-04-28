@@ -1,31 +1,29 @@
 use clap::{Args, ValueEnum};
 use flate2::{Compression, GzBuilder};
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressState, ProgressStyle};
 use inquire::{
     CustomType,
     validator::{ErrorMessage, Validation},
 };
-use tokio::{fs::File, io::AsyncWriteExt, sync::Mutex, task::block_in_place, time::Instant};
+use tokio::{fs::File, io::AsyncWriteExt, task::block_in_place};
 
 use std::{
     ffi::OsStr,
     io::{ErrorKind, Write},
     path::{Path, PathBuf},
-    sync::Arc,
     time::Duration,
 };
 
 use vex_v5_serial::{
     Connection,
-    commands::file::{LinkedFile, USER_PROGRAM_LOAD_ADDR, UploadFile, j2000_timestamp},
+    commands::file::{LinkedFile, USER_PROGRAM_LOAD_ADDR, j2000_timestamp, upload_file},
     protocol::{
         FixedString, VEX_CRC32, Version,
         cdc2::{
             Cdc2Ack,
             file::{
                 ExtensionType, FileExitAction, FileMetadata, FileMetadataPacket,
-                FileMetadataPayload, FileMetadataReplyPacket, FileMetadataReplyPayload,
-                FileTransferTarget, FileVendor,
+                FileMetadataReplyPacket, FileTransferTarget, FileVendor,
             },
         },
     },
@@ -169,11 +167,23 @@ pub async fn upload_program(
     cold: bool,
     upload_strategy: UploadStrategy,
 ) -> Result<(), CliError> {
-    let multi_progress = MultiProgress::new();
+    let mut multi_progress = MultiProgress::new();
 
+    // Filenames for the program in the device's filesystem. These are the same ones used by
+    // VEXcode/vexcom by convention, and strange things will happen if we have conflicting catalog
+    // entries, so we keep the `slot_n` naming to ensure that old files will be properly
+    // overwritten.
     let slot_file_name = format!("slot_{slot}.bin");
     let ini_file_name = format!("slot_{slot}.ini");
 
+    // MARK: Metadata upload
+    //
+    // Every program binary uploaded to the brain is accompanied by an INI file describing the
+    // program's metadata. This is where we communicate to VEXos what name, slot, icon, etc... the
+    // program should have.
+    //
+    // For example, the program binary `slot_1.bin` will have an accompanying `slot_1.ini` that
+    // VEXos will consult to build a catalog entry that's accessible in the UI.
     let ini = format!(
         "[project]
 ide={}
@@ -190,6 +200,11 @@ description={}",
         description
     );
 
+    // Determine if the program metadata file needs to be reuploaded.
+    //
+    // We only reupload slot_n.ini if there's a checksum mismatch between the INI generated from the
+    // current arguments to this function and the INI on the brain, indicating that something has
+    // changed. Otherwise, we save the overhead of another file transfer on every upload.
     let needs_ini_upload = if let Some(brain_metadata) = brain_file_metadata(
         connection,
         FixedString::new(ini_file_name.clone()).unwrap(),
@@ -203,26 +218,61 @@ description={}",
     };
 
     if needs_ini_upload {
-        let ini_timestamp = Arc::new(Mutex::new(None));
-        // Progress bars
-        let ini_progress = Arc::new(Mutex::new(
-            multi_progress
-                .add(ProgressBar::new(10000))
-                .with_style(
-                    ProgressStyle::with_template(
-                        "   \x1b[1;96mUploading\x1b[0m {percent_precise:>7}% {bar:40.green} {msg} ({prefix})",
-                    )
-                    .unwrap() // Okay to unwrap, since this just validates style formatting.
-                    .progress_chars(PROGRESS_CHARS),
-                )
-                .with_message(ini_file_name.clone()),
-        ));
+        let (progress, callback) = make_progress_callback(
+            &mut multi_progress,
+            ProgressStyle::with_template(
+                "   \x1b[1;96mUploading\x1b[0m {percent_precise:>7}% {bar:40.green} {msg} ({elapsed_duration})",
+            ).unwrap(),
+            ini_file_name.clone()
+        );
 
-        connection
-            .execute_command(UploadFile {
-                file_name: FixedString::new(ini_file_name).unwrap(),
-                metadata: FileMetadata {
-                    extension: FixedString::new("ini").unwrap(),
+        upload_file(
+            connection,
+            FixedString::new(ini_file_name).unwrap(),
+            FileMetadata {
+                extension: FixedString::new("ini").unwrap(),
+                extension_type: ExtensionType::default(),
+                timestamp: j2000_timestamp(),
+                version: Version {
+                    major: 1,
+                    minor: 0,
+                    build: 0,
+                    beta: 0,
+                },
+            },
+            FileVendor::User,
+            ini.as_bytes(),
+            FileTransferTarget::Qspi,
+            USER_PROGRAM_LOAD_ADDR,
+            None,
+            FileExitAction::DoNothing,
+            Some(callback),
+        )
+        .await?;
+
+        progress.finish();
+    }
+
+    // Logic for uploading the actual program binaries.
+    match upload_strategy {
+        // MARK: Monolith upload
+        //
+        // This one is really simple, we just upload the binary in full.
+        UploadStrategy::Monolith => {
+            let (progress, callback) = make_progress_callback(
+                &mut multi_progress,
+                ProgressStyle::with_template(
+                    "   \x1b[1;96mUploading\x1b[0m {percent_precise:>7}% {bar:40.red} {msg} ({elapsed_duration})",
+                ).unwrap(),
+                slot_file_name.clone(),
+            );
+
+            // Upload the program.
+            upload_file(
+                connection,
+                FixedString::new(slot_file_name.clone()).unwrap(),
+                FileMetadata {
+                    extension: FixedString::new("bin").unwrap(),
                     extension_type: ExtensionType::default(),
                     timestamp: j2000_timestamp(),
                     version: Version {
@@ -232,46 +282,142 @@ description={}",
                         beta: 0,
                     },
                 },
-                vendor: FileVendor::User,
-                data: ini.as_bytes(),
-                target: FileTransferTarget::Qspi,
-                load_address: USER_PROGRAM_LOAD_ADDR,
-                linked_file: None,
-                after_upload: FileExitAction::DoNothing,
-                progress_callback: Some(build_progress_callback(
-                    ini_progress.clone(),
-                    ini_timestamp.clone(),
-                )),
-            })
+                FileVendor::User,
+                &{
+                    let mut data = tokio::fs::read(path).await?;
+
+                    if compress {
+                        // <https://media1.tenor.com/m/cjSTJh8J3QcAAAAd/cat-cat-sink.gif>
+                        gzip_compress(&mut data);
+                    }
+
+                    data
+                },
+                FileTransferTarget::Qspi,
+                USER_PROGRAM_LOAD_ADDR,
+                None,
+                after.into(),
+                Some(callback),
+            )
             .await?;
 
-        ini_progress.lock().await.finish();
-    }
+            // Tell the progressbars that we're done once uploading is complete, allowing further
+            // messages to be printed to stdout.
+            progress.finish();
+        }
 
-    match upload_strategy {
-        UploadStrategy::Monolith => {
-            // indicatif is a little dumb with timestamp handling, so we're going to do this all custom,
-            // which unfortunately requires us to juggle timestamps across threads.
-            let bin_timestamp = Arc::new(Mutex::new(None));
+        // Before you try to dissect this, please go and read
+        // <https://github.com/vexide/vexide/pull/269> and also maybe
+        // <https://github.com/vexide/vexide/blob/main/packages/vexide-startup/src/patcher/mod.rs>
+        // (which is probably more up to date if the implementation changes).
+        //
+        // This code is commented to the best of my ability, but there's a lot of pretty complex
+        // logic and guardrails here to ensure that the Brain will never get de-synced with local
+        // copies of base file and whatnot.
+        UploadStrategy::Differential => {
+            let base_file_name = format!("slot_{slot}.base.bin");
 
-            let bin_progress = Arc::new(Mutex::new(
-                multi_progress
-                    .add(ProgressBar::new(10000))
-                    .with_style(
-                        ProgressStyle::with_template(
-                            "   \x1b[1;96mUploading\x1b[0m {percent_precise:>7}% {bar:40.red} {msg} ({prefix})",
-                        )
-                        .unwrap() // Okay to unwrap, since this just validates style formatting.
-                        .progress_chars(PROGRESS_CHARS),
+            // cargo-v5 stores the last cold uploaded binary locally (called the "base binary"),
+            // which is used as a reference point for building patches off of.
+            //
+            // essentially: `patch = diff(base, new)`
+            //
+            // This base file MUST exist on both the brain and the local machine for a patch upload
+            // to take place, but it obviously won't be on either if this is our first time
+            // uploading, so this is optional and we'll handle that case in a sec.
+            let mut base = match tokio::fs::read(&path.with_file_name(&base_file_name)).await {
+                Ok(contents) => Some(contents),
+                Err(e) if e.kind() == ErrorKind::NotFound => None,
+                _ => None, // TODO: maybe throw an error here. that's better than a fallthrough.
+            };
+
+            // Next we need to determine if a cold upload is required.
+            //
+            // A "cold upload" is a case where a new base binary must be uploaded in its entirety to
+            // the brain. This should happen in three cases:
+            //
+            // - A base binary doesn't exist, either on the local machine or on the Brain's
+            //   filesystem.
+            // - The base binary on the local filesystem differs from the base binary on the Brain
+            //   (can happen when switching projects or computers).
+            // - The user explicitly requested a cold reupload with `cargo v5 upload --cold ...`.
+            let needs_cold_upload = cold
+                || 'check: {
+                    // If the base doesn't exist on the local machine, a cold upload is needed.
+                    let Some(base) = base.as_mut() else {
+                        break 'check true;
+                    };
+
+                    // Attempt to get metadata for the base binary off the Brain's internal flash.
+                    let Some(brain_metadata) = brain_file_metadata(
+                        connection,
+                        FixedString::new(base_file_name.clone()).unwrap(),
+                        FileVendor::User,
                     )
-                    .with_message(slot_file_name.clone()),
-            ));
+                    .await?
+                    else {
+                        // This usually means that the file doesn't exist on the Brain.
+                        break 'check true;
+                    };
 
-            // Upload the program.
-            connection
-                .execute_command(UploadFile {
-                    file_name: FixedString::new(slot_file_name.clone()).unwrap(),
-                    metadata: FileMetadata {
+                    // Compare the CRC32 of our local file with the one on the Brain. If they don't
+                    // match, then the brain has different base file and we need to cold upload.
+                    if base.len() >= 4 {
+                        // When we store the base binary to the local machine, we append its crc32
+                        // to the last four bytes of the file, which saves the trouble of us
+                        // recomputing it on every upload. This is kinda a gross hack, but whatevs.
+                        let crc_metadata =
+                            u32::from_le_bytes(base.split_off(base.len() - 4).try_into().unwrap());
+
+                        brain_metadata.crc32 != crc_metadata
+                    } else {
+                        true
+                    }
+                };
+
+            // MARK: Patch upload
+            if !needs_cold_upload {
+                let (progress, callback) = make_progress_callback(
+                    &mut multi_progress,
+                    ProgressStyle::with_template(
+                        "    \x1b[1;96mPatching\x1b[0m {percent_precise:>7}% {bar:40.red} {msg} ({elapsed_duration})",
+                    ).unwrap(),
+                    slot_file_name.clone()
+                );
+
+                // The "new" file is the file that the user requested to upload, as opposed to the
+                // "base" file which is the program that the brain already has.
+                let new = tokio::fs::read(path).await?;
+                let base = base.unwrap();
+
+                // Some sanity checks to make sure that the patch and base file fit inside the 2mb
+                // subregions that we allocate in program memory before compression. This also
+                // ensures that VEXos won't data abort on CPU0, since there's a buffer overflow that
+                // can occur in the file transfer logic when uploading very large compressed
+                // programs.
+                if base.len() > DIFFERENTIAL_UPLOAD_MAX_SIZE {
+                    return Err(CliError::ProgramTooLarge(base.len()));
+                } else if new.len() > DIFFERENTIAL_UPLOAD_MAX_SIZE {
+                    return Err(CliError::ProgramTooLarge(new.len()));
+                }
+
+                // Generate a patch (binary diff) using the base binary and the new file.
+                let mut patch = build_patch(&base, &new);
+                if patch.len() > DIFFERENTIAL_UPLOAD_MAX_SIZE {
+                    return Err(CliError::PatchTooLarge(patch.len()));
+                }
+
+                // We ignore compression preferences and always gzip here, since bidiff NEEDS a
+                // compression algorithm to gain any advantage on size at all. Uncompressed patches
+                // in memory are larger than both the base and new file. We have plenty of memory to
+                // go around, and only care about upload bandwidth.
+                gzip_compress(&mut patch);
+
+                // Upload the patch
+                upload_file(
+                    connection,
+                    FixedString::new(slot_file_name.clone()).unwrap(),
+                    FileMetadata {
                         extension: FixedString::new("bin").unwrap(),
                         extension_type: ExtensionType::default(),
                         timestamp: j2000_timestamp(),
@@ -282,154 +428,37 @@ description={}",
                             beta: 0,
                         },
                     },
-                    vendor: FileVendor::User,
-                    data: &{
-                        let mut data = tokio::fs::read(path).await?;
-
-                        if compress {
-                            gzip_compress(&mut data);
-                        }
-
-                        data
-                    },
-                    target: FileTransferTarget::Qspi,
-                    load_address: USER_PROGRAM_LOAD_ADDR,
-                    linked_file: None,
-                    after_upload: match after {
-                        AfterUpload::None => FileExitAction::DoNothing,
-                        AfterUpload::ShowScreen => FileExitAction::ShowRunScreen,
-                        AfterUpload::Run => FileExitAction::RunProgram,
-                    },
-                    progress_callback: Some(build_progress_callback(
-                        bin_progress.clone(),
-                        bin_timestamp.clone(),
-                    )),
-                })
+                    FileVendor::User,
+                    &patch,
+                    FileTransferTarget::Qspi,
+                    // See <https://github.com/vexide/vexide/blob/main/packages/vexide-startup/src/patcher/mod.rs#L38>
+                    // and <https://github.com/vexide/vexide/blob/main/packages/vexide-startup/link/vexide.ld#L41>
+                    // if you're confused about why we're loading this file to that address.
+                    0x07A00000,
+                    // This patch file is the binary that has the actual catalog entry (it's the
+                    // file that VEXos actually treats as "a program"). We do it this way since it's
+                    // impossible to edit a file link after a program has been uploaded. So, the
+                    // base file at 0x03800000 is what's linked to the patch rather than the other
+                    // way around.
+                    Some(LinkedFile {
+                        file_name: FixedString::new(base_file_name.clone()).unwrap(),
+                        vendor: FileVendor::User,
+                    }),
+                    after.into(),
+                    Some(callback),
+                )
                 .await?;
 
-            // Tell the progressbars that we're done once uploading is complete, allowing further messages to be printed to stdout.
-            bin_progress.lock().await.finish();
-        }
-        UploadStrategy::Differential => {
-            let base_file_name = format!("slot_{slot}.base.bin");
-
-            let mut base = match tokio::fs::read(&path.with_file_name(&base_file_name)).await {
-                Ok(contents) => Some(contents),
-                Err(e) if e.kind() == ErrorKind::NotFound => None,
-                _ => None,
-            };
-
-            let needs_cold_upload = cold
-                || 'check: {
-                    let Some(base) = base.as_mut() else {
-                        break 'check true;
-                    };
-
-                    let Some(brain_metadata) = brain_file_metadata(
-                        connection,
-                        FixedString::new(base_file_name.clone()).unwrap(),
-                        FileVendor::User,
-                    )
-                    .await?
-                    else {
-                        break 'check true;
-                    };
-
-                    if base.len() >= 4 {
-                        let crc_metadata =
-                            u32::from_le_bytes(base.split_off(base.len() - 4).try_into().unwrap());
-
-                        // last four bytes of base file contain the crc32 at time of upload
-                        brain_metadata.crc32 != crc_metadata
-                    } else {
-                        true
-                    }
-                };
-
-            if !needs_cold_upload {
-                let base = base.unwrap();
-                let patch_timestamp = Arc::new(Mutex::new(None));
-                let patch_progress = Arc::new(Mutex::new(
-                    multi_progress
-                        .add(ProgressBar::new(10000))
-                        .with_style(
-                            ProgressStyle::with_template(
-                                "    \x1b[1;96mPatching\x1b[0m {percent_precise:>7}% {bar:40.red} {msg} ({prefix})",
-                            )
-                            .unwrap() // Okay to unwrap, since this just validates style formatting.
-                            .progress_chars(PROGRESS_CHARS),
-                        )
-                        .with_message(slot_file_name.clone()),
-                ));
-
-                let new = tokio::fs::read(path).await?;
-
-                if base.len() > DIFFERENTIAL_UPLOAD_MAX_SIZE {
-                    return Err(CliError::ProgramTooLarge(base.len()));
-                } else if new.len() > DIFFERENTIAL_UPLOAD_MAX_SIZE {
-                    return Err(CliError::ProgramTooLarge(new.len()));
-                }
-
-                let mut patch = build_patch(&base, &new);
-
-                if patch.len() > DIFFERENTIAL_UPLOAD_MAX_SIZE {
-                    return Err(CliError::PatchTooLarge(patch.len()));
-                }
-
-                gzip_compress(&mut patch);
-
-                connection
-                    .execute_command(UploadFile {
-                        file_name: FixedString::new(slot_file_name.clone()).unwrap(),
-                        metadata: FileMetadata {
-                            extension: FixedString::new("bin").unwrap(),
-                            extension_type: ExtensionType::default(),
-                            timestamp: j2000_timestamp(),
-                            version: Version {
-                                major: 1,
-                                minor: 0,
-                                build: 0,
-                                beta: 0,
-                            },
-                        },
-                        vendor: FileVendor::User,
-                        data: &patch,
-                        target: FileTransferTarget::Qspi,
-                        load_address: 0x07A00000,
-                        linked_file: Some(LinkedFile {
-                            file_name: FixedString::new(base_file_name.clone()).unwrap(),
-                            vendor: FileVendor::User,
-                        }),
-                        after_upload: match after {
-                            AfterUpload::None => FileExitAction::DoNothing,
-                            AfterUpload::ShowScreen => FileExitAction::ShowRunScreen,
-                            AfterUpload::Run => FileExitAction::RunProgram,
-                        },
-                        progress_callback: Some(build_progress_callback(
-                            patch_progress.clone(),
-                            patch_timestamp.clone(),
-                        )),
-                    })
-                    .await?;
-
-                patch_progress.lock().await.finish();
+                progress.finish();
             } else {
-                // indicatif is a little dumb with timestamp handling, so we're going to do this all custom,
-                // which unfortunately requires us to juggle timestamps across threads.
-                let base_timestamp = Arc::new(Mutex::new(None));
-
-                let base_progress = Arc::new(Mutex::new(
-                    multi_progress
-                        .add(ProgressBar::new(10000))
-                        .with_style(
-                            ProgressStyle::with_template(
-                                "   \x1b[1;96mUploading\x1b[0m {percent_precise:>7}% {bar:40.blue} {msg} ({prefix})",
-                            )
-                            .unwrap() // Okay to unwrap, since this just validates style formatting.
-                            .progress_chars(PROGRESS_CHARS),
-                        )
-                        .with_message(base_file_name.clone()),
-                ));
+                // MARK: Cold upload
+                let (progress, callback) = make_progress_callback(
+                    &mut multi_progress,
+                    ProgressStyle::with_template(
+                        "   \x1b[1;96mUploading\x1b[0m {percent_precise:>7}% {bar:40.blue} {msg} ({elapsed_duration})",
+                    ).unwrap(),
+                    base_file_name.clone()
+                );
 
                 let mut base_data = tokio::fs::read(path).await?;
 
@@ -437,79 +466,89 @@ description={}",
                     return Err(CliError::ProgramTooLarge(base_data.len()));
                 }
 
-                connection
-                    .execute_command(UploadFile {
+                // Upload the entire base file during a cold upload. This is pretty much the same as
+                // a normal monolith upload, but the file is named `slot_n.base.bin` rather than
+                // `slot_n.bin` and will be linked by the dummy patch to correct load address below.
+                upload_file(
+                    connection,
+                    FixedString::new(base_file_name.clone()).unwrap(),
+                    FileMetadata {
+                        extension: FixedString::new("bin").unwrap(),
+                        extension_type: ExtensionType::default(),
+                        timestamp: j2000_timestamp(),
+                        version: Version {
+                            major: 1,
+                            minor: 0,
+                            build: 0,
+                            beta: 0,
+                        },
+                    },
+                    FileVendor::User,
+                    {
+                        // Save the base file to the local machine.
+                        let mut base_file =
+                            File::create(path.with_file_name(&base_file_name)).await?;
+                        base_file.write_all(&base_data).await?;
+
+                        if compress {
+                            // <https://media1.tenor.com/m/cjSTJh8J3QcAAAAd/cat-cat-sink.gif>
+                            gzip_compress(&mut base_data);
+                        }
+
+                        // If you've been reading these comments, you should already know why we do
+                        // this :3
+                        base_file
+                            .write_all(&VEX_CRC32.checksum(&base_data).to_le_bytes())
+                            .await?;
+
+                        &base_data
+                    },
+                    FileTransferTarget::Qspi,
+                    USER_PROGRAM_LOAD_ADDR,
+                    None,
+                    FileExitAction::DoNothing,
+                    Some(callback),
+                )
+                .await?;
+
+                // We have to get rid of any old patch files that may or may not be there after a
+                // cold upload, so we overwrite them with a placeholder patch with an intentionally
+                // invalid header so that vexide-startup skips it.
+                //
+                // We also need this because the patch binary is the one that VEXos actually treats
+                // as "a program", and therefore is the one with the file link (as discussed above).
+                upload_file(
+                    connection,
+                    FixedString::new(slot_file_name.clone()).unwrap(),
+                    FileMetadata {
+                        extension: FixedString::new("bin").unwrap(),
+                        extension_type: ExtensionType::default(),
+                        timestamp: j2000_timestamp(),
+                        version: Version {
+                            major: 1,
+                            minor: 0,
+                            build: 0,
+                            beta: 0,
+                        },
+                    },
+                    FileVendor::User,
+                    // An obviously invalid patch header that'll bail out early (valid would be
+                    // 0xB1DF). We use 0xB2DF to indicate that the patch is already applied on the
+                    // second _vexide_boot round, so we can just reuse that here.
+                    &u32::to_le_bytes(0xB2DF),
+                    FileTransferTarget::Qspi,
+                    0x07A00000,
+                    Some(LinkedFile {
                         file_name: FixedString::new(base_file_name.clone()).unwrap(),
-                        metadata: FileMetadata {
-                            extension: FixedString::new("bin").unwrap(),
-                            extension_type: ExtensionType::default(),
-                            timestamp: j2000_timestamp(),
-                            version: Version {
-                                major: 1,
-                                minor: 0,
-                                build: 0,
-                                beta: 0,
-                            },
-                        },
                         vendor: FileVendor::User,
-                        data: {
-                            let mut base_file =
-                                File::create(path.with_file_name(&base_file_name)).await?;
-                            base_file.write_all(&base_data).await?;
+                    }),
+                    after.into(),
+                    None::<fn(f32)>,
+                )
+                .await?;
 
-                            if compress {
-                                gzip_compress(&mut base_data);
-                            }
-
-                            base_file
-                                .write_all(&VEX_CRC32.checksum(&base_data).to_le_bytes())
-                                .await?;
-
-                            &base_data
-                        },
-                        target: FileTransferTarget::Qspi,
-                        load_address: USER_PROGRAM_LOAD_ADDR,
-                        linked_file: None,
-                        after_upload: FileExitAction::DoNothing,
-                        progress_callback: Some(build_progress_callback(
-                            base_progress.clone(),
-                            base_timestamp.clone(),
-                        )),
-                    })
-                    .await?;
-                base_progress.lock().await.finish();
-
-                connection
-                    .execute_command(UploadFile {
-                        file_name: FixedString::new(slot_file_name.clone()).unwrap(),
-                        metadata: FileMetadata {
-                            extension: FixedString::new("bin").unwrap(),
-                            extension_type: ExtensionType::default(),
-                            timestamp: j2000_timestamp(),
-                            version: Version {
-                                major: 1,
-                                minor: 0,
-                                build: 0,
-                                beta: 0,
-                            },
-                        },
-                        vendor: FileVendor::User,
-                        data: &u32::to_le_bytes(0xB2DF),
-                        target: FileTransferTarget::Qspi,
-                        load_address: 0x07A00000,
-                        linked_file: Some(LinkedFile {
-                            file_name: FixedString::new(base_file_name).unwrap(),
-                            vendor: FileVendor::User,
-                        }),
-                        after_upload: match after {
-                            AfterUpload::None => FileExitAction::DoNothing,
-                            AfterUpload::ShowScreen => FileExitAction::ShowRunScreen,
-                            AfterUpload::Run => FileExitAction::RunProgram,
-                        },
-                        progress_callback: None,
-                    })
-                    .await?;
-            };
+                progress.finish();
+            }
         }
     }
 
@@ -525,7 +564,7 @@ fn build_patch(old: &[u8], new: &[u8]) -> Vec<u8> {
 
     bidiff::simple_diff(old, new, &mut patch).unwrap();
 
-    // Insert important metadata for the patcher to use when constructing a new binary
+    // Insert some important metadata for the patcher to use when constructing a new binary.
     patch.reserve(12);
     patch.splice(8..8, ((patch.len() + 12) as u32).to_le_bytes());
     patch.splice(12..12, (old.len() as u32).to_le_bytes());
@@ -538,39 +577,49 @@ async fn brain_file_metadata(
     connection: &mut SerialConnection,
     file_name: FixedString<23>,
     vendor: FileVendor,
-) -> Result<Option<FileMetadataReplyPayload>, SerialError> {
+) -> Result<Option<FileMetadataReplyPacket>, SerialError> {
     let reply = connection
-        .handshake::<FileMetadataReplyPacket>(
-            Duration::from_millis(1000),
-            2,
-            FileMetadataPacket::new(FileMetadataPayload {
+        .handshake(
+            FileMetadataPacket {
                 vendor,
                 reserved: 0,
                 file_name,
-            }),
+            },
+            Duration::from_millis(1000),
+            2,
         )
         .await?;
 
-    match reply.payload {
+    match reply {
         Ok(payload) => Ok(payload),
         Err(Cdc2Ack::NackProgramFile) => Ok(None),
         Err(nack) => Err(SerialError::Nack(nack)),
     }
 }
 
-fn build_progress_callback(
-    progress: Arc<Mutex<ProgressBar>>,
-    timestamp: Arc<Mutex<Option<Instant>>>,
-) -> Box<dyn FnMut(f32) + Send> {
-    Box::new(move |percent| {
-        let progress = progress.try_lock().unwrap();
-        let mut timestamp = timestamp.try_lock().unwrap();
+fn make_progress_callback(
+    multi: &mut MultiProgress,
+    style: ProgressStyle,
+    file_name: String,
+) -> (ProgressBar, impl FnMut(f32)) {
+    let bar = multi
+        .add(ProgressBar::new(10000))
+        .with_style(
+            style
+                .with_key(
+                    "elapsed_duration",
+                    |state: &ProgressState, buf: &mut dyn std::fmt::Write| {
+                        write!(buf, "{:?}", state.elapsed()).unwrap()
+                    },
+                )
+                .progress_chars(PROGRESS_CHARS),
+        )
+        .with_message(file_name);
 
-        if timestamp.is_none() {
-            *timestamp = Some(Instant::now());
+    (bar.clone(), {
+        move |percent| {
+            bar.set_position((percent * 100.0) as u64);
         }
-        progress.set_prefix(format!("{:.2?}", timestamp.unwrap().elapsed()));
-        progress.set_position((percent * 100.0) as u64);
     })
 }
 
