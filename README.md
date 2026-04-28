@@ -120,11 +120,11 @@ cargo v5 help
 If you installed cargo-v5 using the standalone shell or PowerShell scripts above, you can remove it by running this command in your Unix shell:
 
 ```sh
-rm ~/.local/bin/cargo-v5 ~/.config/cargo-v5/cargo-v5-receipt.json
+rm ~/.cargo/bin/cargo-v5 ~/.config/cargo-v5/cargo-v5-receipt.json
 ```
 
 Or by running this in PowerShell:
 
 ```powershell
-rm ~\.local\bin\cargo-v5 "$env:LOCALAPPDATA\cargo-v5\cargo-v5-receipt.json"
+rm ~\.cargo\bin\cargo-v5.exe, "$env:LOCALAPPDATA\cargo-v5\cargo-v5-receipt.json"
 ```
