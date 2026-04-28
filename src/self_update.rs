@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    env::{self, consts::EXE_SUFFIX},
+    env::{self, consts::EXE_SUFFIX, home_dir},
     path::{Path, PathBuf},
     sync::LazyLock,
 };
@@ -10,9 +10,11 @@ use miette::Diagnostic;
 use thiserror::Error;
 use tokio::{process::Command, sync::Mutex, task::block_in_place};
 
+use crate::fs;
+
 #[derive(Debug, Error, Diagnostic)]
 pub enum SelfUpdateError {
-    #[error("cargo-v5's updates are externally managed")]
+    #[error("cargo-v5's installation is externally managed")]
     #[diagnostic(code(cargo_v5::self_update::unavailable))]
     SelfUpdateUnavailable {
         #[help]
@@ -142,5 +144,50 @@ pub async fn self_update() -> Result<(), SelfUpdateError> {
                 None => "update cargo-v5 with your package manager or redownload the executable",
             },
         }),
+    }
+}
+
+pub async fn self_uninstall(skip_prompts: bool) -> Result<(), SelfUpdateError> {
+    let mode = *CURRENT_MODE;
+
+    match mode {
+        SelfUpdateMode::Axoupdate | SelfUpdateMode::Cargo => {
+            let are_you_sure = skip_prompts
+                || inquire::Confirm::new("Really uninstall cargo-v5?")
+                    .with_default(true)
+                    .prompt()
+                    .unwrap_or(true);
+
+            if !are_you_sure {
+                return Ok(());
+            }
+
+            let receipt = if cfg!(windows) {
+                let appdata = env::var("LOCALAPPDATA")
+                    .expect("Cannot find LOCALAPPDATA folder to remove receipt");
+                PathBuf::from(appdata).join("cargo-v5/cargo-v5-receipt.json")
+            } else {
+                let home = home_dir().expect("Cannot find home directory to remove receipt");
+                home.join("cargo-v5/cargo-v5-receipt.json")
+            };
+
+            eprintln!("Removing receipt... ({})", receipt.display());
+            _ = fs::remove_file(receipt).await;
+
+            eprintln!("Uninstalling cargo-v5...");
+            self_replace::self_delete()?;
+
+            eprintln!("All done! Thanks for using cargo-v5.");
+
+            Ok(())
+        }
+        SelfUpdateMode::Unmanaged(manager) => {
+            let advice = if manager == Some(ExternalUpdateManager::Homebrew) {
+                "run `brew uninstall cargo-v5`"
+            } else {
+                "uninstall cargo-v5 with your package manager or manually remove the executable"
+            };
+            Err(SelfUpdateError::SelfUpdateUnavailable { advice })
+        }
     }
 }

@@ -332,6 +332,7 @@ dependencies = [
  "ra_ap_syntax",
  "ratatui",
  "reqwest",
+ "self-replace",
  "semver",
  "serde_json",
  "supports-color",

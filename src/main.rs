@@ -74,7 +74,7 @@ enum Command {
         #[clap(flatten)]
         cargo_opts: CargoOpts,
     },
-    
+
     /// Upload a project or file to a Brain.
     #[clap(visible_alias = "u")]
     Upload {
@@ -84,15 +84,15 @@ enum Command {
         #[clap(flatten)]
         upload_opts: UploadOpts,
     },
-    
+
     /// Access a Brain's remote terminal I/O.
     #[clap(visible_alias = "t")]
     Terminal,
-    
+
     /// Build, upload, and run a program on a V5 Brain, showing its output in the terminal.
     #[clap(visible_alias = "r")]
     Run(UploadOpts),
-    
+
     /// Create a new vexide project with a given name.
     #[clap(visible_alias = "n")]
     New {
@@ -102,17 +102,17 @@ enum Command {
         #[clap(flatten)]
         download_opts: DownloadOpts,
     },
-    
+
     /// Create a new vexide project in the current directory.
     Init {
         #[clap(flatten)]
         download_opts: DownloadOpts,
     },
-    
+
     /// List files on flash.
     #[clap(visible_alias = "ls")]
     Dir,
-    
+
     /// Read a file from flash, then write its contents to stdout.
     Cat {
         file: PathBuf,
@@ -122,13 +122,13 @@ enum Command {
     Rm {
         file: PathBuf,
     },
-    
+
     /// Read a Brain's event log.
     Log {
         #[arg(long, short, default_value = "1")]
         page: NonZeroU32,
     },
-    
+
     /// List devices connected to a Brain.
     #[clap(visible_alias = "lsdev")]
     Devices,
@@ -136,19 +136,27 @@ enum Command {
     /// Take a screen capture of the brain, saving the file to the current directory.
     #[clap(visible_alias = "sc")]
     Screenshot,
-    
+
     /// Access a Brain's system key/value configuration.
     #[command(subcommand, visible_alias = "kv")]
     KeyValue(KeyValue),
-    
+
     /// Run a field control TUI.
     #[cfg(feature = "field-control")]
     #[clap(visible_aliases = ["fc", "comp-control"])]
     FieldControl,
-    
+
     /// Update cargo-v5 to the latest version.
     #[clap(hide = matches!(*self_update::CURRENT_MODE, SelfUpdateMode::Unmanaged(_)))]
     SelfUpdate,
+
+    /// Uninstall cargo-v5.
+    #[clap(hide = matches!(*self_update::CURRENT_MODE, SelfUpdateMode::Unmanaged(_)))]
+    SelfUninstall {
+        /// Skip the "are you sure" prompt.
+        #[arg(long, short)]
+        yes: bool,
+    },
 
     /// Migrate an older project to vexide 0.8.0.
     Migrate,
@@ -281,6 +289,9 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
         }
         Command::SelfUpdate => {
             self_update::self_update().await?;
+        }
+        Command::SelfUninstall { yes } => {
+            self_update::self_uninstall(yes).await?;
         }
         Command::Migrate => {
             migrate::migrate_workspace(&path).await?;
