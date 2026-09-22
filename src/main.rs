@@ -6,7 +6,6 @@ use cargo_v5::{
         dir::dir,
         key_value::{kv_get, kv_set},
         log::log,
-        migrate,
         new::new,
         rm::rm,
         screenshot::screenshot,
@@ -14,7 +13,6 @@ use cargo_v5::{
         upload::{AfterUpload, UploadOpts, upload},
     },
     connection::{open_connection, switch_to_download_channel},
-    errors::CliError,
     self_update::{self, SelfUpdateMode},
 };
 use chrono::Utc;
@@ -27,7 +25,6 @@ use vex_v5_serial::{
         FixedString,
         cdc2::file::{FileLoadAction, FileLoadActionPacket, FileVendor},
     },
-    serial::{self, SerialConnection, SerialDevice},
 };
 
 #[cfg(feature = "field-control")]
@@ -145,9 +142,6 @@ enum Command {
     /// Update cargo-v5 to the latest version.
     #[clap(hide = matches!(*self_update::CURRENT_MODE, SelfUpdateMode::Unmanaged(_)))]
     SelfUpdate,
-
-    /// Migrate an older project to vexide 0.8.0.
-    Migrate,
 }
 
 #[derive(Args, Debug)]
@@ -279,9 +273,6 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
         }
         Command::SelfUpdate => {
             self_update::self_update().await?;
-        }
-        Command::Migrate => {
-            migrate::migrate_workspace(&path).await?;
         }
     }
 
