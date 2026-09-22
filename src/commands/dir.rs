@@ -30,8 +30,7 @@ fn vendor_prefix(vid: FileVendor) -> &'static str {
         FileVendor::Dev6 => "devc/",
         FileVendor::VexVm => "vxvm/",
         FileVendor::Vex => "vex_/",
-        FileVendor::Undefined => "test/",
-        _ => "unknown/",
+        FileVendor::Undefined | _ => "test/",
     }
 }
 
