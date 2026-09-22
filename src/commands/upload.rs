@@ -716,7 +716,7 @@ pub async fn upload(
     // Uploading has the option to use the `package.metadata.v5` table for default configuration options.
     // Attempt to serialize `package.metadata.v5` into a [`Metadata`] struct. This will just Default::default to
     // all `None`s if it can't find a specific field, or error if the field is malformed.
-    let metadata = package.as_ref().map(Metadata::new).transpose()?;
+    let metadata = package.as_ref().map(Metadata::from_package).transpose()?;
 
     // The program's slot number is absolutely required for uploading. If the slot argument isn't directly provided:
     //

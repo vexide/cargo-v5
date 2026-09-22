@@ -108,7 +108,7 @@ pub enum CliError {
     #[diagnostic(
         code(cargo_v5::cargo_metadata),
         help(
-            "cargo-v5 uses cargo's `cargo metadata` command to identify which project is being built, but it was unstable to run this command successfully. Do you have cargo installed?"
+            "cargo-v5 uses cargo's `cargo metadata` command to identify which project is being built, but it was unable to run this command successfully. Do you have cargo installed?"
         )
     )]
     CargoMetadata { code: Option<i32> },

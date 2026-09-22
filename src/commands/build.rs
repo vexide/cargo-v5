@@ -7,7 +7,10 @@ use std::{
     process::{Stdio, exit},
 };
 
-use crate::errors::CliError;
+use crate::{
+    errors::CliError,
+    metadata::{CargoMetadata, Metadata},
+};
 
 /// Common Cargo options to forward.
 #[derive(Args, Debug)]
@@ -35,6 +38,7 @@ async fn is_supported_release_channel(cargo_bin: &OsStr) -> bool {
     rustc.contains("nightly") || rustc.contains("-dev")
 }
 
+#[derive(Debug)]
 pub struct BuildOutput {
     pub elf_artifact: PathBuf,
     pub bin_artifact: PathBuf,

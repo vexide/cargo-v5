@@ -54,7 +54,7 @@ pub struct Metadata {
 }
 
 impl Metadata {
-    pub fn new(pkg: &Package) -> Result<Self, CliError> {
+    pub fn from_package(pkg: &Package) -> Result<Self, CliError> {
         if let Some(metadata) = pkg.metadata.as_object()
             && let Some(v5_metadata) = metadata.get("v5").and_then(|m| m.as_object())
         {
