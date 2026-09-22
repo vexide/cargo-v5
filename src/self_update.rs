@@ -5,10 +5,14 @@ use std::{
     sync::LazyLock,
 };
 
-use axoupdater::{AxoUpdater, AxoupdateError};
 use miette::Diagnostic;
+use smol::process::Command;
 use thiserror::Error;
-use tokio::{process::Command, sync::Mutex, task::block_in_place};
+#[cfg(feature = "shellscript")]
+use {
+    axoupdater::{AxoUpdater, AxoupdateError},
+    tokio::{sync::Mutex, task::block_in_place},
+};
 
 #[derive(Debug, Error, Diagnostic)]
 pub enum SelfUpdateError {
@@ -19,6 +23,7 @@ pub enum SelfUpdateError {
         advice: &'static str,
     },
 
+    #[cfg(feature = "shellscript")]
     #[error("Self-update failed")]
     #[diagnostic(code(cargo_v5::self_update::failure))]
     Axoupdate(#[from] AxoupdateError),
@@ -27,12 +32,14 @@ pub enum SelfUpdateError {
     Io(#[from] std::io::Error),
 }
 
+#[cfg(feature = "shellscript")]
 static AXOUPDATER: LazyLock<Mutex<AxoUpdater>> =
     LazyLock::new(|| Mutex::new(AxoUpdater::new_for("cargo-v5")));
 pub static CURRENT_MODE: LazyLock<SelfUpdateMode> = LazyLock::new(SelfUpdateMode::current);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SelfUpdateMode {
+    #[cfg(feature = "shellscript")]
     Axoupdate,
     Cargo,
     Unmanaged(Option<ExternalUpdateManager>),
@@ -63,9 +70,12 @@ fn exe_name<'a>(string: impl Into<Cow<'a, str>>) -> Cow<'a, str> {
 impl SelfUpdateMode {
     pub fn current() -> Self {
         // Check if installed by shell script
-        let mut updater = block_in_place(|| AXOUPDATER.blocking_lock());
-        if updater.load_receipt().is_ok() {
-            return Self::Axoupdate;
+        #[cfg(feature = "shellscript")]
+        {
+            let mut updater = block_in_place(|| AXOUPDATER.blocking_lock());
+            if updater.load_receipt().is_ok() {
+                return Self::Axoupdate;
+            }
         }
 
         let this_arg = std::env::args().next().unwrap_or_default();
@@ -102,9 +112,9 @@ pub async fn self_update() -> Result<(), SelfUpdateError> {
     let mode = *CURRENT_MODE;
 
     match mode {
+        #[cfg(feature = "shellscript")]
         SelfUpdateMode::Axoupdate => {
             // This will redownload the installer shell script and run it again
-
             let mut updater = AXOUPDATER.lock().await;
             updater.run().await?;
             Ok(())
@@ -130,9 +140,9 @@ pub async fn self_update() -> Result<(), SelfUpdateError> {
             }
             command.arg("cargo-v5");
 
-            eprintln!("> {:?}", command.as_std());
+            eprintln!("> {:?}", command);
 
-            command.spawn()?.wait().await?;
+            _ = command.spawn()?.status().await?;
 
             Ok(())
         }

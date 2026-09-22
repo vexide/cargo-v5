@@ -25,7 +25,7 @@ pub enum CliError {
     #[cfg(feature = "fetch-template")]
     #[error(transparent)]
     #[diagnostic(code(cargo_v5::bad_response))]
-    ReqwestError(#[from] reqwest::Error),
+    HttpError(#[from] ureq::Error),
 
     #[cfg(feature = "fetch-template")]
     #[error("Received a malformed HTTP response")]
@@ -103,6 +103,15 @@ pub enum CliError {
         )
     )]
     NoArtifact,
+
+    #[error("Failed to execute `cargo metadata` on project (exit code {code:?}).")]
+    #[diagnostic(
+        code(cargo_v5::cargo_metadata),
+        help(
+            "cargo-v5 uses cargo's `cargo metadata` command to identify which project is being built, but it was unstable to run this command successfully. Do you have cargo installed?"
+        )
+    )]
+    CargoMetadata { code: Option<i32> },
 
     #[error("No V5 devices found.")]
     #[diagnostic(

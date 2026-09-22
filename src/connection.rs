@@ -1,8 +1,8 @@
 use core::fmt;
 use inquire::Select;
 use log::info;
+use smol::{Timer, future::FutureExt};
 use std::time::Duration;
-use tokio::{task::spawn_blocking, time::sleep};
 use vex_v5_serial::{
     Connection,
     protocol::{
@@ -85,13 +85,9 @@ pub async fn open_connection() -> Result<SerialConnection, CliError> {
     };
 
     // Open a connection to the device.
-    spawn_blocking(move || {
-        device
-            .connect(Duration::from_secs(5))
-            .map_err(CliError::SerialError)
-    })
-    .await
-    .unwrap()
+    device
+        .connect(Duration::from_secs(5))
+        .map_err(CliError::SerialError)
 }
 
 async fn is_connection_wireless(connection: &mut SerialConnection) -> Result<bool, CliError> {
@@ -153,17 +149,21 @@ pub async fn switch_to_download_channel(connection: &mut SerialConnection) -> Re
 
         // Wait for the controller to disconnect by spamming it with a packet and waiting until that packet
         // doesn't go through. This indicates that the radio has actually started to switch channels.
-        tokio::time::timeout(Duration::from_secs(8), async {
+        async {
             while connection
                 .handshake(RadioStatusPacket {}, Duration::from_millis(250), 0)
                 .await
                 .is_ok()
             {
-                sleep(Duration::from_millis(250)).await;
+                Timer::after(Duration::from_millis(250)).await;
             }
+            Ok(())
+        }
+        .or(async {
+            Timer::after(Duration::from_secs(8)).await;
+            Err(CliError::RadioChannelReconnectTimeout)
         })
-        .await
-        .map_err(|_| CliError::RadioChannelReconnectTimeout)?;
+        .await?;
 
         // Poll the connection of the controller to ensure the radio has switched channels by sending
         // test packets every 250ms for 8 seconds until we get a successful reply, indicating that the
@@ -171,7 +171,7 @@ pub async fn switch_to_download_channel(connection: &mut SerialConnection) -> Re
         //
         // If the controller doesn't a reply within 8 seconds, it's probably frozen and hasn't reconnected
         // correctly.
-        tokio::time::timeout(Duration::from_secs(8), async {
+        async {
             loop {
                 let Ok(pkt) = connection
                     .handshake(RadioStatusPacket {}, Duration::from_millis(250), 0)
@@ -189,14 +189,17 @@ pub async fn switch_to_download_channel(connection: &mut SerialConnection) -> Re
 
                     // Still reconnecting.
                     _ => {
-                        sleep(Duration::from_millis(250)).await;
+                        Timer::after(Duration::from_millis(250)).await;
                         continue;
                     }
                 }
             }
+        }
+        .or(async {
+            Timer::after(Duration::from_secs(8)).await;
+            Err(CliError::RadioChannelReconnectTimeout)
         })
-        .await
-        .map_err(|_| CliError::RadioChannelReconnectTimeout)??;
+        .await?;
     }
 
     Ok(())

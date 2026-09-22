@@ -18,6 +18,7 @@ use cargo_v5::{
 use chrono::Utc;
 use clap::{Args, Parser, Subcommand};
 use flexi_logger::{AdaptiveFormat, FileSpec, LogfileSelector, LoggerHandle};
+use futures_util::FutureExt;
 use std::{env, num::NonZeroU32, panic, path::PathBuf};
 use vex_v5_serial::{
     Connection,
@@ -152,8 +153,7 @@ struct DownloadOpts {
     offline: bool,
 }
 
-#[tokio::main]
-async fn main() -> miette::Result<()> {
+fn main() -> miette::Result<()> {
     // Parse CLI arguments
     let Cargo::V5 { command, path } = Cargo::parse();
 
@@ -173,7 +173,7 @@ async fn main() -> miette::Result<()> {
         .start()
         .unwrap();
 
-    if let Err(err) = app(command, path, &mut logger).await {
+    if let Err(err) = smol::block_on(app(command, path, &mut logger)) {
         log::debug!("cargo-v5 is exiting due to an error: {err}");
         if let Ok(files) = logger.existing_log_files(&LogfileSelector::default()) {
             for file in files {
@@ -202,9 +202,14 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
         Command::Run(opts) => {
             let mut connection = upload(&path, opts, AfterUpload::Run).await?;
 
-            tokio::select! {
-                () = terminal(&mut connection, logger) => {}
-                _ = tokio::signal::ctrl_c() => {
+            let (s, ctrl_c) = async_channel::bounded(100);
+            _ = ctrlc::set_handler(move || {
+                s.try_send(()).ok();
+            });
+
+            futures_util::select! {
+                _ = terminal(&mut connection, logger).fuse() => {}
+                _ = ctrl_c.recv().fuse() => {
                     // Try to quit program.
                     //
                     // Don't bother waiting for a response, since the brain could

@@ -18,15 +18,17 @@ const SHA_FILE_NAME: &str = "cache-id.txt";
 
 #[cfg(feature = "fetch-template")]
 async fn get_current_sha() -> Result<String, CliError> {
-    let client = reqwest::Client::new();
-    let response = client
-        .get("https://api.github.com/repos/vexide/vexide-template/commits/main?per-page=1")
-        .header("User-Agent", "vexide/cargo-v5")
-        .send()
-        .await
-        .map_err(CliError::ReqwestError)?;
-    let response_text = response.text().await.map_err(CliError::ReqwestError)?;
-    match &serde_json::from_str::<Value>(&response_text).unwrap_or_default()["sha"] {
+    match &smol::unblock(|| {
+        ureq::get("https://api.github.com/repos/vexide/vexide-template/commits/main?per-page=1")
+            .header("User-Agent", "vexide/cargo-v5")
+            .call()
+    })
+    .await?
+    .body_mut()
+    .read_json::<Value>()
+    .map_err(CliError::HttpError)
+    .unwrap_or_default()["sha"]
+    {
         Value::String(str) => Ok(str.clone()),
         _ => Err(CliError::MalformedResponse),
     }
@@ -35,21 +37,18 @@ async fn get_current_sha() -> Result<String, CliError> {
 #[cfg(feature = "fetch-template")]
 async fn fetch_template() -> Result<Template, CliError> {
     debug!("Fetching template...");
-    let response =
-        reqwest::get("https://github.com/vexide/vexide-template/archive/refs/heads/main.tar.gz")
-            .await;
-    let response = match response {
-        Ok(response) => response,
-        Err(err) => return Err(CliError::ReqwestError(err)),
-    };
-    let bytes = response.bytes().await?;
-
+    let mut response = smol::unblock(|| {
+        ureq::get("https://github.com/vexide/vexide-template/archive/refs/heads/main.tar.gz").call()
+    })
+    .await?;
     debug!("Successfully fetched template.");
+
     let template = Template {
-        data: bytes.to_vec(),
+        data: response.body_mut().read_to_vec()?,
         sha: get_current_sha().await.ok(),
     };
     store_cached_template(template.clone()).await;
+
     Ok(template)
 }
 
@@ -59,8 +58,8 @@ async fn get_cached_template() -> Option<Template> {
         Some(dir) => {
             let cache_file = dir.with_file_name(TEMPLATE_FILE_NAME);
             let sha_file = dir.with_file_name(SHA_FILE_NAME);
-            let sha = tokio::fs::read_to_string(sha_file).await.ok();
-            let data = tokio::fs::read(cache_file).await.ok();
+            let sha = smol::fs::read_to_string(sha_file).await.ok();
+            let data = smol::fs::read(cache_file).await.ok();
             data.map(|data| Template { data, sha })
         }
         None => None,
@@ -72,9 +71,9 @@ async fn store_cached_template(template: Template) -> () {
     if let Some(dir) = cached_template_dir() {
         let cache_file = dir.with_file_name(TEMPLATE_FILE_NAME);
         let sha_file = dir.with_file_name(SHA_FILE_NAME);
-        let _ = tokio::fs::write(cache_file, &template.data).await;
+        let _ = smol::fs::write(cache_file, &template.data).await;
         if let Some(sha) = template.sha {
-            let _ = tokio::fs::write(sha_file, sha).await;
+            let _ = smol::fs::write(sha_file, sha).await;
         }
     }
 }
@@ -175,9 +174,9 @@ pub async fn new(
 
     debug!("Renaming project to {}...", &name);
     let manifest_path = dir.join("Cargo.toml");
-    let manifest = tokio::fs::read_to_string(&manifest_path).await?;
+    let manifest = smol::fs::read_to_string(&manifest_path).await?;
     let manifest = manifest.replace("vexide-template", &name);
-    tokio::fs::write(manifest_path, manifest).await?;
+    smol::fs::write(manifest_path, manifest).await?;
 
     info!("Successfully created new project at {dir:?}");
     Ok(())

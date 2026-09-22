@@ -1,12 +1,11 @@
-use cargo_metadata::{Message, PackageId};
 use clap::Args;
 use object::{Object, ObjectSection, ObjectSegment};
+use smol::{process::Command, unblock};
 use std::{
     ffi::OsStr,
     path::{Path, PathBuf},
     process::{Stdio, exit},
 };
-use tokio::{process::Command, task::block_in_place};
 
 use crate::errors::CliError;
 
@@ -39,7 +38,13 @@ async fn is_supported_release_channel(cargo_bin: &OsStr) -> bool {
 pub struct BuildOutput {
     pub elf_artifact: PathBuf,
     pub bin_artifact: PathBuf,
-    pub package_id: PackageId,
+    pub package_id: String,
+}
+
+#[derive(serde::Deserialize)]
+pub struct CargoArtifact {
+    pub package_id: String,
+    pub executable: Option<PathBuf>,
 }
 
 pub async fn build(path: &Path, opts: CargoOpts) -> Result<Option<BuildOutput>, CliError> {
@@ -71,14 +76,14 @@ pub async fn build(path: &Path, opts: CargoOpts) -> Result<Option<BuildOutput>, 
 
     build_cmd.args(opts.args);
 
-    block_in_place::<_, Result<Option<BuildOutput>, CliError>>(|| {
+    unblock::<Result<Option<BuildOutput>, CliError>, _>(move || {
         let mut out = build_cmd.spawn()?;
         let reader = std::io::BufReader::new(out.stdout.take().unwrap());
 
         let mut output = None;
 
-        for message in Message::parse_stream(reader) {
-            if let Message::CompilerArtifact(artifact) = message?
+        for message in serde_json::Deserializer::from_reader(reader).into_iter::<CargoArtifact>() {
+            if let Ok(artifact) = message
                 && let Some(elf_artifact_path) = artifact.executable
             {
                 let binary = objcopy(&std::fs::read(&elf_artifact_path)?)?;
@@ -86,11 +91,11 @@ pub async fn build(path: &Path, opts: CargoOpts) -> Result<Option<BuildOutput>, 
 
                 // Write the binary to a file.
                 std::fs::write(&binary_path, binary)?;
-                eprintln!("     \x1b[1;92mObjcopy\x1b[0m {binary_path}");
+                eprintln!("     \x1b[1;92mObjcopy\x1b[0m {}", binary_path.display());
 
                 output = Some(BuildOutput {
-                    bin_artifact: binary_path.into_std_path_buf(),
-                    elf_artifact: elf_artifact_path.into_std_path_buf(),
+                    bin_artifact: binary_path,
+                    elf_artifact: elf_artifact_path,
                     package_id: artifact.package_id,
                 });
             }
@@ -103,6 +108,7 @@ pub async fn build(path: &Path, opts: CargoOpts) -> Result<Option<BuildOutput>, 
 
         Ok(output)
     })
+    .await
 }
 
 /// Implementation of `objcopy -O binary`.

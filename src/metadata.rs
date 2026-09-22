@@ -1,4 +1,5 @@
-use cargo_metadata::Package;
+use std::path::PathBuf;
+
 use clap::ValueEnum;
 use serde_json::Value;
 
@@ -16,6 +17,21 @@ fn field_type(field: &Value) -> &'static str {
         Value::String(_) => "string",
         Value::Number(_) => "number",
     }
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct CargoMetadata {
+    pub packages: Vec<Package>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct Package {
+    pub name: String,
+    pub description: Option<String>,
+    pub id: String,
+    pub manifest_path: PathBuf,
+    #[serde(default)]
+    pub metadata: Value,
 }
 
 #[derive(Default, Debug, Clone, Copy, Eq, PartialEq)]

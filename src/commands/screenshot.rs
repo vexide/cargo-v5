@@ -7,7 +7,7 @@ use std::{
 use image::GenericImageView;
 use indicatif::{ProgressBar, ProgressStyle};
 use log::info;
-use tokio::sync::Mutex;
+use smol::lock::Mutex;
 use vex_v5_serial::{
     Connection,
     commands::file::download_file,

@@ -1,6 +1,6 @@
 use std::{path::PathBuf, str::FromStr};
 
-use tokio::io::{AsyncWriteExt, stdout};
+use smol::{Unblock, io::AsyncWriteExt};
 use vex_v5_serial::{
     commands::file::download_file,
     protocol::{
@@ -38,7 +38,7 @@ pub async fn cat(connection: &mut SerialConnection, file: PathBuf) -> Result<(),
     let file_name = FixedString::from_str(file.file_name().unwrap_or_default().to_str().unwrap())
         .map_err(|err| CliError::SerialError(SerialError::FixedStringSizeError(err)))?;
 
-    stdout()
+    Unblock::new(std::io::stdout())
         .write_all(
             &download_file(
                 connection,

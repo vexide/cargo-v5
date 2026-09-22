@@ -1,14 +1,13 @@
-use clap::{Args, ValueEnum};
+use clap::{Args, ValueEnum, builder::OsStr};
 use flate2::{Compression, GzBuilder};
 use indicatif::{MultiProgress, ProgressBar, ProgressState, ProgressStyle};
 use inquire::{
     CustomType,
     validator::{ErrorMessage, Validation},
 };
-use tokio::{fs::File, io::AsyncWriteExt, task::block_in_place};
+use smol::{fs::File, io::AsyncWriteExt};
 
 use std::{
-    ffi::OsStr,
     io::{ErrorKind, Write},
     path::{Path, PathBuf},
     time::Duration,
@@ -33,7 +32,7 @@ use vex_v5_serial::{
 use crate::{
     connection::{open_connection, switch_to_download_channel},
     errors::CliError,
-    metadata::Metadata,
+    metadata::{CargoMetadata, Metadata},
 };
 
 use super::build::{CargoOpts, build, objcopy};
@@ -284,7 +283,7 @@ description={}",
                 },
                 FileVendor::User,
                 &{
-                    let mut data = tokio::fs::read(path).await?;
+                    let mut data = smol::fs::read(path).await?;
 
                     if compress {
                         // <https://media1.tenor.com/m/cjSTJh8J3QcAAAAd/cat-cat-sink.gif>
@@ -325,7 +324,7 @@ description={}",
             // This base file MUST exist on both the brain and the local machine for a patch upload
             // to take place, but it obviously won't be on either if this is our first time
             // uploading, so this is optional and we'll handle that case in a sec.
-            let mut base = match tokio::fs::read(&path.with_file_name(&base_file_name)).await {
+            let mut base = match smol::fs::read(&path.with_file_name(&base_file_name)).await {
                 Ok(contents) => Some(contents),
                 Err(e) if e.kind() == ErrorKind::NotFound => None,
                 _ => None, // TODO: maybe throw an error here. that's better than a fallthrough.
@@ -387,7 +386,7 @@ description={}",
 
                 // The "new" file is the file that the user requested to upload, as opposed to the
                 // "base" file which is the program that the brain already has.
-                let new = tokio::fs::read(path).await?;
+                let new = smol::fs::read(path).await?;
                 let base = base.unwrap();
 
                 // Some sanity checks to make sure that the patch and base file fit inside the 2mb
@@ -460,7 +459,7 @@ description={}",
                     base_file_name.clone()
                 );
 
-                let mut base_data = tokio::fs::read(path).await?;
+                let mut base_data = smol::fs::read(path).await?;
 
                 if base_data.len() > DIFFERENTIAL_UPLOAD_MAX_SIZE {
                     return Err(CliError::ProgramTooLarge(base_data.len()));
@@ -646,7 +645,7 @@ pub async fn upload(
     after: AfterUpload,
 ) -> miette::Result<SerialConnection> {
     // Try to open a serialport in the background while we build.
-    let (mut connection, (artifact, package_id)) = tokio::try_join!(
+    let (mut connection, (artifact, package_id)) = futures_util::try_join!(
         async {
             let mut connection = open_connection().await?;
 
@@ -661,16 +660,15 @@ pub async fn upload(
             // The user either directly passed an file through the `--file` argument, or they didn't and we need to run
             // `cargo build`.
             Ok(if let Some(file) = file {
-                if file.extension() == Some(OsStr::new("bin")) {
+                if file.extension() == Some(&OsStr::from("bin")) {
                     (file, None)
                 } else {
                     // If a BIN file wasn't provided, we'll attempt to objcopy it as if it were an ELF.
-                    let binary =
-                        objcopy(&tokio::fs::read(&file).await.map_err(CliError::IoError)?)?;
+                    let binary = objcopy(&smol::fs::read(&file).await.map_err(CliError::IoError)?)?;
                     let binary_path = file.with_extension("bin");
 
                     // Write the binary to a file.
-                    tokio::fs::write(&binary_path, binary)
+                    smol::fs::write(&binary_path, binary)
                         .await
                         .map_err(CliError::IoError)?;
                     eprintln!("     \x1b[1;92mObjcopy\x1b[0m {}", binary_path.display());
@@ -687,16 +685,30 @@ pub async fn upload(
         }
     )?;
 
-    // We'll use `cargo-metadata` to parse the output of `cargo metadata` and find valid `Cargo.toml`
-    // files in the workspace directory.
-    let cargo_metadata =
-        block_in_place(|| cargo_metadata::MetadataCommand::new().no_deps().exec()).ok();
+    let cargo_metadata: Option<CargoMetadata> = {
+        let output = smol::process::Command::new("cargo")
+            .args(["metadata", "--format-version", "1", "--no-deps"])
+            .output()
+            .await
+            .map_err(|e| CliError::IoError(e))?;
+
+        if !output.status.success() {
+            return Err(CliError::CargoMetadata {
+                code: output.status.code(),
+            })?;
+        }
+
+        // TODO error handling
+        serde_json::from_slice(&output.stdout)
+    }
+    .ok();
 
     // Find which package we're being built from, if we're being built from a package at all.
     let package = cargo_metadata.and_then(|metadata| {
         package_id
             .as_ref()
             .and_then(|id| metadata.packages.iter().find(|p| &p.id == id))
+            // fallback to first if we don't have an id (e.g. using --file)
             .or_else(|| metadata.packages.first())
             .cloned()
     });

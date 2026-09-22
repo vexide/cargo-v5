@@ -52,7 +52,7 @@ impl FileOperationStore {
             return Ok(());
         }
 
-        let exists = tokio::fs::try_exists(&path).await.unwrap_or(true);
+        let exists = smol::fs::try_exists(&path).await.unwrap_or(true);
         if !exists {
             return Ok(());
         }
