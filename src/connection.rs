@@ -107,6 +107,10 @@ async fn is_connection_wireless(connection: &mut SerialConnection) -> Result<boo
 }
 
 pub async fn switch_to_download_channel(connection: &mut SerialConnection) -> Result<(), CliError> {
+    const RADIO_CHANNEL_STUCK: u8 = 9;
+    const RADIO_CHANNEL_DOWNLOAD: u8 = 5;
+    const RADIO_CHANNEL_BLUETOOTH: u8 = 245;
+
     let Ok(radio_status) = connection
         .handshake(RadioStatusPacket {}, Duration::from_secs(2), 3)
         .await?
@@ -123,11 +127,11 @@ pub async fn switch_to_download_channel(connection: &mut SerialConnection) -> Re
         // still trying to pair with the brain. In this state, the controller is stuck
         // and won't respond to FILE_CTRL packets, so we return an error and instruct the
         // user to power cycle.
-        9 => return Err(CliError::RadioChannelStuck),
+        RADIO_CHANNEL_STUCK => return Err(CliError::RadioChannelStuck),
 
         // 5: Already in download.
         // 245: Bluetooth (there is no download channel).
-        5 | 245 => return Ok(()),
+        RADIO_CHANNEL_DOWNLOAD | RADIO_CHANNEL_BLUETOOTH => return Ok(()),
 
         // Pit has a wide variety of channel identifiers that we really don't care about.
         _ => {}
