@@ -254,7 +254,9 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
                     devices
                         .into_iter()
                         .find(|device| {
-                            matches!(device, SerialDevice::Controller { system_port: _ })
+                            use vex_v5_serial::serial::VexSerialPortType;
+
+                            device.system_port().port_type == VexSerialPortType::Controller
                         })
                         .ok_or(CliError::NoController)?
                         .connect(Duration::from_secs(5))

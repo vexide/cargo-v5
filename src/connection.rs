@@ -12,10 +12,25 @@ use vex_v5_serial::{
             system::{RadioStatusPacket, SystemFlagsPacket},
         },
     },
-    serial::{self, SerialConnection, SerialDevice},
+    serial::{
+        self, AIM_USB_PID, AIR_CONTROLLER_USB_PID, AIR_HORNET_USB_PID, EXP_BRAIN_USB_PID,
+        SerialConnection, SerialDevice, V5_BRAIN_USB_PID, V5_CONTROLLER_USB_PID,
+    },
 };
 
 use crate::errors::CliError;
+
+fn pid_to_product_name(pid: u16) -> &'static str {
+    match pid {
+        V5_BRAIN_USB_PID => "V5 Brain",
+        EXP_BRAIN_USB_PID => "EXP Brain",
+        V5_CONTROLLER_USB_PID => "V5 Controller",
+        AIR_HORNET_USB_PID => "AIR Hornet",
+        AIR_CONTROLLER_USB_PID => "AIR Controller",
+        AIM_USB_PID => "AIM Coding Robot",
+        _ => "<unknown>",
+    }
+}
 
 pub async fn open_connection() -> Result<SerialConnection, CliError> {
     // Find all vex devices on serial ports.
@@ -37,20 +52,23 @@ pub async fn open_connection() -> Result<SerialConnection, CliError> {
 
             impl fmt::Display for SerialDeviceChoice {
                 fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                    match &self.inner {
-                        SerialDevice::Brain {
-                            user_port,
-                            system_port,
-                        } => {
-                            write!(f, "Brain on {user_port}, {system_port}")
-                        }
-                        SerialDevice::Controller { system_port } => {
-                            write!(f, "Controller on {system_port}")
-                        }
-                        SerialDevice::Unknown { system_port } => {
-                            write!(f, "<unknown> on {system_port}")
-                        }
+                    let serial::SerialPortType::UsbPort(usb_info) =
+                        &self.inner.system_port().port_info.port_type
+                    else {
+                        unreachable!(); // vex-v5-serial already filters for USB ports only.
+                    };
+
+                    write!(
+                        f,
+                        "{} on {}",
+                        pid_to_product_name(usb_info.pid),
+                        self.inner.system_port().port_info.port_name
+                    )?;
+                    if let Some(user) = self.inner.user_port() {
+                        write!(f, ", {}", user.port_info.port_name)?;
                     }
+
+                    Ok(())
                 }
             }
 

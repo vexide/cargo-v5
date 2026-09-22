@@ -19,7 +19,10 @@ use vex_v5_serial::{
     Connection,
     protocol::{
         cdc::{ProductType, SystemVersionPacket},
-        cdc2::controller::{CompetitionControlPacket, CompetitionMode, UserDataPacket},
+        cdc2::{
+            controller::{CompetitionControlPacket, CompetitionMode},
+            system::UserDataPacket,
+        },
     },
     serial::{SerialConnection, SerialError},
 };
