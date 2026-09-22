@@ -11,5 +11,6 @@ pub mod log;
 pub mod new;
 pub mod rm;
 pub mod screenshot;
+pub mod self_update;
 pub mod terminal;
 pub mod upload;

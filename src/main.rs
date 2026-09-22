@@ -9,11 +9,11 @@ use cargo_v5::{
         new::new,
         rm::rm,
         screenshot::screenshot,
+        self_update::{self, SelfUpdateMode},
         terminal::terminal,
         upload::{AfterUpload, UploadOpts, upload},
     },
     connection::{open_connection, switch_to_download_channel},
-    self_update::{self, SelfUpdateMode},
 };
 use chrono::Utc;
 use clap::{Args, Parser, Subcommand};
