@@ -1,3 +1,10 @@
+use std::{env, num::NonZeroU32, panic, path::PathBuf};
+
+use chrono::Utc;
+use clap::{Args, Parser, Subcommand};
+use flexi_logger::{AdaptiveFormat, FileSpec, LogfileSelector, LoggerHandle};
+use futures_util::FutureExt;
+
 use cargo_v5::{
     commands::{
         build::{CargoOpts, build},
@@ -15,11 +22,6 @@ use cargo_v5::{
     },
     connection::{open_connection, switch_to_download_channel},
 };
-use chrono::Utc;
-use clap::{Args, Parser, Subcommand};
-use flexi_logger::{AdaptiveFormat, FileSpec, LogfileSelector, LoggerHandle};
-use futures_util::FutureExt;
-use std::{env, num::NonZeroU32, panic, path::PathBuf};
 use vex_v5_serial::{
     Connection,
     protocol::{
@@ -32,7 +34,6 @@ use vex_v5_serial::{
 use cargo_v5::commands::field_control::run_field_control_tui;
 #[cfg(feature = "field-control")]
 use std::time::Duration;
-#[cfg(feature = "field-control")]
 
 cargo_subcommand_metadata::description!("Manage vexide projects");
 
@@ -147,7 +148,7 @@ enum Command {
 
 #[derive(Args, Debug)]
 struct DownloadOpts {
-    /// Do not download the latest template online.
+    /// Use a cached or hardcoded local version of vexide-template rather than fetching it online.
     #[cfg_attr(feature = "fetch-template", arg(long, default_value = "false"))]
     #[cfg_attr(not(feature = "fetch-template"), arg(skip = false))]
     offline: bool,
@@ -173,6 +174,7 @@ fn main() -> miette::Result<()> {
         .start()
         .unwrap();
 
+    // Spin up the actual CLI in a smol runtime so we can use vex-v5-serial
     if let Err(err) = smol::block_on(app(command, path, &mut logger)) {
         log::debug!("cargo-v5 is exiting due to an error: {err}");
         if let Ok(files) = logger.existing_log_files(&LogfileSelector::default()) {
@@ -182,6 +184,7 @@ fn main() -> miette::Result<()> {
         }
         return Err(err);
     }
+
     Ok(())
 }
 

@@ -1,3 +1,11 @@
+//! Workspace metadata schema & parsing
+//!
+//! This module deserializes metadata inside of Cargo.toml files for cargo-v5
+//! to read when determining uploading parameters. This data is parsed from the
+//! `cargo metadata` command's JSON output. Currently, we only bother with a subset
+//! of the scheme containing the data we actually use (otherwise we'd just be
+//! reinventing the `cargo-metadata` crate, which is massive).
+
 use std::path::PathBuf;
 
 use clap::ValueEnum;
@@ -19,11 +27,13 @@ fn field_type(field: &Value) -> &'static str {
     }
 }
 
+/// Root output of `cargo metadata`. We only care about enumerating packages.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct CargoMetadata {
     pub packages: Vec<Package>,
 }
 
+/// The stuff we actually care about from `cargo metadata`'s package entries.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct Package {
     pub name: String,
@@ -34,6 +44,7 @@ pub struct Package {
     pub metadata: Value,
 }
 
+/// The stuff specified in a Cargo.toml's `[package.metadata.v5]` fields.
 #[derive(Default, Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Metadata {
     pub slot: Option<u8>,
