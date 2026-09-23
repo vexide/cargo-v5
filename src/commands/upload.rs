@@ -30,6 +30,7 @@ use vex_v5_serial::{
 };
 
 use crate::{
+    commands::build::cargo_bin,
     connection::{open_connection, switch_to_download_channel},
     errors::CliError,
     metadata::{CargoMetadata, Metadata},
@@ -499,6 +500,7 @@ description={}",
                         base_file
                             .write_all(&VEX_CRC32.checksum(&base_data).to_le_bytes())
                             .await?;
+                        base_file.flush().await?;
 
                         &base_data
                     },
@@ -686,7 +688,7 @@ pub async fn upload(
     )?;
 
     let cargo_metadata: Option<CargoMetadata> = {
-        let output = smol::process::Command::new("cargo")
+        let output = smol::process::Command::new(cargo_bin())
             .args(["metadata", "--format-version", "1", "--no-deps"])
             .output()
             .await

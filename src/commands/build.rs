@@ -7,10 +7,7 @@ use std::{
     process::{Stdio, exit},
 };
 
-use crate::{
-    errors::CliError,
-    metadata::{CargoMetadata, Metadata},
-};
+use crate::errors::CliError;
 
 /// Common Cargo options to forward.
 #[derive(Args, Debug)]
