@@ -20,6 +20,7 @@ use cargo_v5::{
         upload::{AfterUpload, UploadOpts, upload},
     },
     connection::{open_connection, switch_to_download_channel},
+    updater,
 };
 use vex_v5_serial::{
     Connection,
