@@ -14,89 +14,58 @@ homepage = "https://vexide.dev"
 repository = "https://github.com/vexide/cargo-v5"
 rust-version = "1.88" # let chains
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 cargo-subcommand-metadata = "0.1.0"
-cargo_metadata = "0.22.0"
-clap = { version = "4.5.40", features = ["derive"], optional = true }
-serde_json = "1.0.140"
-inquire = { version = "0.7.5", default-features = false, features = ["crossterm"] }
-indicatif = "0.18.0"
-vex-v5-serial = { version = "0.5.2", default-features = false, features = [
-    "serial",
-] }
-tokio = { version = "1.45.1", features = ["fs", "process", "io-util", "io-std", "macros", "rt-multi-thread", "signal"] }
-miette = { version = "7.6.0", features = ["fancy"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 thiserror = "2"
+smol = "2.0.2"
+clap = { version = "4.5.40", features = ["derive"] }
+inquire = { version = "0.7.5", default-features = false, features = [
+    "crossterm",
+] }
+indicatif = "0.18.0"
+vex-v5-serial = { git = "https://github.com/vexide/vex-v5-serial.git", default-features = false, features = [
+    "serial",
+    "file-commands",
+    "screen-commands",
+] }
+miette = { version = "7.6.0", features = ["fancy-no-backtrace"] }
 object = { version = "0.37.1", default-features = false, features = [
     "std",
     "read_core",
     "elf",
 ] }
-
+bidiff = "1.0.0"
+futures-util = "0.3"
+ctrlc = "3.5.2"
+async-channel = "2.5.0"
+flate2 = "1.1.2"
+tar = "0.4.44"
+flexi_logger = "0.31.4"
+log = "0.4.28"
+humansize = "2.1.3"
+tabwriter = { version = "1.4.1", features = ["ansi_formatting"] }
+chrono = { version = "0.4", default-features = false }
+image = { version = "0.25.8", default-features = false, features = ["png"] }
 ratatui = { version = "0.29.0", optional = true }
 crossterm = { version = "0.29.0", optional = true }
 tui-term = { version = "0.2.0", optional = true }
 directories = { version = "6.0.0", optional = true }
-
-reqwest = { version = "0.12.23", optional = true, default-features = false, features = [
-    "rustls-tls",
-] }
-flate2 = "1.1.2"
-tar = { version = "0.4.44", default-features = false }
-flexi_logger = { version = "0.31.4", default-features = false, features = [
-    "colors",
-] }
-log = "0.4.28"
-chrono = { version = "0.4.41", default-features = false }
-tabwriter = { version = "1.4.1", features = ["ansi_formatting"] }
-humansize = "2.1.3"
-image = { version = "0.25.8", default-features = false, features = ["png"] }
-bidiff = "1.0.0"
-axoupdater = { version = "0.9.0", default-features = false, features = [
+ureq = { version = "3.4.2", features = ["json"], optional = true }
+axoupdater = { version = "0.9.0", default-features = false, optional = true, features = [
     "github_releases",
 ] }
-owo-colors = "4.2.2"
-supports-color = "3.0.2"
-toml_edit = "0.23.5"
-fs-err = { version = "3.1.2", features = ["tokio"] }
-diff = "0.1.13"
-semver = "1.0.27"
-ra_ap_syntax = "0.0.305"
 self-replace = "1.5.0"
 
-[dependencies.syntect]
-version = "5.3.0"
-default-features = false
-features = [
-    "parsing",
-    "default-themes",
-    "regex-onig",
-    "dump-load",
-]
-
-[build-dependencies.syntect]
-version = "5.3.0"
-default-features = false
-features = [
-    "default-syntaxes",
-    "dump-create",
-    "parsing",
-    "yaml-load",
-    "regex-onig",
-]
-
 [features]
-default = ["clap", "field-control", "fetch-template"]
-clap = ["dep:clap"]
-
+default = ["fetch-template"]
 field-control = ["dep:ratatui", "dep:crossterm", "dep:tui-term"]
-fetch-template = ["dep:reqwest", "dep:directories"]
+fetch-template = ["dep:ureq", "dep:directories"]
+packaged = ["axoupdater"]
 
 [[bin]]
 name = "cargo-v5"
-required-features = ["clap"]
 
 # The profile that 'dist' will build with
 [profile.dist]

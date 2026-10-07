@@ -2,9 +2,7 @@ use std::io::{self, Write};
 use std::time::Duration;
 
 use vex_v5_serial::{
-    Connection,
-    protocol::cdc2::system::{DeviceStatusPacket, DeviceStatusReplyPacket},
-    serial::SerialConnection,
+    Connection, protocol::cdc2::system::DeviceStatusPacket, serial::SerialConnection,
 };
 
 use tabwriter::TabWriter;
@@ -15,13 +13,9 @@ pub async fn devices(connection: &mut SerialConnection) -> Result<(), CliError> 
     let mut tw = TabWriter::new(io::stdout());
 
     let status = connection
-        .handshake::<DeviceStatusReplyPacket>(
-            Duration::from_millis(500),
-            10,
-            DeviceStatusPacket::new(()),
-        )
-        .await?
-        .payload?;
+        .handshake(DeviceStatusPacket {}, Duration::from_millis(500), 10)
+        .await??;
+
     writeln!(
         &mut tw,
         "\x1B[1mPort\tType\tStatus\tFirmware\tBootloader\x1B[0m"

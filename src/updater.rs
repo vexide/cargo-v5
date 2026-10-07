@@ -1,16 +1,18 @@
+use miette::Diagnostic;
+use smol::process::Command;
 use std::{
     borrow::Cow,
     env::{self, consts::EXE_SUFFIX, home_dir},
     path::{Path, PathBuf},
     sync::LazyLock,
 };
-
-use axoupdater::{AxoUpdater, AxoupdateError};
-use miette::Diagnostic;
 use thiserror::Error;
-use tokio::{process::Command, sync::Mutex, task::block_in_place};
 
-use crate::fs;
+#[cfg(feature = "packaged")]
+use {
+    axoupdater::{AxoUpdater, AxoupdateError},
+    std::sync::Mutex,
+};
 
 #[derive(Debug, Error, Diagnostic)]
 pub enum SelfUpdateError {
@@ -21,20 +23,24 @@ pub enum SelfUpdateError {
         advice: &'static str,
     },
 
+    #[cfg(feature = "packaged")]
     #[error("Self-update failed")]
     #[diagnostic(code(cargo_v5::self_update::failure))]
     Axoupdate(#[from] AxoupdateError),
+
     #[error("Failed to run the update command")]
     #[diagnostic(code(cargo_v5::self_update::io))]
     Io(#[from] std::io::Error),
 }
 
+#[cfg(feature = "packaged")]
 static AXOUPDATER: LazyLock<Mutex<AxoUpdater>> =
     LazyLock::new(|| Mutex::new(AxoUpdater::new_for("cargo-v5")));
 pub static CURRENT_MODE: LazyLock<SelfUpdateMode> = LazyLock::new(SelfUpdateMode::current);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SelfUpdateMode {
+    #[cfg(feature = "packaged")]
     Axoupdate,
     Cargo,
     Unmanaged(Option<ExternalUpdateManager>),
@@ -64,10 +70,14 @@ fn exe_name<'a>(string: impl Into<Cow<'a, str>>) -> Cow<'a, str> {
 
 impl SelfUpdateMode {
     pub fn current() -> Self {
-        // Check if installed by shell script
-        let mut updater = block_in_place(|| AXOUPDATER.blocking_lock());
-        if updater.load_receipt().is_ok() {
-            return Self::Axoupdate;
+        #[cfg(feature = "packaged")]
+        {
+            // Check if installed by shell script
+            // NOTE: this is blocking, but we don't gaf since it won't be contended
+            let mut updater = AXOUPDATER.lock().unwrap();
+            if updater.load_receipt().is_ok() {
+                return Self::Axoupdate;
+            }
         }
 
         let this_arg = std::env::args().next().unwrap_or_default();
@@ -104,10 +114,12 @@ pub async fn self_update() -> Result<(), SelfUpdateError> {
     let mode = *CURRENT_MODE;
 
     match mode {
+        #[cfg(feature = "packaged")]
         SelfUpdateMode::Axoupdate => {
             // This will redownload the installer shell script and run it again
 
-            let mut updater = AXOUPDATER.lock().await;
+            // NOTE: this is blocking, but we don't gaf since it won't be contended
+            let mut updater = AXOUPDATER.lock().unwrap();
             updater.run().await?;
             Ok(())
         }
@@ -132,9 +144,9 @@ pub async fn self_update() -> Result<(), SelfUpdateError> {
             }
             command.arg("cargo-v5");
 
-            eprintln!("> {:?}", command.as_std());
+            eprintln!("> {:?}", command);
 
-            command.spawn()?.wait().await?;
+            command.spawn()?.output().await?;
 
             Ok(())
         }
@@ -151,7 +163,15 @@ pub async fn self_uninstall(skip_prompts: bool) -> Result<(), SelfUpdateError> {
     let mode = *CURRENT_MODE;
 
     match mode {
-        SelfUpdateMode::Axoupdate | SelfUpdateMode::Cargo => {
+        SelfUpdateMode::Unmanaged(manager) => {
+            let advice = if manager == Some(ExternalUpdateManager::Homebrew) {
+                "run `brew uninstall cargo-v5`"
+            } else {
+                "uninstall cargo-v5 with your package manager or manually remove the executable"
+            };
+            Err(SelfUpdateError::SelfUpdateUnavailable { advice })
+        }
+        _ => {
             let are_you_sure = skip_prompts
                 || inquire::Confirm::new("Really uninstall cargo-v5?")
                     .with_default(true)
@@ -172,7 +192,7 @@ pub async fn self_uninstall(skip_prompts: bool) -> Result<(), SelfUpdateError> {
             };
 
             eprintln!("Removing receipt... ({})", receipt.display());
-            _ = fs::remove_file(receipt).await;
+            _ = smol::fs::remove_file(receipt).await;
 
             eprintln!("Uninstalling cargo-v5...");
             self_replace::self_delete()?;
@@ -180,14 +200,6 @@ pub async fn self_uninstall(skip_prompts: bool) -> Result<(), SelfUpdateError> {
             eprintln!("All done! Thanks for using cargo-v5.");
 
             Ok(())
-        }
-        SelfUpdateMode::Unmanaged(manager) => {
-            let advice = if manager == Some(ExternalUpdateManager::Homebrew) {
-                "run `brew uninstall cargo-v5`"
-            } else {
-                "uninstall cargo-v5 with your package manager or manually remove the executable"
-            };
-            Err(SelfUpdateError::SelfUpdateUnavailable { advice })
         }
     }
 }

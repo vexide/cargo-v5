@@ -1,3 +1,10 @@
+use std::{env, num::NonZeroU32, panic, path::PathBuf};
+
+use chrono::Utc;
+use clap::{Args, Parser, Subcommand};
+use flexi_logger::{AdaptiveFormat, FileSpec, LogfileSelector, LoggerHandle};
+use futures_util::FutureExt;
+
 use cargo_v5::{
     commands::{
         build::{CargoOpts, build},
@@ -10,31 +17,21 @@ use cargo_v5::{
         rm::rm,
         screenshot::screenshot,
         terminal::terminal,
-        migrate,
         upload::{AfterUpload, UploadOpts, upload},
     },
     connection::{open_connection, switch_to_download_channel},
-    errors::CliError,
-    self_update::{self, SelfUpdateMode},
+    updater,
 };
-use chrono::Utc;
-use clap::{Args, Parser, Subcommand};
-use flexi_logger::{AdaptiveFormat, FileSpec, LogfileSelector, LoggerHandle};
-use std::{env, num::NonZeroU32, panic, path::PathBuf};
 use vex_v5_serial::{
     Connection,
     protocol::{
         FixedString,
-        cdc2::file::{FileLoadAction, FileLoadActionPacket, FileLoadActionPayload, FileVendor},
+        cdc2::file::{FileLoadAction, FileLoadActionPacket, FileVendor},
     },
-    serial::{self, SerialConnection, SerialDevice},
 };
 
 #[cfg(feature = "field-control")]
-use cargo_v5::commands::field_control::run_field_control_tui;
-#[cfg(feature = "field-control")]
-use std::time::Duration;
-#[cfg(feature = "field-control")]
+use {cargo_v5::commands::field_control::run_field_control_tui, std::time::Duration};
 
 cargo_subcommand_metadata::description!("Manage vexide projects");
 
@@ -114,14 +111,10 @@ enum Command {
     Dir,
 
     /// Read a file from flash, then write its contents to stdout.
-    Cat {
-        file: PathBuf,
-    },
+    Cat { file: PathBuf },
 
     /// Erase a file from flash.
-    Rm {
-        file: PathBuf,
-    },
+    Rm { file: PathBuf },
 
     /// Read a Brain's event log.
     Log {
@@ -147,31 +140,24 @@ enum Command {
     FieldControl,
 
     /// Update cargo-v5 to the latest version.
-    #[clap(hide = matches!(*self_update::CURRENT_MODE, SelfUpdateMode::Unmanaged(_)))]
     SelfUpdate,
 
-    /// Uninstall cargo-v5.
-    #[clap(hide = matches!(*self_update::CURRENT_MODE, SelfUpdateMode::Unmanaged(_)))]
     SelfUninstall {
         /// Skip the "are you sure" prompt.
         #[arg(long, short)]
         yes: bool,
     },
-
-    /// Migrate an older project to vexide 0.8.0.
-    Migrate,
 }
 
 #[derive(Args, Debug)]
 struct DownloadOpts {
-    /// Do not download the latest template online.
+    /// Use a cached or hardcoded local version of vexide-template rather than fetching it online.
     #[cfg_attr(feature = "fetch-template", arg(long, default_value = "false"))]
     #[cfg_attr(not(feature = "fetch-template"), arg(skip = false))]
     offline: bool,
 }
 
-#[tokio::main]
-async fn main() -> miette::Result<()> {
+fn main() -> miette::Result<()> {
     // Parse CLI arguments
     let Cargo::V5 { command, path } = Cargo::parse();
 
@@ -191,7 +177,8 @@ async fn main() -> miette::Result<()> {
         .start()
         .unwrap();
 
-    if let Err(err) = app(command, path, &mut logger).await {
+    // Spin up the actual CLI in a smol runtime so we can use vex-v5-serial
+    if let Err(err) = smol::block_on(app(command, path, &mut logger)) {
         log::debug!("cargo-v5 is exiting due to an error: {err}");
         if let Ok(files) = logger.existing_log_files(&LogfileSelector::default()) {
             for file in files {
@@ -200,6 +187,7 @@ async fn main() -> miette::Result<()> {
         }
         return Err(err);
     }
+
     Ok(())
 }
 
@@ -220,19 +208,24 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
         Command::Run(opts) => {
             let mut connection = upload(&path, opts, AfterUpload::Run).await?;
 
-            tokio::select! {
-                () = terminal(&mut connection, logger) => {}
-                _ = tokio::signal::ctrl_c() => {
+            let (s, ctrl_c) = async_channel::bounded(100);
+            _ = ctrlc::set_handler(move || {
+                s.try_send(()).ok();
+            });
+
+            futures_util::select! {
+                _ = terminal(&mut connection, logger).fuse() => {}
+                _ = ctrl_c.recv().fuse() => {
                     // Try to quit program.
                     //
                     // Don't bother waiting for a response, since the brain could
                     // be locked up and prevent the program from exiting.
                     _ = connection.send(
-                        FileLoadActionPacket::new(FileLoadActionPayload {
+                        FileLoadActionPacket {
                             vendor: FileVendor::User,
                             action: FileLoadAction::Stop,
                             file_name: FixedString::default(),
-                        })
+                        }
                     ).await;
 
                     std::process::exit(0);
@@ -258,23 +251,24 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
         }
         #[cfg(feature = "field-control")]
         Command::FieldControl => {
+            use cargo_v5::errors::CliError;
+            use vex_v5_serial::serial;
+
             // Not using open_connection since we need to filter for controllers only here.
             let mut connection = {
                 let devices = serial::find_devices().map_err(CliError::SerialError)?;
 
-                tokio::task::spawn_blocking::<_, Result<SerialConnection, CliError>>(move || {
-                    devices
-                        .into_iter()
-                        .find(|device| {
-                            matches!(device, SerialDevice::Controller { system_port: _ })
-                        })
-                        .ok_or(CliError::NoController)?
-                        .connect(Duration::from_secs(5))
-                        .map_err(CliError::SerialError)
-                })
-                .await
-                .unwrap()?
-            };
+                devices
+                    .into_iter()
+                    .find(|device| {
+                        use vex_v5_serial::serial::VexSerialPortType;
+
+                        device.system_port().port_type == VexSerialPortType::Controller
+                    })
+                    .ok_or(CliError::NoController)?
+                    .connect(Duration::from_secs(5))
+                    .map_err(CliError::SerialError)
+            }?;
 
             run_field_control_tui(&mut connection).await?;
         }
@@ -287,15 +281,8 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
         Command::Init { download_opts } => {
             new(path, None, !download_opts.offline).await?;
         }
-        Command::SelfUpdate => {
-            self_update::self_update().await?;
-        }
-        Command::SelfUninstall { yes } => {
-            self_update::self_uninstall(yes).await?;
-        }
-        Command::Migrate => {
-            migrate::migrate_workspace(&path).await?;
-        }
+        Command::SelfUpdate => updater::self_update().await?,
+        Command::SelfUninstall { yes } => updater::self_uninstall(yes).await?,
     }
 
     Ok(())

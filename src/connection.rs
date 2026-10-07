@@ -1,24 +1,36 @@
 use core::fmt;
 use inquire::Select;
 use log::info;
+use smol::{Timer, future::FutureExt};
 use std::time::Duration;
-use tokio::{task::spawn_blocking, time::sleep};
 use vex_v5_serial::{
     Connection,
     protocol::{
-        cdc::{ProductType, SystemVersionPacket, SystemVersionReplyPacket},
+        cdc::{ProductType, SystemVersionPacket},
         cdc2::{
-            file::{FileControlGroup, FileControlPacket, FileControlReplyPacket, RadioChannel},
-            system::{
-                RadioStatusPacket, RadioStatusReplyPacket, SystemFlagsPacket,
-                SystemFlagsReplyPacket,
-            },
+            file::{FileControlGroup, FileControlPacket, RadioChannel},
+            system::{RadioStatusPacket, SystemFlagsPacket},
         },
     },
-    serial::{self, SerialConnection, SerialDevice},
+    serial::{
+        self, AIM_USB_PID, AIR_CONTROLLER_USB_PID, AIR_HORNET_USB_PID, EXP_BRAIN_USB_PID,
+        SerialConnection, SerialDevice, V5_BRAIN_USB_PID, V5_CONTROLLER_USB_PID,
+    },
 };
 
 use crate::errors::CliError;
+
+fn pid_to_product_name(pid: u16) -> &'static str {
+    match pid {
+        V5_BRAIN_USB_PID => "V5 Brain",
+        EXP_BRAIN_USB_PID => "EXP Brain",
+        V5_CONTROLLER_USB_PID => "V5 Controller",
+        AIR_HORNET_USB_PID => "AIR Hornet",
+        AIR_CONTROLLER_USB_PID => "AIR Controller",
+        AIM_USB_PID => "AIM Coding Robot",
+        _ => "<unknown>",
+    }
+}
 
 pub async fn open_connection() -> Result<SerialConnection, CliError> {
     // Find all vex devices on serial ports.
@@ -40,20 +52,23 @@ pub async fn open_connection() -> Result<SerialConnection, CliError> {
 
             impl fmt::Display for SerialDeviceChoice {
                 fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                    match &self.inner {
-                        SerialDevice::Brain {
-                            user_port,
-                            system_port,
-                        } => {
-                            write!(f, "Brain on {user_port}, {system_port}")
-                        }
-                        SerialDevice::Controller { system_port } => {
-                            write!(f, "Controller on {system_port}")
-                        }
-                        SerialDevice::Unknown { system_port } => {
-                            write!(f, "<unknown> on {system_port}")
-                        }
+                    let serial::SerialPortType::UsbPort(usb_info) =
+                        &self.inner.system_port().port_info.port_type
+                    else {
+                        unreachable!(); // vex-v5-serial already filters for USB ports only.
+                    };
+
+                    write!(
+                        f,
+                        "{} on {}",
+                        pid_to_product_name(usb_info.pid),
+                        self.inner.system_port().port_info.port_name
+                    )?;
+                    if let Some(user) = self.inner.user_port() {
+                        write!(f, ", {}", user.port_info.port_name)?;
                     }
+
+                    Ok(())
                 }
             }
 
@@ -70,42 +85,38 @@ pub async fn open_connection() -> Result<SerialConnection, CliError> {
     };
 
     // Open a connection to the device.
-    spawn_blocking(move || {
-        device
-            .connect(Duration::from_secs(5))
-            .map_err(CliError::SerialError)
-    })
-    .await
-    .unwrap()
+    device
+        .connect(Duration::from_secs(5))
+        .map_err(CliError::SerialError)
 }
 
 async fn is_connection_wireless(connection: &mut SerialConnection) -> Result<bool, CliError> {
     let version = connection
-        .handshake::<SystemVersionReplyPacket>(
-            Duration::from_millis(500),
-            1,
-            SystemVersionPacket::new(()),
-        )
+        .handshake(SystemVersionPacket {}, Duration::from_millis(500), 1)
         .await?;
     let system_flags = connection
-        .handshake::<SystemFlagsReplyPacket>(
-            Duration::from_millis(500),
-            1,
-            SystemFlagsPacket::new(()),
-        )
-        .await?
-        .payload?;
-    let controller = matches!(version.payload.product_type, ProductType::Controller);
+        .handshake(SystemFlagsPacket {}, Duration::from_millis(500), 1)
+        .await??;
+    let is_controller = matches!(
+        version.product_type,
+        ProductType::V5Controller | ProductType::ExpController | ProductType::ExpControllerVariant // | ProductType::AirController
+    );
 
     let tethered = system_flags.flags & (1 << 8) != 0;
-    Ok(!tethered && controller)
+    Ok(!tethered && is_controller)
 }
 
 pub async fn switch_to_download_channel(connection: &mut SerialConnection) -> Result<(), CliError> {
-    let radio_status = connection
-        .handshake::<RadioStatusReplyPacket>(Duration::from_secs(2), 3, RadioStatusPacket::new(()))
+    const RADIO_CHANNEL_STUCK: u8 = 9;
+    const RADIO_CHANNEL_DOWNLOAD: u8 = 5;
+    const RADIO_CHANNEL_BLUETOOTH: u8 = 245;
+
+    let Ok(radio_status) = connection
+        .handshake(RadioStatusPacket {}, Duration::from_secs(2), 3)
         .await?
-        .payload?;
+    else {
+        return Ok(()); // likely unsupported
+    };
 
     log::debug!("Radio channel: {}", radio_status.channel);
 
@@ -116,11 +127,11 @@ pub async fn switch_to_download_channel(connection: &mut SerialConnection) -> Re
         // still trying to pair with the brain. In this state, the controller is stuck
         // and won't respond to FILE_CTRL packets, so we return an error and instruct the
         // user to power cycle.
-        9 => return Err(CliError::RadioChannelStuck),
+        RADIO_CHANNEL_STUCK => return Err(CliError::RadioChannelStuck),
 
         // 5: Already in download.
         // 245: Bluetooth (there is no download channel).
-        5 | 245 => return Ok(()),
+        RADIO_CHANNEL_DOWNLOAD | RADIO_CHANNEL_BLUETOOTH => return Ok(()),
 
         // Pit has a wide variety of channel identifiers that we really don't care about.
         _ => {}
@@ -131,31 +142,32 @@ pub async fn switch_to_download_channel(connection: &mut SerialConnection) -> Re
 
         // Tell the controller to switch to the download channel.
         connection
-            .handshake::<FileControlReplyPacket>(
+            .handshake(
+                FileControlPacket {
+                    group: FileControlGroup::Radio(RadioChannel::Download),
+                },
                 Duration::from_secs(2),
                 3,
-                FileControlPacket::new(FileControlGroup::Radio(RadioChannel::Download)),
             )
-            .await?
-            .payload?;
+            .await??;
 
         // Wait for the controller to disconnect by spamming it with a packet and waiting until that packet
         // doesn't go through. This indicates that the radio has actually started to switch channels.
-        tokio::time::timeout(Duration::from_secs(8), async {
+        async {
             while connection
-                .handshake::<RadioStatusReplyPacket>(
-                    Duration::from_millis(250),
-                    0,
-                    RadioStatusPacket::new(()),
-                )
+                .handshake(RadioStatusPacket {}, Duration::from_millis(250), 0)
                 .await
                 .is_ok()
             {
-                sleep(Duration::from_millis(250)).await;
+                Timer::after(Duration::from_millis(250)).await;
             }
+            Ok(())
+        }
+        .or(async {
+            Timer::after(Duration::from_secs(8)).await;
+            Err(CliError::RadioChannelReconnectTimeout)
         })
-        .await
-        .map_err(|_| CliError::RadioChannelReconnectTimeout)?;
+        .await?;
 
         // Poll the connection of the controller to ensure the radio has switched channels by sending
         // test packets every 250ms for 8 seconds until we get a successful reply, indicating that the
@@ -163,20 +175,16 @@ pub async fn switch_to_download_channel(connection: &mut SerialConnection) -> Re
         //
         // If the controller doesn't a reply within 8 seconds, it's probably frozen and hasn't reconnected
         // correctly.
-        tokio::time::timeout(Duration::from_secs(8), async {
+        async {
             loop {
                 let Ok(pkt) = connection
-                    .handshake::<RadioStatusReplyPacket>(
-                        Duration::from_millis(250),
-                        0,
-                        RadioStatusPacket::new(()),
-                    )
+                    .handshake(RadioStatusPacket {}, Duration::from_millis(250), 0)
                     .await
                 else {
                     continue;
                 };
 
-                match pkt.payload {
+                match pkt {
                     // We have successfully switched to the download channel.
                     Ok(payload) if payload.channel == 5 => return Ok(()),
 
@@ -185,14 +193,17 @@ pub async fn switch_to_download_channel(connection: &mut SerialConnection) -> Re
 
                     // Still reconnecting.
                     _ => {
-                        sleep(Duration::from_millis(250)).await;
+                        Timer::after(Duration::from_millis(250)).await;
                         continue;
                     }
                 }
             }
+        }
+        .or(async {
+            Timer::after(Duration::from_secs(8)).await;
+            Err(CliError::RadioChannelReconnectTimeout)
         })
-        .await
-        .map_err(|_| CliError::RadioChannelReconnectTimeout)??;
+        .await?;
     }
 
     Ok(())

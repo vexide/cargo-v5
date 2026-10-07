@@ -1,9 +1,8 @@
 use std::{path::PathBuf, str::FromStr};
 
-use tokio::io::{AsyncWriteExt, stdout};
+use smol::{Unblock, io::AsyncWriteExt};
 use vex_v5_serial::{
-    Connection,
-    commands::file::DownloadFile,
+    commands::file::download_file,
     protocol::{
         FixedString,
         cdc2::file::{FileTransferTarget, FileVendor},
@@ -39,21 +38,21 @@ pub async fn cat(connection: &mut SerialConnection, file: PathBuf) -> Result<(),
     let file_name = FixedString::from_str(file.file_name().unwrap_or_default().to_str().unwrap())
         .map_err(|err| CliError::SerialError(SerialError::FixedStringSizeError(err)))?;
 
-    stdout()
+    Unblock::new(std::io::stdout())
         .write_all(
-            &connection
-                .execute_command(DownloadFile {
-                    file_name,
-                    // This field just sets a cap on how many chunks the file transfer will
-                    // return, so we just use the largest possible transfer size rather than
-                    // the exact size of the file.
-                    size: u32::MAX,
-                    vendor,
-                    target: FileTransferTarget::Qspi,
-                    address: 0,
-                    progress_callback: None,
-                })
-                .await?,
+            &download_file(
+                connection,
+                file_name,
+                // This field just sets a cap on how many chunks the file transfer will
+                // return, so we just use the largest possible transfer size rather than
+                // the exact size of the file.
+                u32::MAX,
+                vendor,
+                FileTransferTarget::Qspi,
+                0x0,
+                None::<fn(f32)>,
+            )
+            .await?,
         )
         .await?;
 

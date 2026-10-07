@@ -7,8 +7,6 @@ use miette::Diagnostic;
 use thiserror::Error;
 use vex_v5_serial::protocol::{FixedStringSizeError, cdc2::Cdc2Ack};
 
-use crate::commands::migrate::MigrateError;
-
 #[non_exhaustive]
 #[derive(Error, Diagnostic, Debug)]
 pub enum CliError {
@@ -24,14 +22,10 @@ pub enum CliError {
     #[diagnostic(code(cargo_v5::cdc2_nack))]
     Nack(#[from] Cdc2Ack),
 
-    #[error(transparent)]
-    #[diagnostic(transparent)]
-    MigrateError(#[from] MigrateError),
-
     #[cfg(feature = "fetch-template")]
     #[error(transparent)]
     #[diagnostic(code(cargo_v5::bad_response))]
-    ReqwestError(#[from] reqwest::Error),
+    HttpError(#[from] ureq::Error),
 
     #[cfg(feature = "fetch-template")]
     #[error("Received a malformed HTTP response")]
@@ -109,6 +103,15 @@ pub enum CliError {
         )
     )]
     NoArtifact,
+
+    #[error("Failed to execute `cargo metadata` on project (exit code {code:?}).")]
+    #[diagnostic(
+        code(cargo_v5::cargo_metadata),
+        help(
+            "cargo-v5 uses cargo's `cargo metadata` command to identify which project is being built, but it was unable to run this command successfully. Do you have cargo installed?"
+        )
+    )]
+    CargoMetadata { code: Option<i32> },
 
     #[error("No V5 devices found.")]
     #[diagnostic(
