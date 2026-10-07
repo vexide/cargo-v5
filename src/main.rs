@@ -29,8 +29,6 @@ use vex_v5_serial::{
     },
 };
 
-pub mod updater;
-
 #[cfg(feature = "field-control")]
 use {cargo_v5::commands::field_control::run_field_control_tui, std::time::Duration};
 
