@@ -16,7 +16,6 @@ use cargo_v5::{
         new::new,
         rm::rm,
         screenshot::screenshot,
-        self_update::{self, SelfUpdateMode},
         terminal::terminal,
         upload::{AfterUpload, UploadOpts, upload},
     },
@@ -30,10 +29,10 @@ use vex_v5_serial::{
     },
 };
 
+pub mod updater;
+
 #[cfg(feature = "field-control")]
-use cargo_v5::commands::field_control::run_field_control_tui;
-#[cfg(feature = "field-control")]
-use std::time::Duration;
+use {cargo_v5::commands::field_control::run_field_control_tui, std::time::Duration};
 
 cargo_subcommand_metadata::description!("Manage vexide projects");
 
@@ -142,8 +141,13 @@ enum Command {
     FieldControl,
 
     /// Update cargo-v5 to the latest version.
-    #[clap(hide = matches!(*self_update::CURRENT_MODE, SelfUpdateMode::Unmanaged(_)))]
     SelfUpdate,
+
+    SelfUninstall {
+        /// Skip the "are you sure" prompt.
+        #[arg(long, short)]
+        yes: bool,
+    },
 }
 
 #[derive(Args, Debug)]
@@ -279,9 +283,8 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
         Command::Init { download_opts } => {
             new(path, None, !download_opts.offline).await?;
         }
-        Command::SelfUpdate => {
-            self_update::self_update().await?;
-        }
+        Command::SelfUpdate => updater::self_update().await?,
+        Command::SelfUninstall { yes } => updater::self_uninstall(yes).await?,
     }
 
     Ok(())

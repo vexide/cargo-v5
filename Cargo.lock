@@ -419,6 +419,7 @@ dependencies = [
  "miette",
  "object",
  "ratatui",
+ "self-replace",
  "serde",
  "serde_json",
  "smol",

@@ -1,45 +1,46 @@
+use miette::Diagnostic;
+use smol::process::Command;
 use std::{
     borrow::Cow,
-    env::{self, consts::EXE_SUFFIX},
+    env::{self, consts::EXE_SUFFIX, home_dir},
     path::{Path, PathBuf},
     sync::LazyLock,
 };
-
-use miette::Diagnostic;
-use smol::process::Command;
 use thiserror::Error;
-#[cfg(feature = "shellscript")]
+
+#[cfg(feature = "packaged")]
 use {
     axoupdater::{AxoUpdater, AxoupdateError},
-    tokio::{sync::Mutex, task::block_in_place},
+    std::sync::Mutex,
 };
 
 #[derive(Debug, Error, Diagnostic)]
 pub enum SelfUpdateError {
-    #[error("cargo-v5's updates are externally managed")]
+    #[error("cargo-v5's installation is externally managed")]
     #[diagnostic(code(cargo_v5::self_update::unavailable))]
     SelfUpdateUnavailable {
         #[help]
         advice: &'static str,
     },
 
-    #[cfg(feature = "shellscript")]
+    #[cfg(feature = "packaged")]
     #[error("Self-update failed")]
     #[diagnostic(code(cargo_v5::self_update::failure))]
     Axoupdate(#[from] AxoupdateError),
+
     #[error("Failed to run the update command")]
     #[diagnostic(code(cargo_v5::self_update::io))]
     Io(#[from] std::io::Error),
 }
 
-#[cfg(feature = "shellscript")]
+#[cfg(feature = "packaged")]
 static AXOUPDATER: LazyLock<Mutex<AxoUpdater>> =
     LazyLock::new(|| Mutex::new(AxoUpdater::new_for("cargo-v5")));
 pub static CURRENT_MODE: LazyLock<SelfUpdateMode> = LazyLock::new(SelfUpdateMode::current);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SelfUpdateMode {
-    #[cfg(feature = "shellscript")]
+    #[cfg(feature = "packaged")]
     Axoupdate,
     Cargo,
     Unmanaged(Option<ExternalUpdateManager>),
@@ -69,10 +70,11 @@ fn exe_name<'a>(string: impl Into<Cow<'a, str>>) -> Cow<'a, str> {
 
 impl SelfUpdateMode {
     pub fn current() -> Self {
-        // Check if installed by shell script
-        #[cfg(feature = "shellscript")]
+        #[cfg(feature = "packaged")]
         {
-            let mut updater = block_in_place(|| AXOUPDATER.blocking_lock());
+            // Check if installed by shell script
+            // NOTE: this is blocking, but we don't gaf since it won't be contended
+            let mut updater = AXOUPDATER.lock().unwrap();
             if updater.load_receipt().is_ok() {
                 return Self::Axoupdate;
             }
@@ -112,10 +114,12 @@ pub async fn self_update() -> Result<(), SelfUpdateError> {
     let mode = *CURRENT_MODE;
 
     match mode {
-        #[cfg(feature = "shellscript")]
+        #[cfg(feature = "packaged")]
         SelfUpdateMode::Axoupdate => {
             // This will redownload the installer shell script and run it again
-            let mut updater = AXOUPDATER.lock().await;
+
+            // NOTE: this is blocking, but we don't gaf since it won't be contended
+            let mut updater = AXOUPDATER.lock().unwrap();
             updater.run().await?;
             Ok(())
         }
@@ -142,7 +146,7 @@ pub async fn self_update() -> Result<(), SelfUpdateError> {
 
             eprintln!("> {:?}", command);
 
-            _ = command.spawn()?.status().await?;
+            command.spawn()?.output().await?;
 
             Ok(())
         }
@@ -152,5 +156,50 @@ pub async fn self_update() -> Result<(), SelfUpdateError> {
                 None => "update cargo-v5 with your package manager or redownload the executable",
             },
         }),
+    }
+}
+
+pub async fn self_uninstall(skip_prompts: bool) -> Result<(), SelfUpdateError> {
+    let mode = *CURRENT_MODE;
+
+    match mode {
+        SelfUpdateMode::Unmanaged(manager) => {
+            let advice = if manager == Some(ExternalUpdateManager::Homebrew) {
+                "run `brew uninstall cargo-v5`"
+            } else {
+                "uninstall cargo-v5 with your package manager or manually remove the executable"
+            };
+            Err(SelfUpdateError::SelfUpdateUnavailable { advice })
+        }
+        _ => {
+            let are_you_sure = skip_prompts
+                || inquire::Confirm::new("Really uninstall cargo-v5?")
+                    .with_default(true)
+                    .prompt()
+                    .unwrap_or(true);
+
+            if !are_you_sure {
+                return Ok(());
+            }
+
+            let receipt = if cfg!(windows) {
+                let appdata = env::var("LOCALAPPDATA")
+                    .expect("Cannot find LOCALAPPDATA folder to remove receipt");
+                PathBuf::from(appdata).join("cargo-v5/cargo-v5-receipt.json")
+            } else {
+                let home = home_dir().expect("Cannot find home directory to remove receipt");
+                home.join("cargo-v5/cargo-v5-receipt.json")
+            };
+
+            eprintln!("Removing receipt... ({})", receipt.display());
+            _ = smol::fs::remove_file(receipt).await;
+
+            eprintln!("Uninstalling cargo-v5...");
+            self_replace::self_delete()?;
+
+            eprintln!("All done! Thanks for using cargo-v5.");
+
+            Ok(())
+        }
     }
 }
