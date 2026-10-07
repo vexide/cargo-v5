@@ -252,25 +252,24 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
         }
         #[cfg(feature = "field-control")]
         Command::FieldControl => {
+            use cargo_v5::errors::CliError;
+            use vex_v5_serial::serial;
+
             // Not using open_connection since we need to filter for controllers only here.
             let mut connection = {
                 let devices = serial::find_devices().map_err(CliError::SerialError)?;
 
-                tokio::task::spawn_blocking::<_, Result<SerialConnection, CliError>>(move || {
-                    devices
-                        .into_iter()
-                        .find(|device| {
-                            use vex_v5_serial::serial::VexSerialPortType;
+                devices
+                    .into_iter()
+                    .find(|device| {
+                        use vex_v5_serial::serial::VexSerialPortType;
 
-                            device.system_port().port_type == VexSerialPortType::Controller
-                        })
-                        .ok_or(CliError::NoController)?
-                        .connect(Duration::from_secs(5))
-                        .map_err(CliError::SerialError)
-                })
-                .await
-                .unwrap()?
-            };
+                        device.system_port().port_type == VexSerialPortType::Controller
+                    })
+                    .ok_or(CliError::NoController)?
+                    .connect(Duration::from_secs(5))
+                    .map_err(CliError::SerialError)
+            }?;
 
             run_field_control_tui(&mut connection).await?;
         }
