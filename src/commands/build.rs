@@ -72,7 +72,7 @@ pub async fn build(path: &Path, opts: CargoOpts) -> Result<Option<BuildOutput>, 
     }
 
     if !explicit_target_specified {
-        build_cmd.arg("--target").arg("armv7a-vex-v5");
+        build_cmd.arg("--target").arg("thumbv7a-vex-v5");
     }
 
     build_cmd.args(opts.args);
