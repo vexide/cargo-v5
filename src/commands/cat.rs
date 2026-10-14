@@ -12,6 +12,12 @@ use vex_v5_serial::{
 
 use crate::errors::CliError;
 
+pub const KITTY: &str = r#"/\_/\
+>^,^< ♡ meow!
+ / \
+(___)_/
+"#;
+
 pub fn vendor_from_prefix(prefix: &str) -> FileVendor {
     match prefix {
         "user" | "/user" => FileVendor::User,

@@ -111,6 +111,9 @@ enum Command {
     Dir,
 
     /// Read a file from flash, then write its contents to stdout.
+    #[clap(
+        after_help = cargo_v5::commands::cat::KITTY,
+    )]
     Cat { file: PathBuf },
 
     /// Erase a file from flash.
