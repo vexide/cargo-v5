@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use flexi_logger::{LogSpecification, LoggerHandle};
+use flexi_logger::LoggerHandle;
 use futures_util::FutureExt;
 use log::info;
 use smol::{
@@ -9,31 +9,43 @@ use smol::{
 };
 use vex_v5_serial::{Connection, serial::SerialConnection};
 
-pub async fn terminal(connection: &mut SerialConnection, logger: &mut LoggerHandle) -> ! {
+use crate::errors::CliError;
+
+pub async fn terminal(
+    connection: &mut SerialConnection,
+    _logger: &mut LoggerHandle,
+) -> Result<(), CliError> {
     info!("Started terminal.");
 
-    logger.push_temp_spec(LogSpecification::off());
+    // logger.push_temp_spec(LogSpecification::off());
 
     let mut stdin = Unblock::new(std::io::stdin());
-    let mut program_output = [0; 2048];
-    let mut program_input = [0; 4096];
-
     let mut stdout = Unblock::new(std::io::stdout());
+    let mut program_input = [0; 4096];
+    let mut program_output = [0; 2048];
 
     loop {
         futures_util::select! {
             read = connection.read_user(&mut program_output).fuse() => {
-                if let Ok(size) = read {
-                    stdout.write_all(&program_output[..size]).await.unwrap();
+                match read {
+                    Ok(size) => {
+                        stdout.write_all(&program_output[..size]).await.unwrap();
+                        stdout.flush().await.unwrap();
+                    }
+                    Err(e) => return Err(e.into()),
                 }
-            },
+            }
             read = stdin.read(&mut program_input).fuse() => {
-                if let Ok(size) = read {
-                    connection.write_user(&program_input[..size]).await.unwrap();
+                match read {
+                    Ok(size) => match connection.write_user(&program_input[..size]).await {
+                        Ok(_) => {}
+                        Err(e) => return Err(e.into()),
+                    },
+                    Err(e) => return Err(e.into()),
                 }
             }
         }
-
-        Timer::after(Duration::from_millis(10)).await;
+        // // done so controller firmware (hopefully) doesn't kill itself
+        // Timer::after(Duration::from_millis(10)).await;
     }
 }

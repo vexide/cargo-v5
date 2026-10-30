@@ -1,4 +1,4 @@
-use std::{env, num::NonZeroU32, panic, path::PathBuf};
+use std::{env, num::NonZeroU32, panic, path::PathBuf, time::Duration};
 
 use chrono::Utc;
 use clap::{Args, Parser, Subcommand};
@@ -211,13 +211,17 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
         Command::Run(opts) => {
             let mut connection = upload(&path, opts, AfterUpload::Run).await?;
 
-            let (s, ctrl_c) = async_channel::bounded(100);
+            let (s, ctrl_c) = async_channel::bounded(1);
             _ = ctrlc::set_handler(move || {
                 s.try_send(()).ok();
+                
+                // give a 250ms hard deadline for quitting
+                std::thread::sleep(Duration::from_millis(250));
+                log::error!("ctrlc handler timed out!");
+                std::process::exit(1);
             });
 
-            futures_util::select! {
-                _ = terminal(&mut connection, logger).fuse() => {}
+            futures_util::select_biased! {
                 _ = ctrl_c.recv().fuse() => {
                     // Try to quit program.
                     //
@@ -233,6 +237,7 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
 
                     std::process::exit(0);
                 }
+                _ = terminal(&mut connection, logger).fuse() => {}
             }
         }
         Command::KeyValue(subcommand) => {
@@ -250,7 +255,7 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
         Command::Terminal => {
             let mut connection = open_connection().await?;
             switch_to_download_channel(&mut connection).await?;
-            terminal(&mut connection, logger).await;
+            terminal(&mut connection, logger).await?;
         }
         #[cfg(feature = "field-control")]
         Command::FieldControl => {
