@@ -15,7 +15,7 @@ use tui_term::{
     vt100,
     widget::{Cursor, PseudoTerminal},
 };
-use vex_v5_serial::{
+use vex_serial::{
     Connection,
     protocol::{
         cdc::{ProductType, SystemVersionPacket},
@@ -32,7 +32,7 @@ use crate::errors::CliError;
 
 mod widgets;
 
-async fn set_match_mode(
+fn set_match_mode(
     connection: &mut SerialConnection,
     mode: CompetitionMode,
 ) -> Result<(), SerialError> {
@@ -46,7 +46,7 @@ async fn set_match_mode(
     Ok(())
 }
 
-async fn try_read_terminal(connection: &mut SerialConnection) -> Result<Vec<u8>, CliError> {
+fn try_read_terminal(connection: &mut SerialConnection) -> Result<Vec<u8>, CliError> {
     let read = connection
         .handshake(
             UserDataPacket {
@@ -420,7 +420,7 @@ fn handle_countdown(tui_state: &mut TuiState) -> Control {
     Control::None
 }
 
-pub async fn run_field_control_tui(connection: &mut SerialConnection) -> Result<(), CliError> {
+pub fn run_field_control_tui(connection: &mut SerialConnection) -> Result<(), CliError> {
     let response = connection
         .handshake(SystemVersionPacket {}, Duration::from_millis(700), 5)
         .await?;

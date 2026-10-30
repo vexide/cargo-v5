@@ -1,9 +1,8 @@
 use core::fmt;
 use inquire::Select;
 use log::info;
-use smol::{Timer, future::FutureExt};
-use std::time::Duration;
-use vex_v5_serial::{
+use std::time::{Duration, Instant};
+use vex_serial::{
     Connection,
     protocol::{
         cdc::{ProductType, SystemVersionPacket},
@@ -32,7 +31,7 @@ fn pid_to_product_name(pid: u16) -> &'static str {
     }
 }
 
-pub async fn open_connection() -> Result<SerialConnection, CliError> {
+pub fn open_connection() -> Result<SerialConnection, CliError> {
     // Find all vex devices on serial ports.
     let devices = serial::find_devices().map_err(CliError::SerialError)?;
 
@@ -85,18 +84,13 @@ pub async fn open_connection() -> Result<SerialConnection, CliError> {
     };
 
     // Open a connection to the device.
-    device
-        .connect(Duration::from_secs(5))
-        .map_err(CliError::SerialError)
+    device.connect().map_err(CliError::SerialError)
 }
 
-async fn is_connection_wireless(connection: &mut SerialConnection) -> Result<bool, CliError> {
-    let version = connection
-        .handshake(SystemVersionPacket {}, Duration::from_millis(500), 1)
-        .await?;
-    let system_flags = connection
-        .handshake(SystemFlagsPacket {}, Duration::from_millis(500), 1)
-        .await??;
+fn is_connection_wireless(connection: &mut SerialConnection) -> Result<bool, CliError> {
+    let version = connection.handshake(SystemVersionPacket {}, Duration::from_millis(500), 1)?;
+    let system_flags =
+        connection.handshake(SystemFlagsPacket {}, Duration::from_millis(500), 1)??;
     let is_controller = matches!(
         version.product_type,
         ProductType::V5Controller | ProductType::ExpController | ProductType::ExpControllerVariant // | ProductType::AirController
@@ -106,14 +100,12 @@ async fn is_connection_wireless(connection: &mut SerialConnection) -> Result<boo
     Ok(!tethered && is_controller)
 }
 
-pub async fn switch_to_download_channel(connection: &mut SerialConnection) -> Result<(), CliError> {
+pub fn switch_to_download_channel(connection: &mut SerialConnection) -> Result<(), CliError> {
     const RADIO_CHANNEL_STUCK: u8 = 9;
     const RADIO_CHANNEL_DOWNLOAD: u8 = 5;
     const RADIO_CHANNEL_BLUETOOTH: u8 = 245;
 
-    let Ok(radio_status) = connection
-        .handshake(RadioStatusPacket {}, Duration::from_secs(2), 3)
-        .await?
+    let Ok(radio_status) = connection.handshake(RadioStatusPacket {}, Duration::from_secs(2), 3)?
     else {
         return Ok(()); // likely unsupported
     };
@@ -137,73 +129,64 @@ pub async fn switch_to_download_channel(connection: &mut SerialConnection) -> Re
         _ => {}
     }
 
-    if is_connection_wireless(connection).await? {
+    if is_connection_wireless(connection)? {
         info!("Switching radio to download channel...");
 
         // Tell the controller to switch to the download channel.
-        connection
-            .handshake(
-                FileControlPacket {
-                    group: FileControlGroup::Radio(RadioChannel::Download),
-                },
-                Duration::from_secs(2),
-                3,
-            )
-            .await??;
+        connection.handshake(
+            FileControlPacket {
+                group: FileControlGroup::Radio(RadioChannel::Download),
+            },
+            Duration::from_secs(2),
+            3,
+        )??;
 
         // Wait for the controller to disconnect by spamming it with a packet and waiting until that packet
         // doesn't go through. This indicates that the radio has actually started to switch channels.
-        async {
-            while connection
-                .handshake(RadioStatusPacket {}, Duration::from_millis(250), 0)
-                .await
-                .is_ok()
-            {
-                Timer::after(Duration::from_millis(250)).await;
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while connection
+            .handshake(RadioStatusPacket {}, Duration::from_millis(250), 0)
+            .is_ok()
+        {
+            if Instant::now() >= deadline {
+                return Err(CliError::RadioChannelReconnectTimeout);
             }
-            Ok(())
+
+            std::thread::sleep(std::cmp::min(
+                Duration::from_millis(250),
+                deadline - Instant::now(),
+            ));
         }
-        .or(async {
-            Timer::after(Duration::from_secs(8)).await;
-            Err(CliError::RadioChannelReconnectTimeout)
-        })
-        .await?;
 
         // Poll the connection of the controller to ensure the radio has switched channels by sending
         // test packets every 250ms for 8 seconds until we get a successful reply, indicating that the
         // controller has reconnected.
         //
-        // If the controller doesn't a reply within 8 seconds, it's probably frozen and hasn't reconnected
+        // If the controller doesn't reply within 8 seconds, it's probably frozen and hasn't reconnected
         // correctly.
-        async {
-            loop {
-                let Ok(pkt) = connection
-                    .handshake(RadioStatusPacket {}, Duration::from_millis(250), 0)
-                    .await
-                else {
-                    continue;
-                };
+        let deadline = Instant::now() + Duration::from_secs(8);
+        loop {
+            if Instant::now() >= deadline {
+                return Err(CliError::RadioChannelReconnectTimeout);
+            }
 
-                match pkt {
-                    // We have successfully switched to the download channel.
-                    Ok(payload) if payload.channel == 5 => return Ok(()),
+            match connection.handshake(RadioStatusPacket {}, Duration::from_millis(250), 0) {
+                // We have successfully switched to the download channel.
+                Ok(Ok(payload)) if payload.channel == 5 => break,
 
-                    // The radio/controller reconnected, but failed to report its status.
-                    Err(error) => return Err(CliError::Nack(error)),
+                // The radio/controller reconnected, but failed to report its status.
+                Ok(Err(error)) => return Err(CliError::Nack(error)),
 
-                    // Still reconnecting.
-                    _ => {
-                        Timer::after(Duration::from_millis(250)).await;
-                        continue;
-                    }
-                }
+                // Still reconnecting.
+                Ok(_) => std::thread::sleep(std::cmp::min(
+                    Duration::from_millis(250),
+                    deadline - Instant::now(),
+                )),
+
+                // No reply within the handshake timeout, retry.
+                Err(_) => {}
             }
         }
-        .or(async {
-            Timer::after(Duration::from_secs(8)).await;
-            Err(CliError::RadioChannelReconnectTimeout)
-        })
-        .await?;
     }
 
     Ok(())

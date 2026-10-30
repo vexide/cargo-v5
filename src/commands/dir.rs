@@ -1,10 +1,10 @@
 use chrono::{TimeZone, Utc};
 use std::io::{self, Write};
 use std::time::Duration;
-use vex_v5_serial::commands::file::J2000_EPOCH;
-use vex_v5_serial::protocol::cdc2::file::DirectoryFileCountPacket;
+use vex_serial_util::file::J2000_EPOCH;
+use vex_serial::protocol::cdc2::file::DirectoryFileCountPacket;
 
-use vex_v5_serial::{
+use vex_serial::{
     Connection,
     protocol::cdc2::{
         factory::FactoryEnablePacket,
@@ -34,7 +34,7 @@ fn vendor_prefix(vid: FileVendor) -> &'static str {
     }
 }
 
-pub async fn dir(connection: &mut SerialConnection) -> Result<(), CliError> {
+pub fn dir(connection: &mut SerialConnection) -> Result<(), CliError> {
     let mut tw = TabWriter::new(io::stdout());
 
     const USEFUL_VIDS: [FileVendor; 11] = [
@@ -51,15 +51,13 @@ pub async fn dir(connection: &mut SerialConnection) -> Result<(), CliError> {
         FileVendor::Undefined,
     ];
 
-    connection
-        .handshake(
-            FactoryEnablePacket {
-                magic: FactoryEnablePacket::MAGIC,
-            },
-            Duration::from_millis(500),
-            1,
-        )
-        .await??;
+    connection.handshake(
+        FactoryEnablePacket {
+            magic: FactoryEnablePacket::MAGIC,
+        },
+        Duration::from_millis(500),
+        1,
+    )??;
 
     write!(
         &mut tw,
@@ -75,21 +73,18 @@ pub async fn dir(connection: &mut SerialConnection) -> Result<(), CliError> {
                 },
                 Duration::from_millis(500),
                 1,
-            )
-            .await??
+            )??
             .count;
 
         for n in 0..file_count {
-            let entry = connection
-                .handshake(
-                    DirectoryEntryPacket {
-                        file_index: n as u8,
-                        reserved: 0,
-                    },
-                    Duration::from_millis(500),
-                    1,
-                )
-                .await??;
+            let entry = connection.handshake(
+                DirectoryEntryPacket {
+                    file_index: n as u8,
+                    reserved: 0,
+                },
+                Duration::from_millis(500),
+                1,
+            )??;
 
             writeln!(
                 &mut tw,

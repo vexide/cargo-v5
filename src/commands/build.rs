@@ -1,10 +1,7 @@
 use clap::Args;
 use object::{Object, ObjectSection, ObjectSegment};
-use smol::{process::Command, unblock};
 use std::{
-    ffi::OsStr,
-    path::{Path, PathBuf},
-    process::{Stdio, exit},
+    ffi::OsStr, path::{Path, PathBuf}, process::{Command, Stdio, exit},
 };
 
 use crate::errors::CliError;
@@ -25,12 +22,8 @@ pub fn cargo_bin() -> std::ffi::OsString {
     std::env::var_os("CARGO").unwrap_or_else(|| "cargo".to_owned().into())
 }
 
-async fn is_supported_release_channel(cargo_bin: &OsStr) -> bool {
-    let rustc = Command::new(cargo_bin)
-        .arg("--version")
-        .output()
-        .await
-        .unwrap();
+fn is_supported_release_channel(cargo_bin: &OsStr) -> bool {
+    let rustc = Command::new(cargo_bin).arg("--version").output().unwrap();
     let rustc = String::from_utf8(rustc.stdout).unwrap();
     rustc.contains("nightly") || rustc.contains("-dev")
 }
@@ -48,10 +41,10 @@ pub struct CargoArtifact {
     pub executable: Option<PathBuf>,
 }
 
-pub async fn build(path: &Path, opts: CargoOpts) -> Result<Option<BuildOutput>, CliError> {
+pub fn build(path: &Path, opts: CargoOpts) -> Result<Option<BuildOutput>, CliError> {
     let cargo = cargo_bin();
 
-    if !is_supported_release_channel(&cargo).await {
+    if !is_supported_release_channel(&cargo) {
         return Err(CliError::UnsupportedReleaseChannel)?;
     }
 
@@ -77,39 +70,36 @@ pub async fn build(path: &Path, opts: CargoOpts) -> Result<Option<BuildOutput>, 
 
     build_cmd.args(opts.args);
 
-    unblock::<Result<Option<BuildOutput>, CliError>, _>(move || {
-        let mut out = build_cmd.spawn()?;
-        let reader = std::io::BufReader::new(out.stdout.take().unwrap());
+    let mut out = build_cmd.spawn()?;
+    let reader = std::io::BufReader::new(out.stdout.take().unwrap());
 
-        let mut output = None;
+    let mut output = None;
 
-        for message in serde_json::Deserializer::from_reader(reader).into_iter::<CargoArtifact>() {
-            if let Ok(artifact) = message
-                && let Some(elf_artifact_path) = artifact.executable
-            {
-                let binary = objcopy(&std::fs::read(&elf_artifact_path)?)?;
-                let binary_path = elf_artifact_path.with_extension("bin");
+    for message in serde_json::Deserializer::from_reader(reader).into_iter::<CargoArtifact>() {
+        if let Ok(artifact) = message
+            && let Some(elf_artifact_path) = artifact.executable
+        {
+            let binary = objcopy(&std::fs::read(&elf_artifact_path)?)?;
+            let binary_path = elf_artifact_path.with_extension("bin");
 
-                // Write the binary to a file.
-                std::fs::write(&binary_path, binary)?;
-                eprintln!("     \x1b[1;92mObjcopy\x1b[0m {}", binary_path.display());
+            // Write the binary to a file.
+            std::fs::write(&binary_path, binary)?;
+            eprintln!("     \x1b[1;92mObjcopy\x1b[0m {}", binary_path.display());
 
-                output = Some(BuildOutput {
-                    bin_artifact: binary_path,
-                    elf_artifact: elf_artifact_path,
-                    package_id: artifact.package_id,
-                });
-            }
+            output = Some(BuildOutput {
+                bin_artifact: binary_path,
+                elf_artifact: elf_artifact_path,
+                package_id: artifact.package_id,
+            });
         }
+    }
 
-        let status = out.wait()?;
-        if !status.success() {
-            exit(status.code().unwrap_or(1));
-        }
+    let status = out.wait()?;
+    if !status.success() {
+        exit(status.code().unwrap_or(1));
+    }
 
-        Ok(output)
-    })
-    .await
+    Ok(output)
 }
 
 /// Implementation of `objcopy -O binary`.

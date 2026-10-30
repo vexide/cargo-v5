@@ -1,9 +1,8 @@
-use std::{env, num::NonZeroU32, panic, path::PathBuf, time::Duration};
+use std::{env, num::NonZeroU32, path::PathBuf};
 
 use chrono::Utc;
 use clap::{Args, Parser, Subcommand};
 use flexi_logger::{AdaptiveFormat, FileSpec, LogfileSelector, LoggerHandle};
-use futures_util::FutureExt;
 
 use cargo_v5::{
     commands::{
@@ -21,13 +20,6 @@ use cargo_v5::{
     },
     connection::{open_connection, switch_to_download_channel},
     updater,
-};
-use vex_v5_serial::{
-    Connection,
-    protocol::{
-        FixedString,
-        cdc2::file::{FileLoadAction, FileLoadActionPacket, FileVendor},
-    },
 };
 
 #[cfg(feature = "field-control")]
@@ -181,7 +173,7 @@ fn main() -> miette::Result<()> {
         .unwrap();
 
     // Spin up the actual CLI in a smol runtime so we can use vex-v5-serial
-    if let Err(err) = smol::block_on(app(command, path, &mut logger)) {
+    if let Err(err) = app(command, path, &mut logger) {
         log::debug!("cargo-v5 is exiting due to an error: {err}");
         if let Ok(files) = logger.existing_log_files(&LogfileSelector::default()) {
             for file in files {
@@ -194,73 +186,45 @@ fn main() -> miette::Result<()> {
     Ok(())
 }
 
-async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miette::Result<()> {
+fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miette::Result<()> {
     match command {
         Command::Build { cargo_opts } => {
-            build(&path, cargo_opts).await?;
+            build(&path, cargo_opts)?;
         }
         Command::Upload { upload_opts, after } => {
-            upload(&path, upload_opts, after).await?;
+            upload(&path, upload_opts, after)?;
         }
-        Command::Dir => dir(&mut open_connection().await?).await?,
-        Command::Devices => devices(&mut open_connection().await?).await?,
-        Command::Cat { file } => cat(&mut open_connection().await?, file).await?,
-        Command::Rm { file } => rm(&mut open_connection().await?, file).await?,
-        Command::Log { page } => log(&mut open_connection().await?, page).await?,
-        Command::Screenshot => screenshot(&mut open_connection().await?).await?,
+        Command::Dir => dir(&mut open_connection()?)?,
+        Command::Devices => devices(&mut open_connection()?)?,
+        Command::Cat { file } => cat(&mut open_connection()?, file)?,
+        Command::Rm { file } => rm(&mut open_connection()?, file)?,
+        Command::Log { page } => log(&mut open_connection()?, page)?,
+        Command::Screenshot => screenshot(&mut open_connection()?)?,
         Command::Run(opts) => {
-            let mut connection = upload(&path, opts, AfterUpload::Run).await?;
-
-            let (s, ctrl_c) = async_channel::bounded(1);
-            _ = ctrlc::set_handler(move || {
-                s.try_send(()).ok();
-                
-                // give a 250ms hard deadline for quitting
-                std::thread::sleep(Duration::from_millis(250));
-                log::error!("ctrlc handler timed out!");
-                std::process::exit(1);
-            });
-
-            futures_util::select_biased! {
-                _ = ctrl_c.recv().fuse() => {
-                    // Try to quit program.
-                    //
-                    // Don't bother waiting for a response, since the brain could
-                    // be locked up and prevent the program from exiting.
-                    _ = connection.send(
-                        FileLoadActionPacket {
-                            vendor: FileVendor::User,
-                            action: FileLoadAction::Stop,
-                            file_name: FixedString::default(),
-                        }
-                    ).await;
-
-                    std::process::exit(0);
-                }
-                _ = terminal(&mut connection, logger).fuse() => {}
-            }
+            let mut connection = upload(&path, opts, AfterUpload::Run)?;
+            terminal(&mut connection, logger)?;
         }
         Command::KeyValue(subcommand) => {
-            let mut connection = open_connection().await?;
+            let mut connection = open_connection()?;
             match subcommand {
                 KeyValue::Get { key } => {
-                    println!("{}", kv_get(&mut connection, &key).await?);
+                    println!("{}", kv_get(&mut connection, &key)?);
                 }
                 KeyValue::Set { key, value } => {
-                    kv_set(&mut connection, &key, &value).await?;
-                    println!("{key} = {}", kv_get(&mut connection, &key).await?);
+                    kv_set(&mut connection, &key, &value)?;
+                    println!("{key} = {}", kv_get(&mut connection, &key)?);
                 }
             }
         }
         Command::Terminal => {
-            let mut connection = open_connection().await?;
-            switch_to_download_channel(&mut connection).await?;
-            terminal(&mut connection, logger).await?;
+            let mut connection = open_connection()?;
+            switch_to_download_channel(&mut connection)?;
+            terminal(&mut connection, logger)?;
         }
         #[cfg(feature = "field-control")]
         Command::FieldControl => {
             use cargo_v5::errors::CliError;
-            use vex_v5_serial::serial;
+            use vex_serial::serial;
 
             // Not using open_connection since we need to filter for controllers only here.
             let mut connection = {
@@ -269,28 +233,28 @@ async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miet
                 devices
                     .into_iter()
                     .find(|device| {
-                        use vex_v5_serial::serial::VexSerialPortType;
+                        use vex_serial::serial::VexSerialPortType;
 
                         device.system_port().port_type == VexSerialPortType::Controller
                     })
                     .ok_or(CliError::NoController)?
-                    .connect(Duration::from_secs(5))
+                    .connect()
                     .map_err(CliError::SerialError)
             }?;
 
-            run_field_control_tui(&mut connection).await?;
+            run_field_control_tui(&mut connection)?;
         }
         Command::New {
             name,
             download_opts,
         } => {
-            new(path, Some(name), !download_opts.offline).await?;
+            new(path, Some(name), !download_opts.offline)?;
         }
         Command::Init { download_opts } => {
-            new(path, None, !download_opts.offline).await?;
+            new(path, None, !download_opts.offline)?;
         }
-        Command::SelfUpdate => updater::self_update().await?,
-        Command::SelfUninstall { yes } => updater::self_uninstall(yes).await?,
+        Command::SelfUpdate => updater::self_update()?,
+        Command::SelfUninstall { yes } => updater::self_uninstall(yes)?,
     }
 
     Ok(())
