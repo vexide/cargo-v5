@@ -13,7 +13,7 @@ use crate::errors::CliError;
 
 use super::cat::vendor_from_prefix;
 
-pub async fn rm(connection: &mut SerialConnection, file: PathBuf) -> Result<(), CliError> {
+pub fn rm(connection: &mut SerialConnection, file: PathBuf) -> Result<(), CliError> {
     let vendor = vendor_from_prefix(if let Some(parent) = file.parent() {
         parent.to_str().unwrap()
     } else {

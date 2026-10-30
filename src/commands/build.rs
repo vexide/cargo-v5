@@ -25,7 +25,7 @@ pub fn cargo_bin() -> std::ffi::OsString {
     std::env::var_os("CARGO").unwrap_or_else(|| "cargo".to_owned().into())
 }
 
-async fn is_supported_release_channel(cargo_bin: &OsStr) -> bool {
+fn is_supported_release_channel(cargo_bin: &OsStr) -> bool {
     let rustc = Command::new(cargo_bin)
         .arg("--version")
         .output()
@@ -48,7 +48,7 @@ pub struct CargoArtifact {
     pub executable: Option<PathBuf>,
 }
 
-pub async fn build(path: &Path, opts: CargoOpts) -> Result<Option<BuildOutput>, CliError> {
+pub fn build(path: &Path, opts: CargoOpts) -> Result<Option<BuildOutput>, CliError> {
     let cargo = cargo_bin();
 
     if !is_supported_release_channel(&cargo).await {

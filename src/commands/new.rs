@@ -17,7 +17,7 @@ const TEMPLATE_FILE_NAME: &str = "vexide-template.tar.gz";
 const SHA_FILE_NAME: &str = "cache-id.txt";
 
 #[cfg(feature = "fetch-template")]
-async fn get_current_sha() -> Result<String, CliError> {
+fn get_current_sha() -> Result<String, CliError> {
     match &smol::unblock(|| {
         ureq::get("https://api.github.com/repos/vexide/vexide-template/commits/main?per-page=1")
             .header("User-Agent", "vexide/cargo-v5")
@@ -35,7 +35,7 @@ async fn get_current_sha() -> Result<String, CliError> {
 }
 
 #[cfg(feature = "fetch-template")]
-async fn fetch_template() -> Result<Template, CliError> {
+fn fetch_template() -> Result<Template, CliError> {
     debug!("Fetching template...");
     let mut response = smol::unblock(|| {
         ureq::get("https://github.com/vexide/vexide-template/archive/refs/heads/main.tar.gz").call()
@@ -53,7 +53,7 @@ async fn fetch_template() -> Result<Template, CliError> {
 }
 
 #[cfg(feature = "fetch-template")]
-async fn get_cached_template() -> Option<Template> {
+fn get_cached_template() -> Option<Template> {
     match cached_template_dir() {
         Some(dir) => {
             let cache_file = dir.with_file_name(TEMPLATE_FILE_NAME);
@@ -67,7 +67,7 @@ async fn get_cached_template() -> Option<Template> {
 }
 
 #[cfg(feature = "fetch-template")]
-async fn store_cached_template(template: Template) -> () {
+fn store_cached_template(template: Template) -> () {
     if let Some(dir) = cached_template_dir() {
         let cache_file = dir.with_file_name(TEMPLATE_FILE_NAME);
         let sha_file = dir.with_file_name(SHA_FILE_NAME);
@@ -113,7 +113,7 @@ fn unpack_template(template: Vec<u8>, dir: &PathBuf) -> io::Result<()> {
     Ok(())
 }
 
-pub async fn new(
+pub fn new(
     path: PathBuf,
     name: Option<String>,
     download_template: bool,

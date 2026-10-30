@@ -34,7 +34,7 @@ pub fn vendor_from_prefix(prefix: &str) -> FileVendor {
     }
 }
 
-pub async fn cat(connection: &mut SerialConnection, file: PathBuf) -> Result<(), CliError> {
+pub fn cat(connection: &mut SerialConnection, file: PathBuf) -> Result<(), CliError> {
     let vendor = if let Some(parent) = file.parent() {
         vendor_from_prefix(parent.to_str().unwrap())
     } else {

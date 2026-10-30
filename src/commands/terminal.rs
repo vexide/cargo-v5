@@ -11,7 +11,7 @@ use vex_v5_serial::{Connection, serial::SerialConnection};
 
 use crate::errors::CliError;
 
-pub async fn terminal(
+pub fn terminal(
     connection: &mut SerialConnection,
     _logger: &mut LoggerHandle,
 ) -> Result<(), CliError> {

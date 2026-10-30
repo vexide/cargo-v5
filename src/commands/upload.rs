@@ -154,7 +154,7 @@ pub const PROGRESS_CHARS: &str = "⣿⣦⣀";
 const DIFFERENTIAL_UPLOAD_MAX_SIZE: usize = 0x200000;
 
 /// Upload a program to the brain.
-pub async fn upload_program(
+pub fn upload_program(
     connection: &mut SerialConnection,
     path: &Path,
     after: AfterUpload,
@@ -574,7 +574,7 @@ fn build_patch(old: &[u8], new: &[u8]) -> Vec<u8> {
     patch
 }
 
-async fn brain_file_metadata(
+fn brain_file_metadata(
     connection: &mut SerialConnection,
     file_name: FixedString<23>,
     vendor: FileVendor,
@@ -631,7 +631,7 @@ fn gzip_compress(data: &mut Vec<u8>) {
     *data = encoder.finish().unwrap();
 }
 
-pub async fn upload(
+pub fn upload(
     path: &Path,
     UploadOpts {
         file,

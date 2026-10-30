@@ -32,7 +32,7 @@ fn pid_to_product_name(pid: u16) -> &'static str {
     }
 }
 
-pub async fn open_connection() -> Result<SerialConnection, CliError> {
+pub fn open_connection() -> Result<SerialConnection, CliError> {
     // Find all vex devices on serial ports.
     let devices = serial::find_devices().map_err(CliError::SerialError)?;
 
@@ -90,7 +90,7 @@ pub async fn open_connection() -> Result<SerialConnection, CliError> {
         .map_err(CliError::SerialError)
 }
 
-async fn is_connection_wireless(connection: &mut SerialConnection) -> Result<bool, CliError> {
+fn is_connection_wireless(connection: &mut SerialConnection) -> Result<bool, CliError> {
     let version = connection
         .handshake(SystemVersionPacket {}, Duration::from_millis(500), 1)
         .await?;
@@ -106,7 +106,7 @@ async fn is_connection_wireless(connection: &mut SerialConnection) -> Result<boo
     Ok(!tethered && is_controller)
 }
 
-pub async fn switch_to_download_channel(connection: &mut SerialConnection) -> Result<(), CliError> {
+pub fn switch_to_download_channel(connection: &mut SerialConnection) -> Result<(), CliError> {
     const RADIO_CHANNEL_STUCK: u8 = 9;
     const RADIO_CHANNEL_DOWNLOAD: u8 = 5;
     const RADIO_CHANNEL_BLUETOOTH: u8 = 245;

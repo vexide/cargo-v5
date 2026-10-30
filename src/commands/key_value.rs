@@ -6,7 +6,7 @@ use vex_v5_serial::serial::SerialConnection;
 
 use crate::errors::CliError;
 
-pub async fn kv_set(
+pub fn kv_set(
     connection: &mut SerialConnection,
     key: &str,
     value: &str,
@@ -25,7 +25,7 @@ pub async fn kv_set(
     Ok(())
 }
 
-pub async fn kv_get(connection: &mut SerialConnection, key: &str) -> Result<String, CliError> {
+pub fn kv_get(connection: &mut SerialConnection, key: &str) -> Result<String, CliError> {
     Ok(connection
         .handshake(
             KeyValueLoadPacket {

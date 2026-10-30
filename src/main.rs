@@ -194,7 +194,7 @@ fn main() -> miette::Result<()> {
     Ok(())
 }
 
-async fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miette::Result<()> {
+fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miette::Result<()> {
     match command {
         Command::Build { cargo_opts } => {
             build(&path, cargo_opts).await?;

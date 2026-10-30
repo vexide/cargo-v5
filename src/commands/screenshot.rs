@@ -25,7 +25,7 @@ use crate::errors::CliError;
 
 use super::upload::PROGRESS_CHARS;
 
-pub async fn screenshot(connection: &mut SerialConnection) -> Result<(), CliError> {
+pub fn screenshot(connection: &mut SerialConnection) -> Result<(), CliError> {
     let timestamp = Arc::new(Mutex::new(None));
     let progress = Arc::new(Mutex::new(
         ProgressBar::new(10000)

@@ -8,7 +8,7 @@ use crate::errors::CliError;
 
 const MAX_LOGS_PER_PAGE: u32 = 254;
 
-pub async fn log(connection: &mut SerialConnection, page: NonZeroU32) -> Result<(), CliError> {
+pub fn log(connection: &mut SerialConnection, page: NonZeroU32) -> Result<(), CliError> {
     let mut tw = TabWriter::new(io::stdout())
         .tab_indent(false)
         .padding(1)

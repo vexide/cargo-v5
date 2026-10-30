@@ -108,7 +108,7 @@ impl SelfUpdateMode {
     }
 }
 
-pub async fn self_update() -> Result<(), SelfUpdateError> {
+pub fn self_update() -> Result<(), SelfUpdateError> {
     eprintln!("Checking for updates...");
 
     let mode = *CURRENT_MODE;
@@ -159,7 +159,7 @@ pub async fn self_update() -> Result<(), SelfUpdateError> {
     }
 }
 
-pub async fn self_uninstall(skip_prompts: bool) -> Result<(), SelfUpdateError> {
+pub fn self_uninstall(skip_prompts: bool) -> Result<(), SelfUpdateError> {
     let mode = *CURRENT_MODE;
 
     match mode {

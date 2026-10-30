@@ -34,7 +34,7 @@ fn vendor_prefix(vid: FileVendor) -> &'static str {
     }
 }
 
-pub async fn dir(connection: &mut SerialConnection) -> Result<(), CliError> {
+pub fn dir(connection: &mut SerialConnection) -> Result<(), CliError> {
     let mut tw = TabWriter::new(io::stdout());
 
     const USEFUL_VIDS: [FileVendor; 11] = [

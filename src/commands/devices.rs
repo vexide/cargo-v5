@@ -9,7 +9,7 @@ use tabwriter::TabWriter;
 
 use crate::errors::CliError;
 
-pub async fn devices(connection: &mut SerialConnection) -> Result<(), CliError> {
+pub fn devices(connection: &mut SerialConnection) -> Result<(), CliError> {
     let mut tw = TabWriter::new(io::stdout());
 
     let status = connection
