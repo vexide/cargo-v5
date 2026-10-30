@@ -28,8 +28,8 @@ pub fn terminal(
     _ = ctrlc::set_handler(move || {
         s.send(()).ok();
 
-        // give a 250ms hard deadline for quitting
-        std::thread::sleep(Duration::from_millis(250));
+        // give a 1s hard deadline for quitting
+        std::thread::sleep(Duration::from_secs(1));
         log::error!("ctrlc handler timed out!");
         std::process::exit(1);
     });
