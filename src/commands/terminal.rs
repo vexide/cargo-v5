@@ -12,7 +12,7 @@ use vex_serial::{
         FixedString,
         cdc2::file::{FileLoadAction, FileLoadActionPacket, FileVendor},
     },
-    serial::SerialConnection,
+    serial::{SerialConnection, SerialError},
 };
 
 use crate::errors::CliError;
@@ -74,7 +74,12 @@ pub fn terminal(
         }
 
         // pipe user port output to stdout
-        let size = connection.read_user(&mut program_output)?;
+        let size = match connection.read_user(&mut program_output) {
+            Ok(size) => size,
+            Err(SerialError::IoError(e)) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e.into()),
+        };
+
         if size > 0 {
             stdout
                 .write_all(&program_output[..size])
@@ -85,9 +90,13 @@ pub fn terminal(
         // pipe stdin to user port input
         loop {
             match stdin_rx.try_recv() {
-                Ok(Ok(data)) => {
-                    _ = connection.write_user(&data)?;
-                }
+                Ok(Ok(data)) => match connection.write_user(&data) {
+                    Ok(_) => {}
+                    Err(SerialError::IoError(e)) if e.kind() == std::io::ErrorKind::Interrupted => {
+                        continue;
+                    }
+                    Err(e) => return Err(e.into()),
+                },
                 Ok(Err(e)) => return Err(e.into()),
                 Err(TryRecvError::Empty) => break,
                 // Stdin hit EOF or the reader thread died.
