@@ -284,6 +284,7 @@ dependencies = [
  "tui-term",
  "ureq",
  "vex-serial",
+ "vex-serial-util",
 ]
 
 [[package]]
@@ -2794,6 +2795,17 @@ dependencies = [
  "serialport",
  "thiserror",
  "vex-cdc",
+]
+
+[[package]]
+name = "vex-serial-util"
+version = "0.0.1"
+dependencies = [
+ "flate2",
+ "image",
+ "log",
+ "vex-cdc",
+ "vex-serial",
 ]
 
 [[package]]

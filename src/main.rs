@@ -1,9 +1,8 @@
-use std::{env, num::NonZeroU32, panic, path::PathBuf, time::Duration};
+use std::{env, num::NonZeroU32, path::PathBuf};
 
 use chrono::Utc;
 use clap::{Args, Parser, Subcommand};
 use flexi_logger::{AdaptiveFormat, FileSpec, LogfileSelector, LoggerHandle};
-use futures_util::FutureExt;
 
 use cargo_v5::{
     commands::{
@@ -21,13 +20,6 @@ use cargo_v5::{
     },
     connection::{open_connection, switch_to_download_channel},
     updater,
-};
-use vex_serial::{
-    Connection,
-    protocol::{
-        FixedString,
-        cdc2::file::{FileLoadAction, FileLoadActionPacket, FileVendor},
-    },
 };
 
 #[cfg(feature = "field-control")]
@@ -181,7 +173,7 @@ fn main() -> miette::Result<()> {
         .unwrap();
 
     // Spin up the actual CLI in a smol runtime so we can use vex-v5-serial
-    if let Err(err) = smol::block_on(app(command, path, &mut logger)) {
+    if let Err(err) = app(command, path, &mut logger) {
         log::debug!("cargo-v5 is exiting due to an error: {err}");
         if let Ok(files) = logger.existing_log_files(&LogfileSelector::default()) {
             for file in files {
@@ -210,35 +202,7 @@ fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miette::Re
         Command::Screenshot => screenshot(&mut open_connection()?)?,
         Command::Run(opts) => {
             let mut connection = upload(&path, opts, AfterUpload::Run)?;
-
-            let (s, ctrl_c) = async_channel::bounded(1);
-            _ = ctrlc::set_handler(move || {
-                s.try_send(()).ok();
-                
-                // give a 250ms hard deadline for quitting
-                std::thread::sleep(Duration::from_millis(250));
-                log::error!("ctrlc handler timed out!");
-                std::process::exit(1);
-            });
-
-            futures_util::select_biased! {
-                _ = ctrl_c.recv().fuse() => {
-                    // Try to quit program.
-                    //
-                    // Don't bother waiting for a response, since the brain could
-                    // be locked up and prevent the program from exiting.
-                    _ = connection.send(
-                        FileLoadActionPacket {
-                            vendor: FileVendor::User,
-                            action: FileLoadAction::Stop,
-                            file_name: FixedString::default(),
-                        }
-                    );
-
-                    std::process::exit(0);
-                }
-                _ = terminal(&mut connection, logger).fuse() => {}
-            }
+            terminal(&mut connection, logger)?;
         }
         Command::KeyValue(subcommand) => {
             let mut connection = open_connection()?;
@@ -274,7 +238,7 @@ fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miette::Re
                         device.system_port().port_type == VexSerialPortType::Controller
                     })
                     .ok_or(CliError::NoController)?
-                    .connect(Duration::from_secs(5))
+                    .connect()
                     .map_err(CliError::SerialError)
             }?;
 

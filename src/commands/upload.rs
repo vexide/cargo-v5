@@ -5,9 +5,9 @@ use inquire::{
     CustomType,
     validator::{ErrorMessage, Validation},
 };
-use smol::{fs::File, io::AsyncWriteExt};
 
 use std::{
+    fs::File,
     io::{ErrorKind, Write},
     path::{Path, PathBuf},
     time::Duration,
@@ -15,7 +15,6 @@ use std::{
 
 use vex_serial::{
     Connection,
-    commands::file::{LinkedFile, USER_PROGRAM_LOAD_ADDR, j2000_timestamp, upload_file},
     protocol::{
         FixedString, VEX_CRC32, Version,
         cdc2::{
@@ -27,6 +26,9 @@ use vex_serial::{
         },
     },
     serial::{SerialConnection, SerialError},
+};
+use vex_serial_util::file::{
+    LinkedFile, USER_PROGRAM_LOAD_ADDR, blocking::upload_file, j2000_timestamp,
 };
 
 use crate::{
@@ -209,9 +211,7 @@ description={}",
         connection,
         FixedString::new(ini_file_name.clone()).unwrap(),
         FileVendor::User,
-    )
-    .await?
-    {
+    )? {
         brain_metadata.crc32 != VEX_CRC32.checksum(ini.as_bytes())
     } else {
         true
@@ -247,8 +247,7 @@ description={}",
             None,
             FileExitAction::DoNothing,
             Some(callback),
-        )
-        .await?;
+        )?;
 
         progress.finish();
     }
@@ -284,7 +283,7 @@ description={}",
                 },
                 FileVendor::User,
                 &{
-                    let mut data = smol::fs::read(path).await?;
+                    let mut data = std::fs::read(path)?;
 
                     if compress {
                         // <https://media1.tenor.com/m/cjSTJh8J3QcAAAAd/cat-cat-sink.gif>
@@ -298,8 +297,7 @@ description={}",
                 None,
                 after.into(),
                 Some(callback),
-            )
-            .await?;
+            )?;
 
             // Tell the progressbars that we're done once uploading is complete, allowing further
             // messages to be printed to stdout.
@@ -325,7 +323,7 @@ description={}",
             // This base file MUST exist on both the brain and the local machine for a patch upload
             // to take place, but it obviously won't be on either if this is our first time
             // uploading, so this is optional and we'll handle that case in a sec.
-            let mut base = match smol::fs::read(&path.with_file_name(&base_file_name)).await {
+            let mut base = match std::fs::read(&path.with_file_name(&base_file_name)) {
                 Ok(contents) => Some(contents),
                 Err(e) if e.kind() == ErrorKind::NotFound => None,
                 _ => None, // TODO: maybe throw an error here. that's better than a fallthrough.
@@ -353,8 +351,7 @@ description={}",
                         connection,
                         FixedString::new(base_file_name.clone()).unwrap(),
                         FileVendor::User,
-                    )
-                    .await?
+                    )?
                     else {
                         // This usually means that the file doesn't exist on the Brain.
                         break 'check true;
@@ -387,7 +384,7 @@ description={}",
 
                 // The "new" file is the file that the user requested to upload, as opposed to the
                 // "base" file which is the program that the brain already has.
-                let new = smol::fs::read(path).await?;
+                let new = std::fs::read(path)?;
                 let base = base.unwrap();
 
                 // Some sanity checks to make sure that the patch and base file fit inside the 2mb
@@ -446,8 +443,7 @@ description={}",
                     }),
                     after.into(),
                     Some(callback),
-                )
-                .await?;
+                )?;
 
                 progress.finish();
             } else {
@@ -460,7 +456,7 @@ description={}",
                     base_file_name.clone()
                 );
 
-                let mut base_data = smol::fs::read(path).await?;
+                let mut base_data = std::fs::read(path)?;
 
                 if base_data.len() > DIFFERENTIAL_UPLOAD_MAX_SIZE {
                     return Err(CliError::ProgramTooLarge(base_data.len()));
@@ -486,9 +482,8 @@ description={}",
                     FileVendor::User,
                     {
                         // Save the base file to the local machine.
-                        let mut base_file =
-                            File::create(path.with_file_name(&base_file_name)).await?;
-                        base_file.write_all(&base_data).await?;
+                        let mut base_file = File::create(path.with_file_name(&base_file_name))?;
+                        base_file.write_all(&base_data)?;
 
                         if compress {
                             // <https://media1.tenor.com/m/cjSTJh8J3QcAAAAd/cat-cat-sink.gif>
@@ -497,10 +492,8 @@ description={}",
 
                         // If you've been reading these comments, you should already know why we do
                         // this :3
-                        base_file
-                            .write_all(&VEX_CRC32.checksum(&base_data).to_le_bytes())
-                            .await?;
-                        base_file.flush().await?;
+                        base_file.write_all(&VEX_CRC32.checksum(&base_data).to_le_bytes())?;
+                        base_file.flush()?;
 
                         &base_data
                     },
@@ -509,8 +502,7 @@ description={}",
                     None,
                     FileExitAction::DoNothing,
                     Some(callback),
-                )
-                .await?;
+                )?;
 
                 // We have to get rid of any old patch files that may or may not be there after a
                 // cold upload, so we overwrite them with a placeholder patch with an intentionally
@@ -545,8 +537,7 @@ description={}",
                     }),
                     after.into(),
                     None::<fn(f32)>,
-                )
-                .await?;
+                )?;
 
                 progress.finish();
             }
@@ -579,17 +570,15 @@ fn brain_file_metadata(
     file_name: FixedString<23>,
     vendor: FileVendor,
 ) -> Result<Option<FileMetadataReplyPacket>, SerialError> {
-    let reply = connection
-        .handshake(
-            FileMetadataPacket {
-                vendor,
-                reserved: 0,
-                file_name,
-            },
-            Duration::from_millis(1000),
-            2,
-        )
-        .await?;
+    let reply = connection.handshake(
+        FileMetadataPacket {
+            vendor,
+            reserved: 0,
+            file_name,
+        },
+        Duration::from_millis(1000),
+        2,
+    )?;
 
     match reply {
         Ok(payload) => Ok(payload),
@@ -598,7 +587,7 @@ fn brain_file_metadata(
     }
 }
 
-fn make_progress_callback(
+pub(crate) fn make_progress_callback(
     multi: &mut MultiProgress,
     style: ProgressStyle,
     file_name: String,
@@ -647,51 +636,56 @@ pub fn upload(
     after: AfterUpload,
 ) -> miette::Result<SerialConnection> {
     // Try to open a serialport in the background while we build.
-    let (mut connection, (artifact, package_id)) = futures_util::try_join!(
-        async {
-            let mut connection = open_connection().await?;
+    let (mut connection, (artifact, package_id)) = std::thread::scope(|s| {
+        // Open the connection on a background thread.
+        let connection_thread = s.spawn(|| {
+            let mut connection = open_connection()?;
 
             // Switch the radio to the download channel if the controller is wireless.
-            switch_to_download_channel(&mut connection).await?;
+            switch_to_download_channel(&mut connection)?;
 
             Ok::<SerialConnection, CliError>(connection)
-        },
-        async {
-            // Get the build artifact we'll be uploading with.
-            //
-            // The user either directly passed an file through the `--file` argument, or they didn't and we need to run
-            // `cargo build`.
-            Ok(if let Some(file) = file {
+        });
+
+        // Get the build artifact we'll be uploading with.
+        //
+        // The user either directly passed an file through the `--file` argument, or they didn't and we need to run
+        // `cargo build`.
+        let artifact = (|| {
+            Ok::<_, CliError>(if let Some(file) = file {
                 if file.extension() == Some(&OsStr::from("bin")) {
                     (file, None)
                 } else {
                     // If a BIN file wasn't provided, we'll attempt to objcopy it as if it were an ELF.
-                    let binary = objcopy(&smol::fs::read(&file).await.map_err(CliError::IoError)?)?;
+                    let binary = objcopy(&std::fs::read(&file).map_err(CliError::IoError)?)?;
                     let binary_path = file.with_extension("bin");
 
                     // Write the binary to a file.
-                    smol::fs::write(&binary_path, binary)
-                        .await
-                        .map_err(CliError::IoError)?;
+                    std::fs::write(&binary_path, binary).map_err(CliError::IoError)?;
                     eprintln!("     \x1b[1;92mObjcopy\x1b[0m {}", binary_path.display());
 
                     (binary_path, None)
                 }
             } else {
                 // Run cargo build, then objcopy.
-                build(path, cargo_opts)
-                    .await?
+                build(path, cargo_opts)?
                     .map(|output| (output.bin_artifact, Some(output.package_id)))
                     .ok_or(CliError::NoArtifact)?
             })
-        }
-    )?;
+        })();
+
+        // Wait for the connection thread, propagating panics rather than swallowing them.
+        let connection = connection_thread
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+
+        Ok::<_, CliError>((connection?, artifact?))
+    })?;
 
     let cargo_metadata: Option<CargoMetadata> = {
-        let output = smol::process::Command::new(cargo_bin())
+        let output = std::process::Command::new(cargo_bin())
             .args(["metadata", "--format-version", "1", "--no-deps"])
             .output()
-            .await
             .map_err(|e| CliError::IoError(e))?;
 
         if !output.status.success() {
@@ -770,8 +764,7 @@ pub fn upload(
         upload_strategy
             .or(metadata.and_then(|metadata| metadata.upload_strategy))
             .unwrap_or_default(),
-    )
-    .await?;
+    )?;
 
     Ok(connection)
 }

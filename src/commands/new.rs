@@ -18,16 +18,13 @@ const SHA_FILE_NAME: &str = "cache-id.txt";
 
 #[cfg(feature = "fetch-template")]
 fn get_current_sha() -> Result<String, CliError> {
-    match &smol::unblock(|| {
-        ureq::get("https://api.github.com/repos/vexide/vexide-template/commits/main?per-page=1")
-            .header("User-Agent", "vexide/cargo-v5")
-            .call()
-    })
-    .await?
-    .body_mut()
-    .read_json::<Value>()
-    .map_err(CliError::HttpError)
-    .unwrap_or_default()["sha"]
+    match &ureq::get("https://api.github.com/repos/vexide/vexide-template/commits/main?per-page=1")
+        .header("User-Agent", "vexide/cargo-v5")
+        .call()?
+        .body_mut()
+        .read_json::<Value>()
+        .map_err(CliError::HttpError)
+        .unwrap_or_default()["sha"]
     {
         Value::String(str) => Ok(str.clone()),
         _ => Err(CliError::MalformedResponse),
@@ -37,17 +34,14 @@ fn get_current_sha() -> Result<String, CliError> {
 #[cfg(feature = "fetch-template")]
 fn fetch_template() -> Result<Template, CliError> {
     debug!("Fetching template...");
-    let mut response = smol::unblock(|| {
-        ureq::get("https://github.com/vexide/vexide-template/archive/refs/heads/main.tar.gz").call()
-    })
-    .await?;
+    let mut response = ureq::get("https://github.com/vexide/vexide-template/archive/refs/heads/main.tar.gz").call()?;
     debug!("Successfully fetched template.");
 
     let template = Template {
         data: response.body_mut().read_to_vec()?,
-        sha: get_current_sha().await.ok(),
+        sha: get_current_sha().ok(),
     };
-    store_cached_template(template.clone()).await;
+    store_cached_template(template.clone());
 
     Ok(template)
 }
@@ -58,8 +52,8 @@ fn get_cached_template() -> Option<Template> {
         Some(dir) => {
             let cache_file = dir.with_file_name(TEMPLATE_FILE_NAME);
             let sha_file = dir.with_file_name(SHA_FILE_NAME);
-            let sha = smol::fs::read_to_string(sha_file).await.ok();
-            let data = smol::fs::read(cache_file).await.ok();
+            let sha = std::fs::read_to_string(sha_file).ok();
+            let data = std::fs::read(cache_file).ok();
             data.map(|data| Template { data, sha })
         }
         None => None,
@@ -71,9 +65,9 @@ fn store_cached_template(template: Template) -> () {
     if let Some(dir) = cached_template_dir() {
         let cache_file = dir.with_file_name(TEMPLATE_FILE_NAME);
         let sha_file = dir.with_file_name(SHA_FILE_NAME);
-        let _ = smol::fs::write(cache_file, &template.data).await;
+        let _ = std::fs::write(cache_file, &template.data);
         if let Some(sha) = template.sha {
-            let _ = smol::fs::write(sha_file, sha).await;
+            let _ = std::fs::write(sha_file, sha);
         }
     }
 }
@@ -113,11 +107,7 @@ fn unpack_template(template: Vec<u8>, dir: &PathBuf) -> io::Result<()> {
     Ok(())
 }
 
-pub fn new(
-    path: PathBuf,
-    name: Option<String>,
-    download_template: bool,
-) -> Result<(), CliError> {
+pub fn new(path: PathBuf, name: Option<String>, download_template: bool) -> Result<(), CliError> {
     let dir = if let Some(name) = &name {
         let dir = path.join(name);
         std::fs::create_dir_all(&path).unwrap();
@@ -143,7 +133,7 @@ pub fn new(
         .unwrap_or("vexide project".to_string());
 
     #[cfg(feature = "fetch-template")]
-    let template = match (get_cached_template().await, get_current_sha().await) {
+    let template = match (get_cached_template(), get_current_sha()) {
         (cached_template, ..) if !download_template => cached_template,
         (Some(cached_template), Ok(current_sha))
             if cached_template.sha == Some(current_sha.clone()) =>
@@ -153,7 +143,7 @@ pub fn new(
         }
         (cached_template, ..) => {
             debug!("Cached template is out of date.");
-            let fetched_template = fetch_template().await.ok();
+            let fetched_template = fetch_template().ok();
             fetched_template.or_else(|| {
                 warn!("Could not fetch template, falling back to cache.");
                 cached_template
@@ -174,9 +164,9 @@ pub fn new(
 
     debug!("Renaming project to {}...", &name);
     let manifest_path = dir.join("Cargo.toml");
-    let manifest = smol::fs::read_to_string(&manifest_path).await?;
+    let manifest = std::fs::read_to_string(&manifest_path)?;
     let manifest = manifest.replace("vexide-template", &name);
-    smol::fs::write(manifest_path, manifest).await?;
+    std::fs::write(manifest_path, manifest)?;
 
     info!("Successfully created new project at {dir:?}");
     Ok(())

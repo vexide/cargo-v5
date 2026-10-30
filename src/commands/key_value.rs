@@ -6,21 +6,15 @@ use vex_serial::serial::SerialConnection;
 
 use crate::errors::CliError;
 
-pub fn kv_set(
-    connection: &mut SerialConnection,
-    key: &str,
-    value: &str,
-) -> Result<(), CliError> {
-    connection
-        .handshake(
-            KeyValueSavePacket {
-                key: FixedString::new(key)?,
-                value: FixedString::new(value)?,
-            },
-            Duration::from_millis(500),
-            1,
-        )
-        .await??;
+pub fn kv_set(connection: &mut SerialConnection, key: &str, value: &str) -> Result<(), CliError> {
+    connection.handshake(
+        KeyValueSavePacket {
+            key: FixedString::new(key)?,
+            value: FixedString::new(value)?,
+        },
+        Duration::from_millis(500),
+        1,
+    )??;
 
     Ok(())
 }
@@ -33,8 +27,7 @@ pub fn kv_get(connection: &mut SerialConnection, key: &str) -> Result<String, Cl
             },
             Duration::from_millis(500),
             1,
-        )
-        .await??
+        )??
         .value
         .to_string())
 }

@@ -12,9 +12,7 @@ use crate::errors::CliError;
 pub fn devices(connection: &mut SerialConnection) -> Result<(), CliError> {
     let mut tw = TabWriter::new(io::stdout());
 
-    let status = connection
-        .handshake(DeviceStatusPacket {}, Duration::from_millis(500), 10)
-        .await??;
+    let status = connection.handshake(DeviceStatusPacket {}, Duration::from_millis(500), 10)??;
 
     writeln!(
         &mut tw,

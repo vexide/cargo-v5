@@ -23,27 +23,23 @@ pub fn rm(connection: &mut SerialConnection, file: PathBuf) -> Result<(), CliErr
     let file_name = FixedString::from_str(file.file_name().unwrap_or_default().to_str().unwrap())
         .map_err(|err| CliError::SerialError(SerialError::FixedStringSizeError(err)))?;
 
-    connection
-        .handshake(
-            FileErasePacket {
-                vendor,
-                reserved: 0,
-                file_name,
-            },
-            Duration::from_millis(500),
-            1,
-        )
-        .await??;
+    connection.handshake(
+        FileErasePacket {
+            vendor,
+            reserved: 0,
+            file_name,
+        },
+        Duration::from_millis(500),
+        1,
+    )??;
 
-    connection
-        .handshake(
-            FileTransferExitPacket {
-                action: FileExitAction::DoNothing,
-            },
-            Duration::from_millis(500),
-            1,
-        )
-        .await??;
+    connection.handshake(
+        FileTransferExitPacket {
+            action: FileExitAction::DoNothing,
+        },
+        Duration::from_millis(500),
+        1,
+    )??;
 
     Ok(())
 }

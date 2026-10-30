@@ -1,14 +1,14 @@
-use std::{path::PathBuf, str::FromStr};
+use std::{io::Write, path::PathBuf, str::FromStr};
 
-use smol::{Unblock, io::AsyncWriteExt};
 use vex_serial::{
-    commands::file::download_file,
     protocol::{
         FixedString,
         cdc2::file::{FileTransferTarget, FileVendor},
     },
     serial::{SerialConnection, SerialError},
 };
+
+use vex_serial_util::file::blocking::download_file;
 
 use crate::errors::CliError;
 
@@ -44,23 +44,18 @@ pub fn cat(connection: &mut SerialConnection, file: PathBuf) -> Result<(), CliEr
     let file_name = FixedString::from_str(file.file_name().unwrap_or_default().to_str().unwrap())
         .map_err(|err| CliError::SerialError(SerialError::FixedStringSizeError(err)))?;
 
-    Unblock::new(std::io::stdout())
-        .write_all(
-            &download_file(
-                connection,
-                file_name,
-                // This field just sets a cap on how many chunks the file transfer will
-                // return, so we just use the largest possible transfer size rather than
-                // the exact size of the file.
-                u32::MAX,
-                vendor,
-                FileTransferTarget::Qspi,
-                0x0,
-                None::<fn(f32)>,
-            )
-            .await?,
-        )
-        .await?;
+    std::io::stdout().write_all(&download_file(
+        connection,
+        file_name,
+        // This field just sets a cap on how many chunks the file transfer will
+        // return, so we just use the largest possible transfer size rather than
+        // the exact size of the file.
+        u32::MAX,
+        vendor,
+        FileTransferTarget::Qspi,
+        0x0,
+        None::<fn(f32)>,
+    )?)?;
 
     Ok(())
 }

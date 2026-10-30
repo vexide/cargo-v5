@@ -24,8 +24,7 @@ pub fn log(connection: &mut SerialConnection, page: NonZeroU32) -> Result<(), Cl
                 },
                 Duration::from_millis(500),
                 10,
-            )
-            .await??
+            )??
             .entries,
     );
 
