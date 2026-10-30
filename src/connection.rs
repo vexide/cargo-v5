@@ -3,7 +3,7 @@ use inquire::Select;
 use log::info;
 use smol::{Timer, future::FutureExt};
 use std::time::Duration;
-use vex_v5_serial::{
+use vex_serial::{
     Connection,
     protocol::{
         cdc::{ProductType, SystemVersionPacket},

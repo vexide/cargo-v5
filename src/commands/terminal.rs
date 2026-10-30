@@ -7,7 +7,7 @@ use smol::{
     Timer, Unblock,
     io::{AsyncReadExt, AsyncWriteExt},
 };
-use vex_v5_serial::{Connection, serial::SerialConnection};
+use vex_serial::{Connection, serial::SerialConnection};
 
 use crate::errors::CliError;
 

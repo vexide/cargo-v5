@@ -22,7 +22,7 @@ use cargo_v5::{
     connection::{open_connection, switch_to_download_channel},
     updater,
 };
-use vex_v5_serial::{
+use vex_serial::{
     Connection,
     protocol::{
         FixedString,
@@ -197,19 +197,19 @@ fn main() -> miette::Result<()> {
 fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miette::Result<()> {
     match command {
         Command::Build { cargo_opts } => {
-            build(&path, cargo_opts).await?;
+            build(&path, cargo_opts)?;
         }
         Command::Upload { upload_opts, after } => {
-            upload(&path, upload_opts, after).await?;
+            upload(&path, upload_opts, after)?;
         }
-        Command::Dir => dir(&mut open_connection().await?).await?,
-        Command::Devices => devices(&mut open_connection().await?).await?,
-        Command::Cat { file } => cat(&mut open_connection().await?, file).await?,
-        Command::Rm { file } => rm(&mut open_connection().await?, file).await?,
-        Command::Log { page } => log(&mut open_connection().await?, page).await?,
-        Command::Screenshot => screenshot(&mut open_connection().await?).await?,
+        Command::Dir => dir(&mut open_connection()?)?,
+        Command::Devices => devices(&mut open_connection()?)?,
+        Command::Cat { file } => cat(&mut open_connection()?, file)?,
+        Command::Rm { file } => rm(&mut open_connection()?, file)?,
+        Command::Log { page } => log(&mut open_connection()?, page)?,
+        Command::Screenshot => screenshot(&mut open_connection()?)?,
         Command::Run(opts) => {
-            let mut connection = upload(&path, opts, AfterUpload::Run).await?;
+            let mut connection = upload(&path, opts, AfterUpload::Run)?;
 
             let (s, ctrl_c) = async_channel::bounded(1);
             _ = ctrlc::set_handler(move || {
@@ -233,7 +233,7 @@ fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miette::Re
                             action: FileLoadAction::Stop,
                             file_name: FixedString::default(),
                         }
-                    ).await;
+                    );
 
                     std::process::exit(0);
                 }
@@ -241,26 +241,26 @@ fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miette::Re
             }
         }
         Command::KeyValue(subcommand) => {
-            let mut connection = open_connection().await?;
+            let mut connection = open_connection()?;
             match subcommand {
                 KeyValue::Get { key } => {
-                    println!("{}", kv_get(&mut connection, &key).await?);
+                    println!("{}", kv_get(&mut connection, &key)?);
                 }
                 KeyValue::Set { key, value } => {
-                    kv_set(&mut connection, &key, &value).await?;
-                    println!("{key} = {}", kv_get(&mut connection, &key).await?);
+                    kv_set(&mut connection, &key, &value)?;
+                    println!("{key} = {}", kv_get(&mut connection, &key)?);
                 }
             }
         }
         Command::Terminal => {
-            let mut connection = open_connection().await?;
-            switch_to_download_channel(&mut connection).await?;
-            terminal(&mut connection, logger).await?;
+            let mut connection = open_connection()?;
+            switch_to_download_channel(&mut connection)?;
+            terminal(&mut connection, logger)?;
         }
         #[cfg(feature = "field-control")]
         Command::FieldControl => {
             use cargo_v5::errors::CliError;
-            use vex_v5_serial::serial;
+            use vex_serial::serial;
 
             // Not using open_connection since we need to filter for controllers only here.
             let mut connection = {
@@ -269,7 +269,7 @@ fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miette::Re
                 devices
                     .into_iter()
                     .find(|device| {
-                        use vex_v5_serial::serial::VexSerialPortType;
+                        use vex_serial::serial::VexSerialPortType;
 
                         device.system_port().port_type == VexSerialPortType::Controller
                     })
@@ -278,19 +278,19 @@ fn app(command: Command, path: PathBuf, logger: &mut LoggerHandle) -> miette::Re
                     .map_err(CliError::SerialError)
             }?;
 
-            run_field_control_tui(&mut connection).await?;
+            run_field_control_tui(&mut connection)?;
         }
         Command::New {
             name,
             download_opts,
         } => {
-            new(path, Some(name), !download_opts.offline).await?;
+            new(path, Some(name), !download_opts.offline)?;
         }
         Command::Init { download_opts } => {
-            new(path, None, !download_opts.offline).await?;
+            new(path, None, !download_opts.offline)?;
         }
-        Command::SelfUpdate => updater::self_update().await?,
-        Command::SelfUninstall { yes } => updater::self_uninstall(yes).await?,
+        Command::SelfUpdate => updater::self_update()?,
+        Command::SelfUninstall { yes } => updater::self_uninstall(yes)?,
     }
 
     Ok(())

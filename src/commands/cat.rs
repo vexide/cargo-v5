@@ -1,7 +1,7 @@
 use std::{path::PathBuf, str::FromStr};
 
 use smol::{Unblock, io::AsyncWriteExt};
-use vex_v5_serial::{
+use vex_serial::{
     commands::file::download_file,
     protocol::{
         FixedString,

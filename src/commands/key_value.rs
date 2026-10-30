@@ -1,8 +1,8 @@
 use std::time::Duration;
-use vex_v5_serial::Connection;
-use vex_v5_serial::protocol::FixedString;
-use vex_v5_serial::protocol::cdc2::system::{KeyValueLoadPacket, KeyValueSavePacket};
-use vex_v5_serial::serial::SerialConnection;
+use vex_serial::Connection;
+use vex_serial::protocol::FixedString;
+use vex_serial::protocol::cdc2::system::{KeyValueLoadPacket, KeyValueSavePacket};
+use vex_serial::serial::SerialConnection;
 
 use crate::errors::CliError;
 

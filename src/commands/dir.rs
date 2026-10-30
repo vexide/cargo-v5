@@ -1,10 +1,10 @@
 use chrono::{TimeZone, Utc};
 use std::io::{self, Write};
 use std::time::Duration;
-use vex_v5_serial::commands::file::J2000_EPOCH;
-use vex_v5_serial::protocol::cdc2::file::DirectoryFileCountPacket;
+use vex_serial::commands::file::J2000_EPOCH;
+use vex_serial::protocol::cdc2::file::DirectoryFileCountPacket;
 
-use vex_v5_serial::{
+use vex_serial::{
     Connection,
     protocol::cdc2::{
         factory::FactoryEnablePacket,

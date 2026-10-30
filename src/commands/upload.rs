@@ -13,7 +13,7 @@ use std::{
     time::Duration,
 };
 
-use vex_v5_serial::{
+use vex_serial::{
     Connection,
     commands::file::{LinkedFile, USER_PROGRAM_LOAD_ADDR, j2000_timestamp, upload_file},
     protocol::{

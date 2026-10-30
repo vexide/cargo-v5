@@ -1,7 +1,7 @@
 use std::io::{self, Write};
 use std::time::Duration;
 
-use vex_v5_serial::{
+use vex_serial::{
     Connection, protocol::cdc2::system::DeviceStatusPacket, serial::SerialConnection,
 };
 

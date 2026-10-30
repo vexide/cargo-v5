@@ -15,7 +15,7 @@ use tui_term::{
     vt100,
     widget::{Cursor, PseudoTerminal},
 };
-use vex_v5_serial::{
+use vex_serial::{
     Connection,
     protocol::{
         cdc::{ProductType, SystemVersionPacket},

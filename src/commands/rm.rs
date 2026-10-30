@@ -1,6 +1,6 @@
 use std::{path::PathBuf, str::FromStr, time::Duration};
 
-use vex_v5_serial::{
+use vex_serial::{
     Connection,
     protocol::{
         FixedString,

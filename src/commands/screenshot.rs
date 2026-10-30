@@ -8,7 +8,7 @@ use image::GenericImageView;
 use indicatif::{ProgressBar, ProgressStyle};
 use log::info;
 use smol::lock::Mutex;
-use vex_v5_serial::{
+use vex_serial::{
     Connection,
     commands::file::download_file,
     protocol::{

@@ -1,5 +1,5 @@
 use miette::Diagnostic;
-use smol::process::Command;
+use std::process::Command;
 use std::{
     borrow::Cow,
     env::{self, consts::EXE_SUFFIX, home_dir},
@@ -146,7 +146,7 @@ pub fn self_update() -> Result<(), SelfUpdateError> {
 
             eprintln!("> {:?}", command);
 
-            command.spawn()?.output().await?;
+            _ = command.spawn()?.wait()?;
 
             Ok(())
         }
@@ -192,7 +192,7 @@ pub fn self_uninstall(skip_prompts: bool) -> Result<(), SelfUpdateError> {
             };
 
             eprintln!("Removing receipt... ({})", receipt.display());
-            _ = smol::fs::remove_file(receipt).await;
+            _ = std::fs::remove_file(receipt);
 
             eprintln!("Uninstalling cargo-v5...");
             self_replace::self_delete()?;
