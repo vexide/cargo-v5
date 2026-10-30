@@ -2780,6 +2780,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vex-cdc"
 version = "0.1.0"
+source = "git+https://github.com/vexide/vex-serial.git?branch=refactor%2Fconnection#b5b8554d4d542a82ebd5679463eb2c9d0ac0a366"
 dependencies = [
  "bitflags 2.13.2",
  "crc",
@@ -2790,6 +2791,7 @@ dependencies = [
 [[package]]
 name = "vex-serial"
 version = "0.5.1"
+source = "git+https://github.com/vexide/vex-serial.git?branch=refactor%2Fconnection#b5b8554d4d542a82ebd5679463eb2c9d0ac0a366"
 dependencies = [
  "log",
  "serialport",
@@ -2800,6 +2802,7 @@ dependencies = [
 [[package]]
 name = "vex-serial-util"
 version = "0.0.1"
+source = "git+https://github.com/vexide/vex-serial.git?branch=refactor%2Fconnection#b5b8554d4d542a82ebd5679463eb2c9d0ac0a366"
 dependencies = [
  "flate2",
  "image",
